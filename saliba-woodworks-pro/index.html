@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saliba Woodworks — Carpentry &amp; Joinery in Floriana, Malta</title>
+<meta name="description" content="Saliba Woodworks is a family carpentry workshop in Floriana, Malta. Handmade furniture, doors, and fitted joinery — built to last. Open Mon–Sat.">
+<meta name="theme-color" content="#3b2317">
+<style>
+  /* ============================================================
+     DESIGN TOKENS
+     A small, warm workshop palette. Wood tones for structure,
+     a single brass accent for calls to action, muted paper
+     backgrounds so the content — not the chrome — carries it.
+     ============================================================ */
+  :root {
+    /* Colour */
+    --bark:    #3b2317;  /* darkest — headers, footer */
+    --walnut:  #5c3a21;  /* headings */
+    --oak:     #8a5a3b;  /* secondary wood */
+    --brass:   #b07d2b;  /* accent / CTA */
+    --brass-d: #8f631f;  /* accent hover */
+    --moss:    #2f6f5e;  /* trade green, sparingly */
+    --paper:   #f5efe7;  /* page background */
+    --card:    #fffdfa;  /* raised surfaces */
+    --line:    #e4d8c9;  /* hairlines */
+    --ink:     #2b1d14;  /* body text */
+    --ink-soft:#6a5748;  /* muted text */
+
+    /* Type */
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    --sans:  system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+    /* Fluid type scale */
+    --step--1: clamp(0.83rem, 0.79rem + 0.20vw, 0.94rem);
+    --step-0:  clamp(1.00rem, 0.95rem + 0.25vw, 1.15rem);
+    --step-1:  clamp(1.25rem, 1.15rem + 0.50vw, 1.55rem);
+    --step-2:  clamp(1.60rem, 1.40rem + 1.00vw, 2.20rem);
+    --step-3:  clamp(2.10rem, 1.70rem + 2.00vw, 3.30rem);
+
+    /* Spacing scale */
+    --sp-1: 0.5rem;
+    --sp-2: 1rem;
+    --sp-3: 1.5rem;
+    --sp-4: 2.5rem;
+    --sp-5: 4rem;
+    --sp-6: 6rem;
+
+    --radius: 10px;
+    --shadow: 0 1px 2px rgba(43,29,20,0.05), 0 8px 24px -12px rgba(43,29,20,0.25);
+    --maxw: 64rem;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: var(--step-0);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Subtle woodgrain texture via layered gradients — no images. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.5;
+    background:
+      repeating-linear-gradient(
+        92deg,
+        rgba(138,90,59,0.035) 0px,
+        rgba(138,90,59,0.035) 2px,
+        transparent 2px,
+        transparent 7px
+      );
+  }
+
+  img, svg { max-width: 100%; height: auto; }
+
+  a { color: var(--walnut); }
+
+  .wrap {
+    width: 100%;
+    max-width: var(--maxw);
+    margin-inline: auto;
+    padding-inline: var(--sp-3);
+  }
+
+  .eyebrow {
+    font-family: var(--sans);
+    font-size: var(--step--1);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--brass);
+  }
+
+  /* ---- Buttons ------------------------------------------------ */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: var(--step-0);
+    line-height: 1;
+    text-decoration: none;
+    padding: 0.95rem 1.5rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    min-height: 48px;          /* comfortable phone tap target */
+    transition: transform .12s ease, background .15s ease, box-shadow .15s ease;
+  }
+  .btn:active { transform: translateY(1px); }
+
+  .btn--primary {
+    background: var(--brass);
+    color: #fff;
+    box-shadow: 0 6px 16px -8px rgba(176,125,43,0.9);
+  }
+  .btn--primary:hover, .btn--primary:focus-visible { background: var(--brass-d); }
+
+  .btn--ghost {
+    background: transparent;
+    color: var(--cream, #f5efe7);
+    border-color: rgba(245,239,231,0.4);
+  }
+  .btn--ghost:hover, .btn--ghost:focus-visible {
+    background: rgba(245,239,231,0.1);
+    border-color: rgba(245,239,231,0.7);
+  }
+
+  :focus-visible { outline: 3px solid var(--brass); outline-offset: 3px; border-radius: 4px; }
+
+  /* ============================================================
+     HEADER / NAV
+     ============================================================ */
+  .site-head {
+    background: var(--bark);
+    color: var(--paper);
+    border-bottom: 3px solid var(--brass);
+  }
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    padding-block: 0.9rem;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+    text-decoration: none;
+    color: var(--paper);
+  }
+  .brand .logo { width: 2.6rem; height: 2.6rem; flex: none; }
+  .brand-name {
+    font-family: var(--serif);
+    font-size: var(--step-1);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    line-height: 1.05;
+  }
+  .brand-sub {
+    display: block;
+    font-family: var(--sans);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--brass);
+    font-weight: 600;
+  }
+  .nav-call {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: var(--step-0);
+    text-decoration: none;
+    color: var(--paper);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.25rem;
+    white-space: nowrap;
+  }
+  .nav-call:hover, .nav-call:focus-visible { color: var(--brass); }
+  .nav-call .num { border-bottom: 2px solid var(--brass); padding-bottom: 2px; }
+
+  /* Footer brand lockup */
+  .foot-brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.55rem;
+    margin-bottom: var(--sp-2);
+  }
+  .foot-logo { width: 3rem; height: 3rem; }
+  .foot-brand .foot-name {
+    font-family: var(--serif);
+    font-size: var(--step-1);
+    font-weight: 700;
+    color: #e8ddce;
+    letter-spacing: 0.01em;
+  }
+
+  /* ============================================================
+     HERO
+     ============================================================ */
+  .hero {
+    background:
+      radial-gradient(120% 90% at 85% -10%, rgba(176,125,43,0.16), transparent 60%),
+      linear-gradient(180deg, #442a1b 0%, var(--bark) 100%);
+    color: var(--paper);
+    padding-block: var(--sp-5);
+  }
+  .hero h1 {
+    font-size: var(--step-3);
+    line-height: 1.08;
+    margin: 0.6rem 0 0;
+    letter-spacing: -0.01em;
+    max-width: 20ch;
+  }
+  .hero p.lead {
+    font-size: var(--step-1);
+    color: #e8ddce;
+    margin: var(--sp-2) 0 0;
+    max-width: 46ch;
+    line-height: 1.5;
+  }
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
+  }
+  .hero-trust {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.4rem;
+    margin-top: var(--sp-3);
+    padding-top: var(--sp-3);
+    border-top: 1px solid rgba(245,239,231,0.15);
+    font-family: var(--sans);
+    font-size: var(--step--1);
+    color: #d9cbb9;
+  }
+  .hero-trust span { display: inline-flex; align-items: center; gap: 0.45rem; }
+  .hero-trust svg { width: 1.05rem; height: 1.05rem; flex: none; color: var(--brass); }
+
+  /* ============================================================
+     SECTIONS
+     ============================================================ */
+  section { padding-block: var(--sp-5); }
+  .section-head { max-width: 44ch; margin-bottom: var(--sp-3); }
+  .section-head h2 {
+    font-size: var(--step-2);
+    color: var(--walnut);
+    margin: 0.35rem 0 0;
+    line-height: 1.15;
+  }
+  .section-head p { color: var(--ink-soft); margin: 0.6rem 0 0; }
+
+  /* ---- Services grid ----------------------------------------- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: var(--sp-2);
+  }
+  .service {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: var(--sp-3);
+    box-shadow: var(--shadow);
+  }
+  .service .ico {
+    width: 2.6rem; height: 2.6rem;
+    display: grid; place-items: center;
+    border-radius: 8px;
+    background: rgba(176,125,43,0.12);
+    color: var(--brass);
+    margin-bottom: var(--sp-2);
+  }
+  .service .ico svg { width: 1.5rem; height: 1.5rem; }
+  .service h3 {
+    font-size: var(--step-1);
+    color: var(--walnut);
+    margin: 0 0 0.35rem;
+  }
+  .service p { margin: 0; color: var(--ink-soft); font-size: var(--step-0); }
+
+  /* "And more" plus box — signals breadth without another full card */
+  .service--more {
+    background: linear-gradient(160deg, rgba(176,125,43,0.12), rgba(176,125,43,0.03));
+    border: 1.5px dashed var(--brass);
+    box-shadow: none;
+  }
+  .service--more .ico { background: rgba(176,125,43,0.18); }
+  .service--more h3 { color: var(--brass-d); }
+  .service--more .more-list {
+    margin: 0.35rem 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    font-family: var(--sans);
+    font-size: var(--step--1);
+  }
+  .service--more .more-list li {
+    background: rgba(176,125,43,0.10);
+    border: 1px solid var(--line);
+    color: var(--walnut);
+    padding: 0.25rem 0.6rem;
+    border-radius: 99px;
+  }
+  .service--more .more-list li.more-tag {
+    background: var(--brass);
+    color: #fff;
+    border-color: var(--brass);
+    font-weight: 600;
+  }
+
+  /* ---- About + hours band ------------------------------------ */
+  .band { background: #efe6d9; border-block: 1px solid var(--line); }
+  .split {
+    display: grid;
+    gap: var(--sp-4);
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  @media (min-width: 48rem) {
+    .split { grid-template-columns: 1.1fr 0.9fr; gap: var(--sp-5); }
+  }
+  .about p { margin: 0 0 var(--sp-2); }
+  .about p:last-child { margin-bottom: 0; }
+  .signature {
+    font-family: var(--serif);
+    font-style: italic;
+    color: var(--walnut);
+    font-size: var(--step-1);
+    margin-top: var(--sp-3) !important;
+  }
+
+  /* Hours card */
+  .hours-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-top: 4px solid var(--brass);
+    border-radius: var(--radius);
+    padding: var(--sp-3);
+    box-shadow: var(--shadow);
+  }
+  .hours-card h3 {
+    font-size: var(--step-1);
+    color: var(--walnut);
+    margin: 0 0 var(--sp-2);
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .hours-card h3 svg { width: 1.3rem; height: 1.3rem; color: var(--brass); }
+  .hours { list-style: none; margin: 0; padding: 0; font-family: var(--sans); }
+  .hours li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px dashed var(--line);
+    font-size: var(--step-0);
+  }
+  .hours li:last-child { border-bottom: 0; }
+  .hours .day { color: var(--ink); font-weight: 600; }
+  .hours .time { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .hours .closed { color: #a24234; font-style: italic; }
+  .hours li.today {
+    background: rgba(176,125,43,0.10);
+    margin-inline: calc(var(--sp-3) * -1);
+    padding-inline: var(--sp-3);
+    border-radius: 6px;
+    border-bottom-color: transparent;
+  }
+  .hours li.today .day::after {
+    content: "Today";
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: var(--brass);
+    color: #fff;
+    padding: 0.12rem 0.4rem;
+    border-radius: 99px;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+  }
+
+  /* ============================================================
+     CONTACT / CTA
+     ============================================================ */
+  .contact { background: var(--bark); color: var(--paper); }
+  .contact .section-head h2 { color: var(--paper); }
+  .contact .section-head p { color: #d9cbb9; }
+  .contact .eyebrow { color: var(--brass); }
+  .contact-grid {
+    display: grid;
+    gap: var(--sp-2);
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  }
+  .contact-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.9rem;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(245,239,231,0.14);
+    border-radius: var(--radius);
+    padding: var(--sp-3);
+    text-decoration: none;
+    color: var(--paper);
+    transition: background .15s ease, border-color .15s ease;
+    min-height: 48px;
+  }
+  a.contact-item:hover, a.contact-item:focus-visible {
+    background: rgba(255,255,255,0.08);
+    border-color: var(--brass);
+  }
+  .contact-item .ico {
+    flex: none;
+    width: 2.4rem; height: 2.4rem;
+    display: grid; place-items: center;
+    border-radius: 8px;
+    background: rgba(176,125,43,0.2);
+    color: var(--brass);
+  }
+  .contact-item .ico svg { width: 1.35rem; height: 1.35rem; }
+  .contact-item .k {
+    display: block;
+    font-family: var(--sans);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--brass);
+    margin-bottom: 0.15rem;
+  }
+  .contact-item .v {
+    font-size: var(--step-0);
+    font-weight: 600;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+
+  /* Map embed */
+  .map-embed {
+    margin-top: var(--sp-3);
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid rgba(245,239,231,0.14);
+    box-shadow: var(--shadow);
+  }
+  .map-embed iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    aspect-ratio: 16 / 9;
+    border: 0;
+  }
+  .map-note {
+    margin: var(--sp-2) 0 0;
+    font-family: var(--sans);
+    font-size: var(--step--1);
+    color: #d9cbb9;
+    font-style: normal;
+  }
+  .map-note strong { color: #e8ddce; font-weight: 600; }
+
+  /* ============================================================
+     FOOTER
+     ============================================================ */
+  .site-foot {
+    background: #2c1a10;
+    color: #cdbda9;
+    font-family: var(--sans);
+    font-size: var(--step--1);
+    text-align: center;
+    padding-block: var(--sp-3);
+  }
+  .site-foot p { margin: 0.2rem 0; }
+  .site-foot .dot { color: var(--brass); }
+
+  /* Motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    * { scroll-behavior: auto !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== REUSABLE LOGO MARK =====================
+     A circular saw blade with tree-ring growth lines, wrapped
+     around a carpenter's workbench. Defined once, used in the
+     header and footer via <use>. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false"
+     style="position:absolute;width:0;height:0;overflow:hidden">
+  <symbol id="swx-mark" viewBox="0 0 64 64">
+    <!-- saw-blade teeth -->
+    <path fill="#b07d2b" d="M32.0 2.0 36.7 8.5 43.5 4.3 45.3 12.0 53.2 10.8 52.0 18.7 59.7 20.5 55.5 27.3 62.0 32.0 55.5 36.7 59.7 43.5 52.0 45.3 53.2 53.2 45.3 52.0 43.5 59.7 36.7 55.5 32.0 62.0 27.3 55.5 20.5 59.7 18.7 52.0 10.8 53.2 12.0 45.3 4.3 43.5 8.5 36.7 2.0 32.0 8.5 27.3 4.3 20.5 12.0 18.7 10.8 10.8 18.7 12.0 20.5 4.3 27.3 8.5 Z"/>
+    <!-- blade face + tree rings -->
+    <circle cx="32" cy="32" r="24" fill="#f5efe7"/>
+    <circle cx="32" cy="32" r="24"   fill="none" stroke="#8a5a3b" stroke-width="1.5"/>
+    <circle cx="32" cy="32" r="19"   fill="none" stroke="#8a5a3b" stroke-width="1.2" opacity="0.7"/>
+    <circle cx="32" cy="32" r="14.5" fill="none" stroke="#8a5a3b" stroke-width="1"   opacity="0.45"/>
+    <!-- workbench with a board on top -->
+    <rect x="24.5" y="25.4" width="15"   height="2.8" rx="0.9" fill="#2f6f5e"/>
+    <rect x="20"   y="28.2" width="24"   height="3"   rx="1"   fill="#5c3a21"/>
+    <rect x="22.6" y="31.2" width="2.8"  height="8.6" rx="0.6" fill="#5c3a21"/>
+    <rect x="38.6" y="31.2" width="2.8"  height="8.6" rx="0.6" fill="#5c3a21"/>
+    <rect x="22.6" y="36.4" width="18.8" height="2.3" rx="0.6" fill="#5c3a21"/>
+  </symbol>
+</svg>
+
+<!-- ============================ HEADER ============================ -->
+<header class="site-head">
+  <div class="wrap nav">
+    <a class="brand" href="#top" aria-label="Saliba Woodworks home">
+      <svg class="logo" viewBox="0 0 64 64" role="img" aria-labelledby="logo-title">
+        <title id="logo-title">Saliba Woodworks</title>
+        <use href="#swx-mark"></use>
+      </svg>
+      <span>
+        <span class="brand-name">Saliba Woodworks</span>
+        <span class="brand-sub">Floriana · Malta</span>
+      </span>
+    </a>
+    <a class="nav-call" href="tel:+35679095062">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      <span class="num">79 095 062</span>
+    </a>
+  </div>
+</header>
+
+<!-- ============================ HERO ============================= -->
+<a id="top"></a>
+<section class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Family carpentry since day one</p>
+    <h1>Honest woodwork, made by hand in Floriana.</h1>
+    <p class="lead">
+      We build and repair furniture, doors and fitted joinery — carefully measured,
+      properly joined, and finished to last a lifetime. No shortcuts, no fuss.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn--primary" href="tel:+35679095062">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        Call the workshop
+      </a>
+      <a class="btn btn--ghost" href="#contact">Get a quote</a>
+    </div>
+    <div class="hero-trust">
+      <span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+        Solid timber, real joinery
+      </span>
+      <span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+        Repairs &amp; restorations
+      </span>
+      <span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+        Free, no-obligation quotes
+      </span>
+    </div>
+  </div>
+</section>
+
+<!-- ========================== SERVICES ========================== -->
+<section id="services">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">What we do</p>
+      <h2>Carpentry for the home &amp; the trade</h2>
+      <p>From a single repair to a full fit-out — and just about everything in between — every job gets the same care and the same square corners.</p>
+    </div>
+    <div class="grid">
+      <article class="service">
+        <div class="ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1"/><rect x="3" y="13" width="18" height="7" rx="1"/><path d="M7 4v7M17 13v7"/></svg>
+        </div>
+        <h3>Bespoke furniture</h3>
+        <p>Tables, cabinets, shelving and one-off pieces built to fit your space and made to order.</p>
+      </article>
+      <article class="service">
+        <div class="ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M15 12h.01"/></svg>
+        </div>
+        <h3>Doors &amp; windows</h3>
+        <p>New timber doors, apertures and frames — plus rehanging, easing and draught-proofing.</p>
+      </article>
+      <article class="service">
+        <div class="ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/></svg>
+        </div>
+        <h3>Fitted joinery</h3>
+        <p>Wardrobes, kitchens, built-in storage and more — measured and installed to make the most of every wall.</p>
+      </article>
+      <article class="service">
+        <div class="ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2-2z"/></svg>
+        </div>
+        <h3>Repairs &amp; restoration</h3>
+        <p>Bring old furniture back to life — loose joints, worn tops and tired finishes put right.</p>
+      </article>
+      <article class="service service--more">
+        <div class="ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        </div>
+        <h3>…and plenty more</h3>
+        <p>If it's made of wood, chances are we do it. A few of the rest:</p>
+        <ul class="more-list">
+          <li>Skirting &amp; architraves</li>
+          <li>Staircases</li>
+          <li>Worktops</li>
+          <li>Shelving</li>
+          <li>Decking</li>
+          <li>Outdoor timber</li>
+          <li>On-site fixes</li>
+          <li class="more-tag">&amp; more — just ask</li>
+        </ul>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== ABOUT + HOURS BAND ===================== -->
+<section class="band">
+  <div class="wrap split">
+    <div class="about">
+      <p class="eyebrow">Our workshop</p>
+      <h2 class="section-head" style="margin:0.35rem 0 var(--sp-2); color:var(--walnut); font-size:var(--step-2); line-height:1.15;">A small shop in the heart of Floriana</h2>
+      <p>
+        Saliba Woodworks is a family carpentry workshop that has quietly served
+        Floriana and the surrounding towns for years. We keep the shop small on
+        purpose — it means the person who measures your job is the same one who
+        cuts, joins and finishes it.
+      </p>
+      <p>
+        We work mostly in solid timber, with proper joinery and honest prices.
+        If a repair is the right answer, we'll tell you — and if something can't
+        be done well, we won't pretend otherwise.
+      </p>
+      <p class="signature">— Chris Saliba, master carpenter</p>
+    </div>
+
+    <div class="hours-card" aria-labelledby="hours-title">
+      <h3 id="hours-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        Opening hours
+      </h3>
+      <ul class="hours">
+        <li data-day="1"><span class="day">Monday</span>    <span class="time">7:30 – 20:00</span></li>
+        <li data-day="2"><span class="day">Tuesday</span>   <span class="time">7:30 – 20:00</span></li>
+        <li data-day="3"><span class="day">Wednesday</span> <span class="time">7:30 – 20:00</span></li>
+        <li data-day="4"><span class="day">Thursday</span>  <span class="time">7:30 – 20:00</span></li>
+        <li data-day="5"><span class="day">Friday</span>    <span class="time">7:30 – 20:00</span></li>
+        <li data-day="6"><span class="day">Saturday</span>  <span class="time">7:30 – 20:00</span></li>
+        <li data-day="0"><span class="day">Sunday</span>    <span class="time closed">Closed</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ========================== CONTACT =========================== -->
+<section class="contact" id="contact">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Get in touch</p>
+      <h2>Tell us about your job</h2>
+      <p>Call or email for a free, no-obligation quote. Drop by the workshop and we'll talk it through.</p>
+    </div>
+    <div class="contact-grid">
+      <a class="contact-item" href="tel:+35679095062">
+        <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg></span>
+        <span><span class="k">Phone</span><span class="v">79 095 062</span></span>
+      </a>
+      <a class="contact-item" href="mailto:chrissaliba295@gmail.com">
+        <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg></span>
+        <span><span class="k">Email</span><span class="v">chrissaliba295@gmail.com</span></span>
+      </a>
+      <a class="contact-item" href="https://www.google.com/maps/search/?api=1&amp;query=Saliba%20Woodworks%2C%20Garage%2013%2C%20Hornworks%20Ditch%2C%20Floriana%2C%20Malta%20FRN%201270" target="_blank" rel="noopener">
+        <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
+        <span><span class="k">Workshop</span><span class="v">Garage 13, Hornworks Ditch,<br>Floriana, Malta FRN 1270</span></span>
+      </a>
+    </div>
+
+    <div class="map-embed">
+      <iframe
+        title="Map to Saliba Woodworks, Garage 13, Hornworks Ditch, Floriana"
+        src="https://maps.google.com/maps?q=Garage%2013%2C%20Hornworks%20Ditch%2C%20Floriana%2C%20Malta%20FRN%201270&amp;z=16&amp;output=embed"
+        loading="lazy"
+        referrerpolicy="no-referrer-when-downgrade"></iframe>
+    </div>
+    <p class="map-note"><strong>Find us:</strong> Garage 13, Hornworks Ditch, Floriana, Malta FRN 1270 — tap the map for directions.</p>
+  </div>
+</section>
+
+<!-- ========================== FOOTER ============================ -->
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-brand">
+      <svg class="foot-logo" viewBox="0 0 64 64" role="img" aria-labelledby="foot-logo-title">
+        <title id="foot-logo-title">Saliba Woodworks</title>
+        <use href="#swx-mark"></use>
+      </svg>
+      <span class="foot-name">Saliba Woodworks</span>
+    </div>
+    <p>Carpentry &amp; Joinery <span class="dot">·</span> Garage 13, Hornworks Ditch, Floriana, Malta FRN 1270</p>
+    <p>Open Monday to Saturday, 7:30 – 20:00 <span class="dot">·</span> Furniture, doors, fitted joinery &amp; more</p>
+  </div>
+</footer>
+
+<script>
+  // Highlight the current day in the hours list. Progressive
+  // enhancement only — the list is fully readable without JS.
+  (function () {
+    var today = new Date().getDay(); // 0 = Sunday
+    var el = document.querySelector('.hours li[data-day="' + today + '"]');
+    if (el) el.classList.add('today');
+  })();
+</script>
+
+</body>
+</html>
