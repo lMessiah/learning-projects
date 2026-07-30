@@ -1,0 +1,1593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>Nick's Day Planner</title>
+<script>
+  /* Set the light/dark attribute before first paint. The weather-driven
+     sky lands a moment later, once the forecast resolves. */
+  document.documentElement.dataset.mode =
+    matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+</script>
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+/* Two attributes on <html> drive the entire palette:
+
+     data-sky   what the weather is doing  (sunny, rain, night, …)
+     data-mode  light or dark
+
+   A sky sets four hue/saturation numbers; every colour below is derived
+   from them, so swapping one attribute re-tints the whole planner and
+   nothing has to be restated per theme. JS owns both attributes —
+   see applyTheme(). */
+:root {
+  --sky-h: 217; --sky-s: 45%;                 /* neutrals (bg, borders, text) */
+  --pri-h: 217; --pri-s: 80%;                 /* primary  (today, buttons)    */
+  --acc-h: 160; --acc-s: 76%;                 /* accent   (checks, dots)      */
+  --pri-l-day: 52%; --pri-l-night: 68%;       /* per-hue, tuned for contrast  */
+
+  --pri-l: var(--pri-l-day);
+  --primary:      hsl(var(--pri-h) var(--pri-s) var(--pri-l));
+  --on-primary:   hsl(var(--pri-h) 45% 97%);
+  --accent:       hsl(var(--acc-h) var(--acc-s) var(--pri-l));
+  --destructive:  #DC2626;
+
+  --bg:           hsl(var(--sky-h) calc(var(--sky-s) * .5)  97.5%);
+  --surface:      hsl(var(--sky-h) calc(var(--sky-s) * .8)  99.4%);
+  --muted:        hsl(var(--sky-h) calc(var(--sky-s) * .7)  95.5%);
+  --fg:           hsl(var(--sky-h) 32% 11%);
+  --fg-soft:      hsl(var(--sky-h) 18% 34%);
+  --fg-faint:     hsl(var(--sky-h) 14% 46%);
+  --border:       hsl(var(--sky-h) calc(var(--sky-s) * .75) 90%);
+  --ring: var(--primary);
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
+
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-full: 999px;
+
+  --shadow-1: 0 1px 2px hsl(var(--sky-h) 30% 20% / .07);
+  --shadow-2: 0 4px 16px hsl(var(--sky-h) 30% 20% / .10);
+
+  --dur: 180ms;
+  --theme-dur: 700ms;
+  --ease: cubic-bezier(.4, 0, .2, 1);
+  --pop-ease: cubic-bezier(.34, 1.56, .64, 1);
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Dark is an attribute, not a media query, because night-time weather has
+   to be able to force it even when the OS is in light mode. The OS
+   preference is still honoured — JS folds it in. */
+:root[data-mode="dark"] {
+  --pri-l: var(--pri-l-night);
+  --on-primary:  hsl(var(--pri-h) 55% 9%);
+  --destructive: #F87171;
+
+  --bg:          hsl(var(--sky-h) calc(var(--sky-s) * .55) 7%);
+  --surface:     hsl(var(--sky-h) calc(var(--sky-s) * .5)  11.5%);
+  --muted:       hsl(var(--sky-h) calc(var(--sky-s) * .45) 16%);
+  --fg:          hsl(var(--sky-h) 28% 93%);
+  --fg-soft:     hsl(var(--sky-h) 16% 78%);
+  --fg-faint:    hsl(var(--sky-h) 13% 64%);
+  --border:      hsl(var(--sky-h) calc(var(--sky-s) * .4)  22%);
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / .35);
+  --shadow-2: 0 4px 16px rgb(0 0 0 / .45);
+}
+
+/* ---- The skies ------------------------------------------------------
+   --pri-l-day / --pri-l-night are hand-set per hue rather than shared:
+   a yellow needs to sit much darker than a blue to stay readable
+   against white, and much lighter to stay readable against black. */
+:root[data-sky="sunny"]   { --sky-h: 45;  --sky-s: 88%; --pri-h: 36;  --pri-s: 92%; --acc-h: 22;  --acc-s: 88%; --pri-l-day: 36%; --pri-l-night: 58%; }
+:root[data-sky="partly"]  { --sky-h: 200; --sky-s: 60%; --pri-h: 202; --pri-s: 85%; --acc-h: 44;  --acc-s: 92%; --pri-l-day: 38%; --pri-l-night: 62%; }
+:root[data-sky="cloudy"]  { --sky-h: 215; --sky-s: 20%; --pri-h: 215; --pri-s: 26%; --acc-h: 200; --acc-s: 40%; --pri-l-day: 40%; --pri-l-night: 66%; }
+:root[data-sky="fog"]     { --sky-h: 220; --sky-s: 10%; --pri-h: 220; --pri-s: 14%; --acc-h: 215; --acc-s: 20%; --pri-l-day: 40%; --pri-l-night: 70%; }
+:root[data-sky="rain"]    { --sky-h: 206; --sky-s: 52%; --pri-h: 204; --pri-s: 88%; --acc-h: 188; --acc-s: 70%; --pri-l-day: 34%; --pri-l-night: 60%; }
+:root[data-sky="snow"]    { --sky-h: 196; --sky-s: 44%; --pri-h: 194; --pri-s: 72%; --acc-h: 212; --acc-s: 60%; --pri-l-day: 34%; --pri-l-night: 62%; }
+:root[data-sky="thunder"] { --sky-h: 264; --sky-s: 52%; --pri-h: 262; --pri-s: 76%; --acc-h: 46;  --acc-s: 95%; --pri-l-day: 48%; --pri-l-night: 72%; }
+:root[data-sky="night"]   { --sky-h: 246; --sky-s: 48%; --pri-h: 250; --pri-s: 72%; --acc-h: 268; --acc-s: 62%; --pri-l-day: 52%; --pri-l-night: 68%; }
+
+/* ============================================================
+   BASE
+   ============================================================ */
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Weather arrives a moment after paint, so the re-tint is eased rather
+   than snapped. Only the big static surfaces — anything with a :hover
+   transition of its own keeps its own faster timing. */
+body, .planner, .panel, .list-card, .notes-card, .empty, .weather-icon {
+  transition: background-color var(--theme-dur) var(--ease),
+              border-color var(--theme-dur) var(--ease),
+              color var(--theme-dur) var(--ease);
+}
+
+/* Applied to one freshly created node after a re-render, then dropped. */
+@keyframes pop {
+  from { transform: scale(.85); opacity: 0; }
+  60%  { transform: scale(1.04); opacity: 1; }
+  to   { transform: scale(1); opacity: 1; }
+}
+.pop { animation: pop 320ms var(--pop-ease) both; }
+
+button, input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================
+   TRIFOLD LAYOUT
+   ============================================================ */
+.planner {
+  display: grid;
+  height: 100dvh;
+  gap: 1px;
+  background: var(--border);
+  grid-template-columns: minmax(260px, 1fr) minmax(380px, 1.35fr) minmax(230px, .85fr);
+}
+
+.panel {
+  background: var(--bg);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 40px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-md);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg-soft);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-1);
+  transition: background var(--dur) var(--ease),
+              color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease);
+}
+.btn:hover { background: var(--muted); color: var(--fg); }
+.btn:active { background: var(--border); }
+
+.btn-primary {
+  color: var(--on-primary);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.btn-primary:hover { background: var(--primary); filter: brightness(1.08); color: var(--on-primary); }
+.btn-primary:active { filter: brightness(.94); }
+
+/* Icon-only button. 36px visual box, 44px hit area via ::before.
+   Kept to -4px so the expanded area stays inside the 8px row gap and
+   can't steal clicks from the text field beside it. */
+.btn-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: var(--r-md);
+  color: var(--fg-faint);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.btn-icon::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+.btn-icon:hover { background: var(--muted); color: var(--fg); }
+.btn-icon.danger:hover { background: color-mix(in srgb, var(--destructive) 12%, transparent); color: var(--destructive); }
+.btn-icon svg { width: 18px; height: 18px; }
+
+/* ============================================================
+   LEFT PANEL — TO-DO LISTS
+   ============================================================ */
+.lists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.list-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.list-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-1);
+}
+
+/* ---- List colour coding ----
+   data-color is only present when a colour is actually set, so the
+   uncoloured card keeps exactly its original look. */
+.list-card[data-color] {
+  --list-c: var(--sw);
+  box-shadow: var(--shadow-1), inset 4px 0 0 var(--list-c);
+  background: color-mix(in srgb, var(--list-c) 5%, var(--surface));
+  border-color: color-mix(in srgb, var(--list-c) 28%, var(--border));
+}
+.list-card[data-color] input[type="checkbox"] { accent-color: var(--list-c); }
+
+.swatch-dot {
+  width: 15px;
+  height: 15px;
+  border-radius: var(--r-full);
+  background: var(--list-c, transparent);
+  border: 1px solid rgb(0 0 0 / .18);
+}
+.list-card:not([data-color]) .swatch-dot {
+  border: 1.5px dashed var(--fg-faint);
+  opacity: .8;
+}
+
+.color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 2px 0 var(--sp-2) 2px;
+  animation: pop 200ms var(--pop-ease) both;
+}
+.color-row[hidden] { display: none; }
+
+.swatch {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: var(--r-full);
+  background: var(--sw);
+  border: 1px solid rgb(0 0 0 / .15);
+  transition: transform var(--dur) var(--pop-ease);
+}
+.swatch:hover { transform: scale(1.18); }
+/* "No colour" reads as a swatch with a line through it. */
+.swatch[data-color=""] {
+  background: linear-gradient(135deg,
+    var(--muted) 44%, var(--fg-faint) 44%, var(--fg-faint) 56%, var(--muted) 56%);
+}
+.swatch[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  border: 2px solid var(--fg-soft);
+}
+
+/* Text inputs styled as inline editable text. */
+.text-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px var(--sp-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.text-field:hover { background: var(--muted); }
+.text-field:focus {
+  background: var(--surface);
+  border-color: var(--border);
+  outline: 2px solid var(--ring);
+  outline-offset: 0;
+}
+.text-field::placeholder { color: var(--fg-faint); opacity: .7; }
+
+.list-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.todo {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  border-radius: var(--r-sm);
+}
+
+/* 18px box + 8px gap = 26px, which .add-row mirrors as padding-left
+   so the "add a task" field lines up with the task text above it. */
+.todo input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.todo .text-field { font-size: 15px; }
+
+.todo.done .text-field {
+  text-decoration: line-through;
+  color: var(--fg-faint);
+}
+
+/* Delete stays visible (not hover-only) but recedes until hover/focus. */
+.todo .btn-icon,
+.list-card-head .btn-icon { opacity: .45; }
+.todo:hover .btn-icon,
+.todo:focus-within .btn-icon,
+.list-card:hover .list-card-head .btn-icon,
+.list-card:focus-within .list-card-head .btn-icon { opacity: 1; }
+
+.add-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  padding-left: 26px;
+}
+
+.add-row .text-field {
+  font-size: 14px;
+  color: var(--fg-soft);
+}
+
+.empty {
+  padding: var(--sp-6) var(--sp-4);
+  text-align: center;
+  font-size: 14px;
+  color: var(--fg-faint);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-lg);
+}
+
+/* ============================================================
+   MIDDLE PANEL — CALENDAR
+   ============================================================ */
+.cal-head { text-align: center; }
+
+.cal-month {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+.cal-today {
+  margin: var(--sp-1) 0 0;
+  font-size: 14px;
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--sp-1);
+}
+
+.cal-dow {
+  padding: var(--sp-2) 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.cal-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  aspect-ratio: 1;
+  min-height: 44px;
+  padding: var(--sp-1);
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-soft);
+  background: var(--surface);
+  transition: background var(--dur) var(--ease),
+              color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease);
+}
+.cal-day:hover { background: var(--muted); color: var(--fg); }
+.cal-day.blank { background: transparent; pointer-events: none; }
+
+.cal-day.selected {
+  border-color: var(--primary);
+  color: var(--fg);
+}
+
+.cal-day.today {
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+.cal-day.today:hover { background: var(--primary); filter: brightness(1.08); }
+
+/* Notable days get a two-tone ring *inside* the cell, which leaves the
+   border free to keep showing selection and the background free to keep
+   showing "today". --nd-a / --nd-b are set inline per holiday. */
+.cal-day.notable {
+  box-shadow: inset 0 0 0 1.5px var(--nd-a),
+              inset 0 0 0 3.5px var(--nd-b);
+}
+.cal-day.birthday {
+  --nd-a: #EC4899;
+  --nd-b: #F9A8D4;
+  box-shadow: inset 0 0 0 1.5px var(--nd-a),
+              inset 0 0 0 3.5px var(--nd-b);
+}
+
+/* Shape indicator, not colour alone — count is also in the aria-label. */
+.cal-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+}
+.cal-day.today .cal-dot { background: var(--on-primary); }
+
+.notes-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.notes-date {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.notes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: 15px;
+  color: var(--fg-soft);
+}
+.note::before {
+  content: "•";
+  flex: 0 0 auto;
+  padding: 6px 0 0 var(--sp-1);
+  color: var(--accent);
+  font-weight: 700;
+}
+.note .btn-icon { opacity: .45; }
+.note:hover .btn-icon,
+.note:focus-within .btn-icon { opacity: 1; }
+
+.notes-empty {
+  font-size: 14px;
+  color: var(--fg-faint);
+}
+
+/* ============================================================
+   RIGHT PANEL — WEATHER
+   ============================================================ */
+.weather {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  text-align: center;
+  padding: var(--sp-6) var(--sp-3);
+  min-height: 260px;
+}
+
+.weather-icon {
+  width: 88px;
+  height: 88px;
+  color: var(--primary);
+  stroke-width: 1.6;
+}
+
+.weather-temp {
+  font-size: 52px;
+  font-weight: 300;
+  line-height: 1.1;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.weather-cond {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--fg-soft);
+}
+
+.weather-place {
+  font-size: 13px;
+  color: var(--fg-faint);
+}
+
+.weather-range {
+  margin-top: var(--sp-2);
+  font-size: 14px;
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.weather-msg {
+  font-size: 14px;
+  color: var(--fg-faint);
+  max-width: 24ch;
+}
+
+/* Loading skeleton — reserves the same box, so no layout shift on load. */
+.skeleton {
+  background: var(--muted);
+  border-radius: var(--r-md);
+  animation: pulse 1.6s var(--ease) infinite;
+}
+.skeleton.circle { width: 88px; height: 88px; border-radius: var(--r-full); }
+.skeleton.bar-lg { width: 120px; height: 46px; }
+.skeleton.bar-sm { width: 90px; height: 16px; }
+
+@keyframes pulse { 50% { opacity: .45; } }
+
+/* ============================================================
+   BIRTHDAY — floating cake + its dialog
+   ============================================================ */
+.cake {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  font-size: 25px;
+  line-height: 1;
+  border-radius: var(--r-full);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-2);
+  transition: transform var(--dur) var(--pop-ease),
+              border-color var(--dur) var(--ease);
+}
+.cake:hover { transform: translateY(-2px) scale(1.07); }
+.cake:active { transform: scale(.93); }
+.cake.set { border-color: #EC4899; }
+
+.dialog {
+  width: calc(100% - 32px);
+  max-width: 340px;
+  padding: var(--sp-5);
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+}
+.dialog[open] { animation: pop 220ms var(--pop-ease) both; }
+.dialog::backdrop { background: rgb(0 0 0 / .45); }
+
+.dialog h2 { margin: 0 0 var(--sp-2); font-size: 18px; font-weight: 600; }
+.dialog .hint { margin: 0 0 var(--sp-4); font-size: 14px; color: var(--fg-faint); }
+
+.dialog input[type="date"] {
+  width: 100%;
+  padding: 10px var(--sp-3);
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.dialog menu {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin: var(--sp-5) 0 0;
+  padding: 0;
+}
+
+/* ============================================================
+   RESPONSIVE — collapse the trifold below 900px
+   ============================================================ */
+@media (max-width: 900px) {
+  .planner {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100dvh;
+  }
+  .panel {
+    overflow-y: visible;
+    max-height: none;
+  }
+  .weather { min-height: 0; padding: var(--sp-5) var(--sp-3); }
+  /* Full 44px touch targets once this is a phone-sized layout. */
+  .btn { min-height: 44px; }
+  .text-field { padding-top: 9px; padding-bottom: 9px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<main class="planner">
+
+  <!-- ============ LEFT: TO-DO LISTS ============ -->
+  <section class="panel" aria-labelledby="todo-heading">
+    <div class="panel-head">
+      <h2 class="panel-title" id="todo-heading">To-Do</h2>
+      <div style="display:flex; gap:2px;">
+        <button class="btn-icon" id="export-btn" aria-label="Export all data as a backup file" title="Export backup"></button>
+        <button class="btn-icon" id="import-btn" aria-label="Import data from a backup file" title="Import backup"></button>
+      </div>
+    </div>
+    <div class="lists" id="lists"></div>
+    <button class="btn" id="add-list-btn">
+      <span aria-hidden="true" id="add-list-icon"></span> New list
+    </button>
+    <input type="file" id="import-file" accept="application/json" class="sr-only">
+  </section>
+
+  <!-- ============ MIDDLE: CALENDAR ============ -->
+  <section class="panel" aria-labelledby="cal-heading">
+    <div class="cal-head">
+      <h1 class="cal-month" id="cal-month">&nbsp;</h1>
+      <p class="cal-today" id="cal-today">&nbsp;</p>
+    </div>
+    <h2 class="sr-only" id="cal-heading">Calendar</h2>
+    <div class="cal-grid" id="cal-grid" role="group" aria-labelledby="cal-heading"></div>
+    <div class="notes-card" id="notes-card"></div>
+  </section>
+
+  <!-- ============ RIGHT: WEATHER ============ -->
+  <section class="panel" aria-labelledby="weather-heading">
+    <div class="panel-head">
+      <h2 class="panel-title" id="weather-heading">Weather</h2>
+      <button class="btn-icon" id="weather-refresh" aria-label="Refresh weather" title="Refresh"></button>
+    </div>
+    <div class="weather" id="weather" aria-live="polite"></div>
+  </section>
+
+</main>
+
+<button class="cake" id="cake-btn" aria-label="Set your birthday" title="Set your birthday">
+  <span aria-hidden="true">🎂</span>
+</button>
+
+<dialog class="dialog" id="bday-dialog" aria-labelledby="bday-title">
+  <form method="dialog">
+    <h2 id="bday-title">When's your birthday?</h2>
+    <p class="hint">Only the day and month are kept, on this device. That
+       day gets a pink outline every year.</p>
+    <input type="date" id="bday-input" aria-labelledby="bday-title">
+    <menu>
+      <button class="btn" value="clear" id="bday-clear">Remove</button>
+      <button class="btn" value="cancel">Cancel</button>
+      <button class="btn btn-primary" value="save">Save</button>
+    </menu>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+
+/* ============================================================
+   CONFIG — edit these two blocks to make the planner yours
+   ============================================================ */
+const CONFIG = {
+  // Your coordinates. Nothing is sent anywhere except this lat/lon,
+  // to Open-Meteo, to look up the temperature.
+  // Find yours at https://www.latlong.net/
+  latitude:  35.8989,
+  longitude: 14.5146,
+  place:     "Valletta, Malta",
+
+  // "celsius" or "fahrenheit"
+  unit: "celsius",
+
+  // Week starts on Monday. Set to 0 for a Sunday-first calendar.
+  weekStart: 1,
+};
+
+const STORAGE_KEY = "ndp.v1";
+
+/* ============================================================
+   STATE + PERSISTENCE (localStorage — never leaves this browser)
+   ============================================================ */
+let state = { lists: [], notes: {}, birthday: null };
+
+/* Colours a list can be tagged with. Mid-tone so they read on both the
+   light and the dark palette. "" is the uncoloured default. */
+const LIST_COLORS = [
+  { id: "",       name: "No colour", hex: "" },
+  { id: "red",    name: "Red",       hex: "#EF4444" },
+  { id: "orange", name: "Orange",    hex: "#F97316" },
+  { id: "amber",  name: "Amber",     hex: "#EAB308" },
+  { id: "green",  name: "Green",     hex: "#22C55E" },
+  { id: "teal",   name: "Teal",      hex: "#14B8A6" },
+  { id: "blue",   name: "Blue",      hex: "#3B82F6" },
+  { id: "violet", name: "Violet",    hex: "#8B5CF6" },
+  { id: "pink",   name: "Pink",      hex: "#EC4899" },
+];
+
+const colorHex = (id) => (LIST_COLORS.find((c) => c.id === id) || {}).hex || "";
+
+/* Anything read back from storage or a backup file is untrusted: a colour
+   that isn't in the palette is dropped rather than written into CSS. */
+const cleanColor = (id) => (colorHex(id) ? id : "");
+
+const cleanBirthday = (v) =>
+  typeof v === "string" && /^\d{2}-\d{2}$/.test(v) ? v : null;
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed.lists)) {
+      state.lists = parsed.lists.map((l) => ({ ...l, color: cleanColor(l.color) }));
+    }
+    if (parsed.notes && typeof parsed.notes === "object") state.notes = parsed.notes;
+    state.birthday = cleanBirthday(parsed.birthday);
+  } catch (err) {
+    // Corrupt or unreadable storage — start clean rather than crash.
+    console.warn("Could not read saved data:", err);
+  }
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (err) {
+    // Private browsing or a full quota. The app still works for this session.
+    console.warn("Could not save:", err);
+  }
+}
+
+const uid = () =>
+  (crypto.randomUUID ? crypto.randomUUID() : "id" + Date.now() + Math.random().toString(36).slice(2));
+
+/* ============================================================
+   ICONS — inline SVG, one family, 1.75 stroke, round caps
+   ============================================================ */
+function svg(paths, extraClass) {
+  return `<svg class="${extraClass || ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+}
+
+const ICON = {
+  plus:    svg('<path d="M12 5v14M5 12h14"/>'),
+  trash:   svg('<path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/>'),
+  close:   svg('<path d="M18 6 6 18M6 6l12 12"/>'),
+  download: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>'),
+  upload:  svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>'),
+  refresh: svg('<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>'),
+};
+
+const WEATHER_ICON = {
+  sun:   svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>', "weather-icon"),
+  moon:  svg('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>', "weather-icon"),
+  cloudSun: svg('<path d="M12 2v2M4.93 4.93l1.41 1.41M20 12h2M19.07 4.93l-1.41 1.41M15.95 12.65A4 4 0 0 0 10.02 8.52"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/>', "weather-icon"),
+  cloud: svg('<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>', "weather-icon"),
+  fog:   svg('<path d="M17.5 15H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/><path d="M16 18H7M17 22H9"/>', "weather-icon"),
+  drizzle: svg('<path d="M16.5 13H9a5.5 5.5 0 1 1 5.27-7h1.23a3.5 3.5 0 1 1 0 7Z"/><path d="M8 17v1M8 21v1M12 18v1M12 22v1M16 17v1M16 21v1"/>', "weather-icon"),
+  rain:  svg('<path d="M16.5 13H9a5.5 5.5 0 1 1 5.27-7h1.23a3.5 3.5 0 1 1 0 7Z"/><path d="M8 17v4M12 18v4M16 17v4"/>', "weather-icon"),
+  snow:  svg('<path d="M16.5 13H9a5.5 5.5 0 1 1 5.27-7h1.23a3.5 3.5 0 1 1 0 7Z"/><path d="M8 17h.01M8 21h.01M12 19h.01M12 23h.01M16 17h.01M16 21h.01"/>', "weather-icon"),
+  thunder: svg('<path d="M16.5 13H9a5.5 5.5 0 1 1 5.27-7h1.23a3.5 3.5 0 1 1 0 7Z"/><path d="m13 15-3 5h4l-3 5"/>', "weather-icon"),
+};
+
+/* WMO weather codes -> icon + plain-English label. */
+function decodeWeather(code, isDay) {
+  const clear = isDay ? "sun" : "moon";
+  const table = {
+    0:  [clear, "Clear"],
+    1:  [clear, "Mainly clear"],
+    2:  ["cloudSun", "Partly cloudy"],
+    3:  ["cloud", "Overcast"],
+    45: ["fog", "Fog"],
+    48: ["fog", "Freezing fog"],
+    51: ["drizzle", "Light drizzle"],
+    53: ["drizzle", "Drizzle"],
+    55: ["drizzle", "Heavy drizzle"],
+    56: ["drizzle", "Freezing drizzle"],
+    57: ["drizzle", "Freezing drizzle"],
+    61: ["rain", "Light rain"],
+    63: ["rain", "Rain"],
+    65: ["rain", "Heavy rain"],
+    66: ["rain", "Freezing rain"],
+    67: ["rain", "Freezing rain"],
+    71: ["snow", "Light snow"],
+    73: ["snow", "Snow"],
+    75: ["snow", "Heavy snow"],
+    77: ["snow", "Snow grains"],
+    80: ["rain", "Light showers"],
+    81: ["rain", "Showers"],
+    82: ["rain", "Heavy showers"],
+    85: ["snow", "Snow showers"],
+    86: ["snow", "Heavy snow showers"],
+    95: ["thunder", "Thunderstorm"],
+    96: ["thunder", "Thunderstorm with hail"],
+    99: ["thunder", "Thunderstorm with hail"],
+  };
+  return table[code] || ["cloud", "Unknown"];
+}
+
+/* ============================================================
+   SKY THEME — the palette follows the weather
+   ============================================================ */
+
+/* WMO code -> sky. Night overrides the condition entirely: an overcast
+   midnight should still feel like midnight. */
+function skyFor(code, isDay) {
+  if (!isDay) return "night";
+  if (code <= 1)  return "sunny";
+  if (code === 2) return "partly";
+  if (code === 3) return "cloudy";
+  if (code === 45 || code === 48) return "fog";
+  if (code >= 71 && code <= 77) return "snow";
+  if (code === 85 || code === 86) return "snow";
+  if (code >= 95) return "thunder";
+  if (code >= 51 && code <= 82) return "rain";
+  return "cloudy";
+}
+
+const darkQuery = matchMedia("(prefers-color-scheme: dark)");
+
+let sky = "default";      // until the first forecast lands
+let isDaylight = null;    // null = not known yet
+
+function applyTheme() {
+  // Dark whenever the sky itself is dark, or whenever the OS asks for it.
+  const dark = isDaylight === false || darkQuery.matches;
+  const root = document.documentElement;
+
+  // "default" matches no sky rule, so the :root palette stands until the
+  // forecast arrives — one eased transition instead of two.
+  root.dataset.sky = isDaylight === null ? "default" : sky;
+  root.dataset.mode = dark ? "dark" : "light";
+  // Keeps native controls (date picker, scrollbars) in step with a
+  // night that the OS doesn't know about.
+  root.style.colorScheme = dark ? "dark" : "light";
+}
+
+darkQuery.addEventListener("change", applyTheme);
+
+/* ============================================================
+   DATE HELPERS
+   ============================================================ */
+const pad = (n) => String(n).padStart(2, "0");
+const keyOf   = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const formatDMY = (d) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+
+const today = new Date();
+const YEAR = today.getFullYear();
+const MONTH = today.getMonth();
+const TODAY_KEY = keyOf(today);
+
+let selectedKey = TODAY_KEY;
+let selectedDay = today.getDate();
+
+const escapeHtml = (s) =>
+  String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* ============================================================
+   NOTABLE DAYS — [name, outer ring, inner ring], keyed "MM-DD".
+   Add your own here; anything in this table gets the ring treatment.
+   ============================================================ */
+const NOTABLE_FIXED = {
+  "01-01": ["New Year's Day",   "#EAB308", "#94A3B8"],
+  "02-02": ["Groundhog Day",    "#92400E", "#A3A3A3"],
+  "02-14": ["Valentine's Day",  "#E11D48", "#FB7185"],
+  "03-17": ["St Patrick's Day", "#16A34A", "#FACC15"],
+  "04-01": ["April Fools' Day", "#38BDF8", "#FACC15"],
+  "04-22": ["Earth Day",        "#16A34A", "#0EA5E9"],
+  "05-01": ["May Day",          "#DC2626", "#94A3B8"],
+  "06-21": ["Summer Solstice",  "#FACC15", "#F97316"],
+  "07-04": ["Independence Day", "#DC2626", "#2563EB"],
+  "10-31": ["Halloween",        "#FACC15", "#111111"],
+  "11-05": ["Bonfire Night",    "#F97316", "#111111"],
+  "12-21": ["Winter Solstice",  "#6366F1", "#CBD5E1"],
+  "12-24": ["Christmas Eve",    "#16A34A", "#DC2626"],
+  "12-25": ["Christmas Day",    "#DC2626", "#16A34A"],
+  "12-26": ["Boxing Day",       "#16A34A", "#CBD5E1"],
+  "12-31": ["New Year's Eve",   "#EAB308", "#7C3AED"],
+};
+
+const monthDay = (d) => `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+/* Easter Sunday, Gregorian (Meeus/Jones/Butcher). */
+function easterDate(y) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100;
+  const d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(y, month - 1, day);
+}
+
+/* Date of the nth given weekday in a month — e.g. 4th Thursday of Nov. */
+function nthWeekday(y, month, weekday, n) {
+  const offset = (weekday - new Date(y, month, 1).getDay() + 7) % 7;
+  return new Date(y, month, 1 + offset + (n - 1) * 7);
+}
+
+/* The movable feasts have to be recomputed per year, so the table is
+   built once for the year on screen. */
+function buildNotable(year) {
+  const table = { ...NOTABLE_FIXED };
+  const easter = easterDate(year);
+
+  const goodFriday = new Date(year, easter.getMonth(), easter.getDate() - 2);
+  table[monthDay(goodFriday)] = ["Good Friday", "#7C3AED", "#94A3B8"];
+  table[monthDay(easter)] = ["Easter Sunday", "#A78BFA", "#FDE68A"];
+  table[monthDay(nthWeekday(year, 10, 4, 4))] = ["Thanksgiving", "#EA580C", "#92400E"];
+
+  return table;
+}
+
+const NOTABLE = buildNotable(YEAR);
+
+function notableFor(date) {
+  const hit = NOTABLE[monthDay(date)];
+  if (hit) return hit;
+  // Nothing scheduled, but an unlucky Friday is worth marking anyway.
+  if (date.getDate() === 13 && date.getDay() === 5) {
+    return ["Friday the 13th", "#111111", "#F97316"];
+  }
+  return null;
+}
+
+const isLeap = (y) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+
+function isBirthday(date) {
+  if (!state.birthday) return false;
+  const md = monthDay(date);
+  if (md === state.birthday) return true;
+  // A 29 Feb birthday is celebrated on the 28th in common years.
+  return state.birthday === "02-29" && md === "02-28" && !isLeap(date.getFullYear());
+}
+
+/* ============================================================
+   LEFT PANEL — TO-DO LISTS
+   ============================================================ */
+const listsEl = document.getElementById("lists");
+
+/* renderLists() rebuilds everything, so the pop is put back afterwards on
+   the one node that was just created. */
+function popNew(selector) {
+  const el = listsEl.querySelector(selector);
+  if (el) el.classList.add("pop");
+}
+
+function renderLists() {
+  if (state.lists.length === 0) {
+    listsEl.innerHTML = `<p class="empty">No lists yet. Add one to get started.</p>`;
+    return;
+  }
+
+  listsEl.innerHTML = state.lists.map((list) => `
+    <article class="list-card" data-list="${list.id}"
+             ${list.color ? `data-color="${list.color}" style="--sw:${colorHex(list.color)}"` : ""}>
+      <div class="list-card-head">
+        <button class="btn-icon" data-action="pick-color" aria-expanded="false"
+                aria-label="Colour for list ${escapeHtml(list.title || "untitled")}"
+                title="List colour"><span class="swatch-dot"></span></button>
+        <input class="text-field list-title" data-action="title" value="${escapeHtml(list.title)}"
+               placeholder="List title" aria-label="List title">
+        <button class="btn-icon danger" data-action="del-list"
+                aria-label="Delete list ${escapeHtml(list.title || "untitled")}">${ICON.trash}</button>
+      </div>
+
+      <div class="color-row" hidden>
+        ${LIST_COLORS.map((c) => `
+          <button class="swatch" data-action="set-color" data-color="${c.id}"
+                  style="--sw:${c.hex}" title="${c.name}" aria-label="${c.name}"
+                  aria-pressed="${(list.color || "") === c.id}"></button>`).join("")}
+      </div>
+
+      ${list.items.map((item) => `
+        <div class="todo ${item.done ? "done" : ""}" data-item="${item.id}">
+          <input type="checkbox" data-action="toggle" ${item.done ? "checked" : ""}
+                 aria-label="Mark &quot;${escapeHtml(item.text || "untitled task")}&quot; as done">
+          <input class="text-field" data-action="text" value="${escapeHtml(item.text)}"
+                 placeholder="Task" aria-label="Task text">
+          <button class="btn-icon danger" data-action="del-item"
+                  aria-label="Delete task ${escapeHtml(item.text || "untitled")}">${ICON.close}</button>
+        </div>`).join("")}
+
+      <form class="add-row" data-action="add-item">
+        <input class="text-field" name="text" placeholder="Add a task…"
+               aria-label="Add a task to ${escapeHtml(list.title || "this list")}" autocomplete="off">
+      </form>
+    </article>`).join("");
+}
+
+/* Delegated events — survives re-renders without rebinding. */
+
+// Text edits mutate state but never re-render, so the caret stays put.
+listsEl.addEventListener("input", (e) => {
+  const action = e.target.dataset.action;
+  if (action !== "title" && action !== "text") return;
+
+  const list = state.lists.find((l) => l.id === e.target.closest("[data-list]").dataset.list);
+  if (!list) return;
+
+  if (action === "title") {
+    list.title = e.target.value;
+  } else {
+    const item = list.items.find((i) => i.id === e.target.closest("[data-item]").dataset.item);
+    if (item) item.text = e.target.value;
+  }
+  save();
+});
+
+// Checkbox toggles update the row in place, again to preserve focus.
+listsEl.addEventListener("change", (e) => {
+  if (e.target.dataset.action !== "toggle") return;
+
+  const row = e.target.closest("[data-item]");
+  const list = state.lists.find((l) => l.id === row.closest("[data-list]").dataset.list);
+  const item = list && list.items.find((i) => i.id === row.dataset.item);
+  if (!item) return;
+
+  item.done = e.target.checked;
+  row.classList.toggle("done", item.done);
+  save();
+});
+
+// Structural changes do re-render, so focus is restored explicitly.
+listsEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-action]");
+  if (!btn || btn.tagName !== "BUTTON") return;
+
+  const card = btn.closest("[data-list]");
+  const list = state.lists.find((l) => l.id === card.dataset.list);
+  if (!list) return;
+
+  if (btn.dataset.action === "pick-color") {
+    // Purely visual, so it toggles in place rather than re-rendering.
+    const row = card.querySelector(".color-row");
+    const open = row.hidden;
+    row.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+    if (open) row.querySelector(".swatch").focus();
+  }
+
+  if (btn.dataset.action === "set-color") {
+    list.color = cleanColor(btn.dataset.color);
+    save();
+    renderLists();
+    const swatch = listsEl.querySelector(`[data-list="${list.id}"] [data-action="pick-color"]`);
+    if (swatch) swatch.focus();
+  }
+
+  if (btn.dataset.action === "del-list") {
+    const label = list.title.trim() || "this untitled list";
+    if (!confirm(`Delete ${label} and all its tasks?`)) return;
+    state.lists = state.lists.filter((l) => l.id !== list.id);
+    save();
+    renderLists();
+    document.getElementById("add-list-btn").focus();
+  }
+
+  if (btn.dataset.action === "del-item") {
+    const itemId = btn.closest("[data-item]").dataset.item;
+    list.items = list.items.filter((i) => i.id !== itemId);
+    save();
+    renderLists();
+    focusAddRow(list.id);
+  }
+});
+
+listsEl.addEventListener("submit", (e) => {
+  if (e.target.dataset.action !== "add-item") return;
+  e.preventDefault();
+
+  const input = e.target.elements.text;
+  const text = input.value.trim();
+  if (!text) return;
+
+  const list = state.lists.find((l) => l.id === e.target.closest("[data-list]").dataset.list);
+  if (!list) return;
+
+  const item = { id: uid(), text, done: false };
+  list.items.push(item);
+  save();
+  renderLists();
+  popNew(`[data-item="${item.id}"]`);
+  focusAddRow(list.id);
+});
+
+function focusAddRow(listId) {
+  const input = listsEl.querySelector(`[data-list="${listId}"] [data-action="add-item"] input`);
+  if (input) input.focus();
+}
+
+document.getElementById("add-list-btn").addEventListener("click", () => {
+  const list = { id: uid(), title: "", items: [], color: "" };
+  state.lists.push(list);
+  save();
+  renderLists();
+  popNew(`[data-list="${list.id}"]`);
+  const title = listsEl.querySelector(`[data-list="${list.id}"] .list-title`);
+  if (title) title.focus();
+});
+
+/* ============================================================
+   MIDDLE PANEL — CALENDAR
+   ============================================================ */
+const gridEl = document.getElementById("cal-grid");
+const notesEl = document.getElementById("notes-card");
+
+const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"];
+
+function renderCalendarHead() {
+  const weekday = today.toLocaleDateString(undefined, { weekday: "long" });
+  document.getElementById("cal-month").textContent = `${MONTHS[MONTH]} ${YEAR}`;
+  document.getElementById("cal-today").textContent = `${weekday} ${formatDMY(today)}`;
+}
+
+function renderCalendar() {
+  const first = new Date(YEAR, MONTH, 1);
+  const offset = (first.getDay() - CONFIG.weekStart + 7) % 7;
+  const daysInMonth = new Date(YEAR, MONTH + 1, 0).getDate();
+
+  // Weekday headers, rotated to match weekStart. Hidden from screen readers —
+  // each day button already carries its full date in the aria-label.
+  let html = "";
+  for (let i = 0; i < 7; i++) {
+    html += `<div class="cal-dow" aria-hidden="true">${DOW[(CONFIG.weekStart + i) % 7]}</div>`;
+  }
+
+  // Leading blanks so day 1 lands under the right weekday.
+  for (let i = 0; i < offset; i++) {
+    html += `<div class="cal-day blank" aria-hidden="true"></div>`;
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = new Date(YEAR, MONTH, day);
+    const key = keyOf(date);
+    const count = (state.notes[key] || []).length;
+
+    const classes = ["cal-day"];
+    if (key === TODAY_KEY) classes.push("today");
+    if (key === selectedKey) classes.push("selected");
+
+    // A birthday and a holiday can land on the same day. Both get named,
+    // but only one ring is drawn — and the pink one wins, so the holiday
+    // colours are left off rather than overriding it from the style attr.
+    const notable = notableFor(date);
+    const birthday = isBirthday(date);
+    let ring = "";
+
+    if (birthday) {
+      classes.push("birthday");
+    } else if (notable) {
+      classes.push("notable");
+      ring = ` style="--nd-a:${notable[1]};--nd-b:${notable[2]}"`;
+    }
+
+    const occasion = [birthday && "Your birthday", notable && notable[0]]
+      .filter(Boolean).join(" · ");
+
+    // Count goes in the label so the dot is never the only signal, and the
+    // occasion is spoken too rather than living only in the ring colours.
+    const label = `${DOW[date.getDay()]} ${formatDMY(date)}` +
+      (occasion ? `, ${occasion}` : "") +
+      (count ? `, ${count} note${count === 1 ? "" : "s"}` : ", no notes") +
+      (key === TODAY_KEY ? ", today" : "");
+
+    html += `
+      <button class="${classes.join(" ")}"${ring} data-day="${day}" data-key="${key}"
+              aria-label="${escapeHtml(label)}" aria-pressed="${key === selectedKey}"
+              ${occasion ? `title="${escapeHtml(occasion)}"` : ""}
+              ${key === TODAY_KEY ? 'aria-current="date"' : ""}
+              tabindex="${day === selectedDay ? 0 : -1}">
+        <span>${day}</span>
+        ${count ? `<span class="cal-dot"></span>` : ""}
+      </button>`;
+  }
+
+  gridEl.innerHTML = html;
+}
+
+/* Index of a note just added, so only that one pops on the next render. */
+let popNote = -1;
+
+function renderNotes() {
+  const notes = state.notes[selectedKey] || [];
+  const [y, m, d] = selectedKey.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  const isToday = selectedKey === TODAY_KEY;
+
+  // Names the ring the day is wearing, so the colours aren't a private joke.
+  const notable = notableFor(date);
+  const occasion = [isBirthday(date) && "Your birthday", notable && notable[0]]
+    .filter(Boolean).join(" · ");
+
+  notesEl.innerHTML = `
+    <h3 class="notes-date">${DOW[date.getDay()]} ${formatDMY(date)}${isToday ? " · Today" : ""}</h3>
+    ${occasion ? `<p class="notes-empty">${escapeHtml(occasion)}</p>` : ""}
+
+    ${notes.length
+      ? `<ul class="notes-list">${notes.map((text, i) => `
+          <li class="note${i === popNote ? " pop" : ""}">
+            <span style="flex:1 1 auto;">${escapeHtml(text)}</span>
+            <button class="btn-icon danger" data-note="${i}"
+                    aria-label="Delete note: ${escapeHtml(text)}">${ICON.close}</button>
+          </li>`).join("")}</ul>`
+      : `<p class="notes-empty">Nothing noted for this day.</p>`}
+
+    <form class="add-row" style="padding-left:0;" id="add-note">
+      <input class="text-field" name="text" placeholder="Add a note…" autocomplete="off"
+             aria-label="Add a note for ${formatDMY(date)}">
+    </form>`;
+
+  popNote = -1;
+}
+
+function selectDay(key, day) {
+  selectedKey = key;
+  selectedDay = day;
+  renderCalendar();
+  renderNotes();
+}
+
+gridEl.addEventListener("click", (e) => {
+  const cell = e.target.closest(".cal-day[data-key]");
+  if (!cell) return;
+  selectDay(cell.dataset.key, Number(cell.dataset.day));
+  gridEl.querySelector(".cal-day.selected").focus();
+});
+
+// Roving tabindex — arrow keys walk the grid instead of tabbing 31 times.
+gridEl.addEventListener("keydown", (e) => {
+  const moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+  const daysInMonth = new Date(YEAR, MONTH + 1, 0).getDate();
+
+  let target = null;
+  if (e.key in moves) target = selectedDay + moves[e.key];
+  else if (e.key === "Home") target = 1;
+  else if (e.key === "End") target = daysInMonth;
+  else return;
+
+  if (target < 1 || target > daysInMonth) return;
+  e.preventDefault();
+
+  selectDay(keyOf(new Date(YEAR, MONTH, target)), target);
+  gridEl.querySelector(".cal-day.selected").focus();
+});
+
+notesEl.addEventListener("submit", (e) => {
+  if (e.target.id !== "add-note") return;
+  e.preventDefault();
+
+  const input = e.target.elements.text;
+  const text = input.value.trim();
+  if (!text) return;
+
+  if (!state.notes[selectedKey]) state.notes[selectedKey] = [];
+  state.notes[selectedKey].push(text);
+  save();
+  popNote = state.notes[selectedKey].length - 1;
+  renderCalendar();
+  renderNotes();
+  document.querySelector("#add-note input").focus();
+});
+
+notesEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-note]");
+  if (!btn) return;
+
+  const notes = state.notes[selectedKey] || [];
+  notes.splice(Number(btn.dataset.note), 1);
+  if (notes.length === 0) delete state.notes[selectedKey];
+  save();
+  renderCalendar();
+  renderNotes();
+  document.querySelector("#add-note input").focus();
+});
+
+/* ============================================================
+   RIGHT PANEL — WEATHER (Open-Meteo, no API key)
+   ============================================================ */
+const weatherEl = document.getElementById("weather");
+
+function renderWeatherLoading() {
+  weatherEl.innerHTML = `
+    <div class="skeleton circle"></div>
+    <div class="skeleton bar-lg"></div>
+    <div class="skeleton bar-sm"></div>
+    <span class="sr-only">Loading weather…</span>`;
+}
+
+function renderWeatherError(message) {
+  weatherEl.innerHTML = `
+    ${WEATHER_ICON.cloud}
+    <p class="weather-msg">${escapeHtml(message)}</p>
+    <button class="btn" id="weather-retry">Try again</button>`;
+  document.getElementById("weather-retry").addEventListener("click", fetchWeather);
+}
+
+async function fetchWeather() {
+  renderWeatherLoading();
+
+  const url = new URL("https://api.open-meteo.com/v1/forecast");
+  url.search = new URLSearchParams({
+    latitude: CONFIG.latitude,
+    longitude: CONFIG.longitude,
+    current: "temperature_2m,weather_code,is_day",
+    daily: "temperature_2m_max,temperature_2m_min",
+    temperature_unit: CONFIG.unit,
+    forecast_days: 1,
+    timezone: "auto",
+  });
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+
+    const data = await res.json();
+    const cur = data.current;
+    const isDay = cur.is_day === 1;
+    const [icon, label] = decodeWeather(cur.weather_code, isDay);
+    const deg = CONFIG.unit === "fahrenheit" ? "°F" : "°C";
+
+    isDaylight = isDay;
+    sky = skyFor(cur.weather_code, isDay);
+    applyTheme();
+
+    const hi = data.daily && data.daily.temperature_2m_max[0];
+    const lo = data.daily && data.daily.temperature_2m_min[0];
+
+    weatherEl.innerHTML = `
+      ${WEATHER_ICON[icon]}
+      <p class="weather-temp">${Math.round(cur.temperature_2m)}${deg}</p>
+      <p class="weather-cond">${label}</p>
+      <p class="weather-place">${escapeHtml(CONFIG.place)}</p>
+      ${hi != null && lo != null
+        ? `<p class="weather-range">High ${Math.round(hi)}${deg} · Low ${Math.round(lo)}${deg}</p>`
+        : ""}`;
+  } catch (err) {
+    // No forecast, so fall back to the clock for day vs night. The sky
+    // stays neutral rather than guessing at a condition.
+    const hour = new Date().getHours();
+    isDaylight = hour >= 7 && hour < 19;
+    sky = isDaylight ? "cloudy" : "night";
+    applyTheme();
+
+    renderWeatherError(
+      navigator.onLine
+        ? "Couldn't reach the weather service."
+        : "You're offline — weather will load when you reconnect."
+    );
+  }
+}
+
+document.getElementById("weather-refresh").addEventListener("click", fetchWeather);
+window.addEventListener("online", fetchWeather);
+
+/* ============================================================
+   BACKUP — export / import the whole planner as JSON
+   ============================================================ */
+document.getElementById("export-btn").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `day-planner-${keyOf(new Date())}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+const importFile = document.getElementById("import-file");
+document.getElementById("import-btn").addEventListener("click", () => importFile.click());
+
+importFile.addEventListener("change", async () => {
+  const file = importFile.files[0];
+  if (!file) return;
+
+  try {
+    const parsed = JSON.parse(await file.text());
+    if (!Array.isArray(parsed.lists) || typeof parsed.notes !== "object") {
+      throw new Error("Unexpected file shape");
+    }
+    if (!confirm("Replace everything currently in your planner with this backup?")) return;
+
+    state = {
+      lists: parsed.lists.map((l) => ({ ...l, color: cleanColor(l.color) })),
+      notes: parsed.notes,
+      birthday: cleanBirthday(parsed.birthday),
+    };
+    save();
+    renderLists();
+    renderCalendar();
+    renderNotes();
+    renderCake();
+  } catch (err) {
+    alert("That doesn't look like a Day Planner backup file.");
+  } finally {
+    importFile.value = "";  // let the same file be picked again
+  }
+});
+
+/* ============================================================
+   BIRTHDAY — the cake in the corner
+   ============================================================ */
+const cakeBtn = document.getElementById("cake-btn");
+const bdayDialog = document.getElementById("bday-dialog");
+const bdayInput = document.getElementById("bday-input");
+
+function renderCake() {
+  const set = Boolean(state.birthday);
+  cakeBtn.classList.toggle("set", set);
+
+  const label = set
+    ? `Your birthday is ${prettyBirthday(state.birthday)}. Change it`
+    : "Set your birthday";
+  cakeBtn.setAttribute("aria-label", label);
+  cakeBtn.title = label;
+
+  document.getElementById("bday-clear").hidden = !set;
+}
+
+function prettyBirthday(md) {
+  const [m, d] = md.split("-").map(Number);
+  return `${d} ${MONTHS[m - 1]}`;
+}
+
+cakeBtn.addEventListener("click", () => {
+  // A date input rather than a prompt: 03/04 is ambiguous, a picker isn't.
+  // The year is a throwaway — only the month and day are ever stored.
+  bdayInput.value = state.birthday ? `2000-${state.birthday}` : "";
+  bdayDialog.showModal();
+});
+
+bdayDialog.addEventListener("close", () => {
+  if (bdayDialog.returnValue === "cancel") return;
+
+  if (bdayDialog.returnValue === "clear") {
+    state.birthday = null;
+  } else if (bdayDialog.returnValue === "save") {
+    // An empty date input is the same as clearing it.
+    state.birthday = bdayInput.value ? bdayInput.value.slice(5) : null;
+  } else {
+    return;
+  }
+
+  save();
+  renderCake();
+  renderCalendar();
+  renderNotes();
+  cakeBtn.classList.remove("pop");
+  void cakeBtn.offsetWidth;   // restart the animation on a repeat save
+  cakeBtn.classList.add("pop");
+});
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+document.getElementById("add-list-icon").innerHTML = ICON.plus;
+document.getElementById("export-btn").innerHTML = ICON.download;
+document.getElementById("import-btn").innerHTML = ICON.upload;
+document.getElementById("weather-refresh").innerHTML = ICON.refresh;
+
+load();
+applyTheme();
+renderLists();
+renderCalendarHead();
+renderCalendar();
+renderNotes();
+renderCake();
+fetchWeather();
+</script>
+</body>
+</html>
