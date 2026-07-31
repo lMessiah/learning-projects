@@ -10,6 +10,10 @@
      sky lands a moment later, once the forecast resolves. */
   document.documentElement.dataset.mode =
     matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+
+  /* Locked before first paint too, so the planner is never briefly
+     readable behind the gate on a slow load. */
+  document.documentElement.dataset.locked = "1";
 </script>
 <style>
 /* ============================================================
@@ -359,10 +363,51 @@ button {
 }
 
 .todo {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   border-radius: var(--r-sm);
+}
+
+/* Ticking something off is the one moment worth celebrating in here:
+   the row bumps, the box thumps, and a ring goes out from the tick.
+   All three are keyed off .just-done, which JS drops on animationend. */
+.todo.just-done { animation: done-bump 440ms var(--pop-ease); }
+@keyframes done-bump {
+  35%  { transform: scale(1.035); }
+  100% { transform: scale(1); }
+}
+
+.todo.just-done input[type="checkbox"] { animation: check-thump 440ms var(--pop-ease); }
+@keyframes check-thump {
+  30% { transform: scale(1.45) rotate(-9deg); }
+  60% { transform: scale(.92) rotate(4deg); }
+}
+
+.todo.just-done::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: var(--r-full);
+  border: 2px solid var(--accent);
+  pointer-events: none;
+  animation: ring-out 520ms var(--ease) forwards;
+}
+@keyframes ring-out {
+  from { transform: scale(.45); opacity: .85; }
+  to   { transform: scale(2.8); opacity: 0; }
+}
+
+/* Struck-through text fades to faint rather than snapping to it. */
+.todo .text-field {
+  transition: background var(--dur) var(--ease),
+              border-color var(--dur) var(--ease),
+              color var(--dur) var(--ease);
 }
 
 /* 18px box + 8px gap = 26px, which .add-row mirrors as padding-left
@@ -417,7 +462,37 @@ button {
 /* ============================================================
    MIDDLE PANEL — CALENDAR
    ============================================================ */
-.cal-head { text-align: center; }
+.cal-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  text-align: center;
+}
+
+/* Arrows flank the title; the title block takes the slack so the month
+   name stays centred whatever its length. */
+.cal-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+}
+.cal-nav-text { flex: 1 1 auto; min-width: 0; }
+
+.cal-nav .btn-icon { transition: background var(--dur) var(--ease), color var(--dur) var(--ease), transform var(--dur) var(--pop-ease), opacity var(--dur) var(--ease); }
+.cal-nav .btn-icon:not(:disabled):hover { transform: scale(1.14); }
+.cal-nav .btn-icon:not(:disabled):active { transform: scale(.9); }
+.cal-nav .btn-icon:disabled { opacity: .25; cursor: default; }
+
+/* Only appears once you've wandered off the current month. */
+.cal-back {
+  min-height: 30px;
+  padding: 0 var(--sp-3);
+  font-size: 13px;
+  animation: pop 260ms var(--pop-ease) both;
+}
+.cal-back[hidden] { display: none; }
 
 .cal-month {
   margin: 0;
@@ -438,6 +513,13 @@ button {
   grid-template-columns: repeat(7, 1fr);
   gap: var(--sp-1);
 }
+
+/* The month slides in from the side you travelled towards, so a jump of
+   three months still reads as movement along a line. */
+@keyframes month-in-right { from { opacity: 0; transform: translateX(20px); } }
+@keyframes month-in-left  { from { opacity: 0; transform: translateX(-20px); } }
+.cal-grid.from-right { animation: month-in-right 280ms var(--ease) both; }
+.cal-grid.from-left  { animation: month-in-left  280ms var(--ease) both; }
 
 .cal-dow {
   padding: var(--sp-2) 0;
@@ -467,9 +549,11 @@ button {
   background: var(--surface);
   transition: background var(--dur) var(--ease),
               color var(--dur) var(--ease),
-              border-color var(--dur) var(--ease);
+              border-color var(--dur) var(--ease),
+              transform var(--dur) var(--pop-ease);
 }
-.cal-day:hover { background: var(--muted); color: var(--fg); }
+.cal-day:hover { background: var(--muted); color: var(--fg); transform: translateY(-2px); }
+.cal-day:active { transform: translateY(0) scale(.94); }
 .cal-day.blank { background: transparent; pointer-events: none; }
 
 .cal-day.selected {
@@ -484,6 +568,20 @@ button {
 }
 .cal-day.today:hover { background: var(--primary); filter: brightness(1.08); }
 
+/* A slow halo on today, so the eye finds it after a month of scrolling. */
+.cal-day.today::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: halo 3.2s var(--ease) infinite;
+}
+@keyframes halo {
+  0%       { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 45%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--primary) 0%, transparent); }
+}
+
 /* Notable days get a two-tone ring *inside* the cell, which leaves the
    border free to keep showing selection and the background free to keep
    showing "today". --nd-a / --nd-b are set inline per holiday. */
@@ -496,6 +594,20 @@ button {
   --nd-b: #F9A8D4;
   box-shadow: inset 0 0 0 1.5px var(--nd-a),
               inset 0 0 0 3.5px var(--nd-b);
+}
+/* Overrides the "today" halo when the two land on the same day — pink
+   wins there, same as the ring does. */
+.cal-day.birthday::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: bday-pulse 2.6s var(--ease) infinite;
+}
+@keyframes bday-pulse {
+  0%        { box-shadow: 0 0 0 0 rgb(236 72 153 / .55); }
+  70%, 100% { box-shadow: 0 0 0 10px rgb(236 72 153 / 0); }
 }
 
 /* Shape indicator, not colour alone — count is also in the aria-label. */
@@ -578,6 +690,73 @@ button {
   stroke-width: 1.6;
 }
 
+/* ---- Weather that moves ---------------------------------------------
+   Each icon carries an icon-* class so its own parts can be animated.
+   Everything here is slow and small on purpose: it should read as the
+   sky being alive, not as a loading spinner. Paths are numbered by the
+   order they appear in WEATHER_ICON — the last path is always the
+   precipitation or the bolt. */
+
+/* Sun: one turn a minute, plus a core that breathes. */
+.icon-sun { animation: sun-turn 60s linear infinite; }
+@keyframes sun-turn { to { transform: rotate(360deg); } }
+.icon-sun circle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: breathe 4.5s var(--ease) infinite;
+}
+@keyframes breathe { 50% { transform: scale(1.1); } }
+
+/* Moon: a slow bob with a little moonlight around it. */
+.icon-moon { animation: bob 6s var(--ease) infinite; }
+@keyframes bob {
+  50% { transform: translateY(-5px) rotate(-4deg); }
+}
+
+/* Clouds drift sideways; the sun behind a cloud turns as it does alone. */
+.icon-cloud, .icon-fog { animation: drift 7s var(--ease) infinite; }
+.icon-cloud-sun { animation: drift 9s var(--ease) infinite; }
+@keyframes drift { 50% { transform: translateX(5px); } }
+/* The half-hidden sun can't turn — its rays are an open arc, and spinning
+   that just looks broken — so it glimmers between the clouds instead. */
+.icon-cloud-sun path:first-of-type { animation: glimmer 5s var(--ease) infinite; }
+@keyframes glimmer { 50% { opacity: .4; } }
+
+/* Inside an SVG a transform is measured in viewBox units, not screen
+   pixels — these icons are 24 units wide, so the numbers below are small
+   on purpose. One unit is roughly 3.7 real pixels at 88px. */
+
+/* Fog: the two ground lines slide under the cloud. */
+.icon-fog path:last-of-type { animation: fog-slide 4.5s var(--ease) infinite; }
+@keyframes fog-slide {
+  0%, 100% { transform: translateX(-1.5px); opacity: .5; }
+  50%      { transform: translateX(1.5px);  opacity: 1; }
+}
+
+/* Rain and drizzle: the strokes fall out of the bottom and start again. */
+.icon-rain path:last-of-type    { animation: fall 1.5s linear infinite; }
+.icon-drizzle path:last-of-type { animation: fall 1.1s linear infinite; }
+@keyframes fall {
+  0%   { transform: translateY(-1.5px); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: translateY(3px);    opacity: 0; }
+}
+
+/* Snow: flakes drift down slowly and twinkle rather than streak. */
+.icon-snow path:last-of-type { animation: flurry 3.4s var(--ease) infinite; }
+@keyframes flurry {
+  0%   { transform: translate(-1px, -1.5px); opacity: .25; }
+  40%  { opacity: 1; }
+  100% { transform: translate(1px, 2.5px);   opacity: 0; }
+}
+
+/* Thunder: the bolt flashes, off far longer than on. */
+.icon-thunder path:last-of-type { animation: flash 3.2s steps(1, end) infinite; }
+@keyframes flash {
+  0%, 8%, 16%, 100% { opacity: 1; }
+  4%, 12%           { opacity: .15; }
+}
+
 .weather-temp {
   font-size: 52px;
   font-weight: 300;
@@ -623,6 +802,166 @@ button {
 @keyframes pulse { 50% { opacity: .45; } }
 
 /* ============================================================
+   WEATHER FX — the sky spills out of the icon
+   ============================================================ */
+/* One layer pinned over the weather panel holds every particle. Clicking
+   the icon plays the loud version; every so often, unprompted, the same
+   recipe runs with a handful of particles instead of a downpour — enough
+   to catch the eye in passing, not enough to read as a fault.
+
+   Each particle carries its own --fall / --sway / --cross distance and
+   --o opacity, set in JS from the size of the panel, so the same three
+   keyframes cover every effect at every window size. */
+.panel.wx-panel { position: relative; }
+
+.wx-fx {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.wx-fx > * {
+  position: absolute;
+  top: 0;
+  opacity: 0;
+  line-height: 1;
+  animation-fill-mode: forwards;
+  will-change: transform, opacity;
+}
+
+.wx-drop {
+  width: 2px;
+  border-radius: 1px;
+  background: linear-gradient(to bottom, transparent, var(--primary));
+  animation-name: wx-fall;
+  animation-timing-function: linear;
+}
+.wx-flake {
+  color: var(--primary);
+  animation-name: wx-sway;
+  animation-timing-function: linear;
+}
+.wx-spark {
+  color: var(--accent);
+  animation-name: wx-rise;
+  animation-timing-function: var(--ease);
+}
+.wx-cloud {
+  color: var(--fg-soft);
+  animation-name: wx-cross;
+  animation-timing-function: linear;
+}
+
+/* Fog is the one thing with no obvious particle, so it's drawn as soft
+   bands sliding across instead. */
+.wx-band {
+  left: -40%;
+  height: 14px;
+  border-radius: var(--r-full);
+  background: linear-gradient(90deg, transparent, var(--fg-faint), transparent);
+  filter: blur(5px);
+  animation-name: wx-cross;
+  animation-timing-function: linear;
+}
+
+@keyframes wx-fall {
+  0%   { transform: translateY(-24px); opacity: 0; }
+  12%, 88% { opacity: var(--o, .7); }
+  100% { transform: translateY(var(--fall)); opacity: 0; }
+}
+
+@keyframes wx-sway {
+  0%   { transform: translate(0, -20px) rotate(0deg); opacity: 0; }
+  12%  { opacity: var(--o, .8); }
+  50%  { transform: translate(var(--sway), calc(var(--fall) * .5)) rotate(140deg); }
+  88%  { opacity: var(--o, .8); }
+  100% { transform: translate(0, var(--fall)) rotate(280deg); opacity: 0; }
+}
+
+@keyframes wx-rise {
+  0%   { transform: translateY(0) scale(.5); opacity: 0; }
+  30%  { opacity: var(--o, 1); }
+  100% { transform: translateY(-72px) scale(1.15); opacity: 0; }
+}
+
+@keyframes wx-cross {
+  0%       { transform: translateX(0); opacity: 0; }
+  15%, 80% { opacity: var(--o, .5); }
+  100%     { transform: translateX(var(--cross)); opacity: 0; }
+}
+
+/* Lightning is the whole panel going white for a few frames, twice —
+   steps() so it snaps rather than glows. */
+.wx-flash {
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 50% 34%, rgb(255 255 255 / .95), transparent 68%);
+  animation: wx-flash 1400ms steps(1, end);
+}
+/* steps(1) holds each keyframe's value until the next one, so these read
+   as two hard strikes rather than a pair of fades. */
+@keyframes wx-flash {
+  0%, 7%, 15%, 100% { opacity: 0; }
+  2%   { opacity: var(--o, .8); }
+  11%  { opacity: calc(var(--o, .8) * .55); }
+}
+
+/* The icon reacts to its own click. These sit after the ambient
+   animations further up and share their specificity, so each one wins
+   its slot for as long as .wx-hit is on the element, then hands back. */
+.weather-icon.wx-hit { animation: wx-jolt 700ms var(--pop-ease); }
+@keyframes wx-jolt {
+  25%  { transform: translateY(-7px) scale(1.09); }
+  55%  { transform: translateY(3px) scale(.97); }
+  100% { transform: none; }
+}
+
+.icon-sun.wx-hit { animation: wx-whirl 1400ms cubic-bezier(.2, .8, .2, 1); }
+@keyframes wx-whirl {
+  0%   { transform: rotate(0) scale(1); }
+  45%  { transform: rotate(430deg) scale(1.18); }
+  100% { transform: rotate(720deg) scale(1); }
+}
+
+.icon-moon.wx-hit { animation: wx-swing 1200ms var(--pop-ease); }
+@keyframes wx-swing {
+  25%  { transform: rotate(-20deg) translateY(-7px); }
+  55%  { transform: rotate(13deg); }
+  80%  { transform: rotate(-5deg); }
+  100% { transform: none; }
+}
+
+.icon-cloud.wx-hit,
+.icon-cloud-sun.wx-hit,
+.icon-fog.wx-hit { animation: wx-shove 1100ms var(--ease); }
+@keyframes wx-shove {
+  30%  { transform: translateX(10px); }
+  70%  { transform: translateX(-7px); }
+  100% { transform: none; }
+}
+
+/* The precipitation inside the icon speeds up to match what's falling
+   outside it, then drops back to its idle loop. */
+.icon-rain.wx-hit path:last-of-type,
+.icon-drizzle.wx-hit path:last-of-type { animation: fall 450ms linear 4; }
+.icon-snow.wx-hit path:last-of-type    { animation: flurry 1.1s var(--ease) 3; }
+.icon-thunder.wx-hit path:last-of-type { animation: flash 700ms steps(1, end) 2; }
+
+/* The icon is a button now, so it has to look pressable. */
+.wx-btn {
+  display: grid;
+  place-items: center;
+  padding: var(--sp-2);
+  border-radius: var(--r-full);
+  transition: background var(--dur) var(--ease), transform var(--dur) var(--pop-ease);
+}
+.wx-btn:hover { background: var(--muted); transform: scale(1.04); }
+.wx-btn:active { transform: scale(.94); }
+
+/* ============================================================
    BIRTHDAY — floating cake + its dialog
    ============================================================ */
 .cake {
@@ -641,11 +980,157 @@ button {
   border: 1px solid var(--border);
   box-shadow: var(--shadow-2);
   transition: transform var(--dur) var(--pop-ease),
-              border-color var(--dur) var(--ease);
+              border-color var(--dur) var(--ease),
+              filter 600ms var(--ease),
+              opacity 600ms var(--ease);
 }
 .cake:hover { transform: translateY(-2px) scale(1.07); }
 .cake:active { transform: scale(.93); }
 .cake.set { border-color: #EC4899; }
+
+/* On the day itself it just won't sit still. */
+.cake.is-today {
+  border-color: #EC4899;
+  box-shadow: var(--shadow-2), 0 0 0 3px rgb(236 72 153 / .28);
+  animation: cake-hop 2.6s var(--ease) infinite;
+}
+@keyframes cake-hop {
+  0%, 62%, 100% { transform: translateY(0) rotate(0); }
+  70%           { transform: translateY(-9px) rotate(-8deg); }
+  80%           { transform: translateY(0) rotate(5deg); }
+  90%           { transform: translateY(-4px) rotate(-2deg); }
+}
+
+/* Fired once whenever a birthday is saved. Declared after the hop so it
+   wins the animation slot for its 640ms even on the day itself, then
+   hands back. */
+.cake.pop-cake { animation: cake-pop 640ms var(--pop-ease); }
+@keyframes cake-pop {
+  30%  { transform: scale(1.3) rotate(-12deg); }
+  55%  { transform: scale(.92) rotate(7deg); }
+  75%  { transform: scale(1.06) rotate(-3deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+/* ---- Particle burst -------------------------------------------------
+   One fixed-position layer per burst, dropped at the centre of whatever
+   was clicked. Each span flies out along its own --dx/--dy and the whole
+   layer is removed on a timer. Purely decorative, so it's skipped
+   outright under reduced motion rather than animated to nothing. */
+.burst {
+  position: fixed;
+  z-index: 120;   /* above the gate, so the unlock confetti is visible */
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.burst span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 14px;
+  line-height: 1;
+  animation: fly 720ms var(--ease) forwards;
+}
+.burst span.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+}
+@keyframes fly {
+  from { transform: translate(-50%, -50%) scale(.4); opacity: 1; }
+  to   { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1); opacity: 0; }
+}
+
+/* ---- The actual birthday ---------------------------------------------
+   Full-screen, over everything including the gate, and entirely
+   pointer-transparent: it plays out and removes itself rather than being
+   something you have to dismiss. */
+.bday-fx {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* One <i> per scrap of paper. Each gets its own colour, drift and spin. */
+.bday-fx i {
+  position: absolute;
+  top: -6vh;
+  display: block;
+  width: 9px;
+  height: 15px;
+  border-radius: 2px;
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: bday-fall linear forwards;
+}
+.bday-fx i.round { border-radius: var(--r-full); height: 9px; }
+
+@keyframes bday-fall {
+  0%   { transform: translate3d(0, 0, 0) rotate(0); opacity: 0; }
+  6%   { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translate3d(var(--dx), 118vh, 0) rotate(var(--spin)); opacity: 0; }
+}
+
+.bday-title {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  margin: 0;
+  padding: 0 4vw;
+  width: 100%;
+  text-align: center;
+  font-size: clamp(40px, 9vw, 108px);
+  font-weight: 800;
+  letter-spacing: -.035em;
+  line-height: .95;
+  background: linear-gradient(100deg, #EC4899, #F97316 46%, #8B5CF6);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 8px 26px rgb(236 72 153 / .35));
+  /* Two animations, and only the entrance fills backwards — otherwise
+     the exit's start frame would sit on top of it for its whole delay. */
+  animation: bday-in 560ms var(--pop-ease) both,
+             bday-out 800ms var(--ease) 3.3s forwards;
+}
+@keyframes bday-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(.55) rotate(-5deg); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(0); }
+}
+@keyframes bday-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to   { opacity: 0; transform: translate(-50%, -50%) scale(1.1); }
+}
+
+/* Sits a title-height below the middle, so the two never collide however
+   wide the window gets. */
+.bday-sub {
+  position: absolute;
+  left: 50%;
+  top: calc(42% + clamp(34px, 6vw, 76px));
+  width: 100%;
+  margin: 0;
+  padding: 0 var(--sp-4);
+  text-align: center;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--fg-soft);
+  animation: bday-sub-in 560ms var(--pop-ease) 180ms both,
+             bday-sub-out 800ms var(--ease) 3.3s forwards;
+}
+@keyframes bday-sub-in {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes bday-sub-out {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to   { opacity: 0; transform: translate(-50%, -6px); }
+}
 
 .dialog {
   width: calc(100% - 32px);
@@ -682,6 +1167,305 @@ button {
 }
 
 /* ============================================================
+   SETTINGS — the gear and everything behind it
+   ============================================================ */
+/* Stacked above the cake in the same corner, deliberately quieter than
+   it: same shape, no colour, and it only ever turns when opened. */
+.gear {
+  position: fixed;
+  right: 18px;
+  bottom: 80px;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--fg-faint);
+  border-radius: var(--r-full);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-2);
+  transition: transform var(--dur) var(--pop-ease),
+              color var(--dur) var(--ease),
+              border-color var(--theme-dur) var(--ease),
+              background-color var(--theme-dur) var(--ease),
+              filter 600ms var(--ease),
+              opacity 600ms var(--ease);
+}
+.gear:hover { color: var(--fg); transform: translateY(-2px) scale(1.06); }
+.gear:active { transform: scale(.93); }
+.gear svg { width: 20px; height: 20px; }
+.gear.turning svg { animation: gear-turn 700ms var(--ease); }
+@keyframes gear-turn { to { transform: rotate(180deg); } }
+
+/* Taller than the other dialog and with more in it, so it's allowed to
+   scroll rather than run off a short window. */
+#settings-dialog {
+  max-width: 440px;
+  max-height: 84dvh;
+  overflow-y: auto;
+}
+
+.set-block {
+  padding: var(--sp-4) 0;
+  border-top: 1px solid var(--border);
+}
+.set-block:first-of-type { border-top: none; padding-top: 0; }
+
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.set-label { margin: 0; font-size: 15px; font-weight: 600; }
+.set-note  { margin: 2px 0 0; font-size: 13px; color: var(--fg-faint); }
+
+/* A switch rather than a checkbox: it's a thing you flick, and it reads
+   as on/off at a glance across the dialog. */
+.switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 26px;
+  border-radius: var(--r-full);
+  background: var(--border);
+  transition: background var(--dur) var(--ease);
+}
+.switch span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-full);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition: transform var(--dur) var(--pop-ease);
+}
+.switch[aria-checked="true"] { background: var(--primary); }
+.switch[aria-checked="true"] span { transform: translateX(20px); }
+
+.set-form {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.set-form .gate-input { flex: 1 1 auto; min-width: 0; text-align: left; }
+.set-form .btn { flex: 0 0 auto; }
+
+.loc-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--sp-2);
+}
+.loc-results:empty { display: none; }
+
+.loc-hit {
+  padding: var(--sp-2) var(--sp-3);
+  text-align: left;
+  font-size: 14px;
+  border-radius: var(--r-sm);
+  color: var(--fg-soft);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  animation: pop 220ms var(--pop-ease) both;
+}
+.loc-hit:hover { background: var(--muted); color: var(--fg); }
+.loc-hit small { display: block; font-size: 12px; color: var(--fg-faint); }
+
+.btn-danger {
+  margin-top: var(--sp-3);
+  color: var(--destructive);
+  border-color: color-mix(in srgb, var(--destructive) 40%, var(--border));
+}
+.btn-danger:hover {
+  color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 12%, transparent);
+}
+
+/* The wipe riddle unfolds in place under the button, so the question and
+   what it's about to do stay on screen together. */
+.wipe-check { margin-top: var(--sp-3); }
+.wipe-check[hidden] { display: none; }
+.wipe-check.wrong { animation: shake 440ms var(--ease); }
+.wipe-q { margin: 0 0 var(--sp-2); font-size: 14px; font-weight: 500; }
+.wipe-check .gate-input { text-align: left; }
+.wipe-check menu { margin-top: var(--sp-3); }
+
+/* The credit, at the foot of the dialog. Brushed silver on the inside,
+   rainbow on the edge: two gradients on one element, the fill clipped to
+   the padding box and the rainbow to the border box, so the 2px border
+   is the only place the colour shows. The rainbow is 200% wide and
+   drifts sideways forever — a `background-position` animation, so
+   Settings → Animations off (and the OS preference) park it without
+   needing a rule of their own. */
+.credit {
+  margin-top: var(--sp-5);
+  padding: var(--sp-4);
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.55;
+  color: hsl(var(--sky-h) 22% 26%);
+  border: 2px solid transparent;
+  border-radius: var(--r-lg);
+  background:
+    linear-gradient(150deg,
+      hsl(var(--sky-h) 16% 98%) 0%,
+      hsl(var(--sky-h) 14% 90%) 38%,
+      hsl(var(--sky-h) 18% 97%) 52%,
+      hsl(var(--sky-h) 12% 87%) 100%) padding-box,
+    linear-gradient(90deg,
+      #ff3b30, #ff9500, #ffcc00, #34c759,
+      #00c7be, #007aff, #af52de, #ff2d55,
+      #ff3b30) border-box;
+  background-size: auto, 200% 100%;
+  box-shadow: var(--shadow-1), inset 0 1px 0 hsl(0 0% 100% / .9);
+  animation: credit-sheen 14s linear infinite;
+}
+@keyframes credit-sheen { to { background-position: 0 0, 200% 0; } }
+
+:root[data-mode="dark"] .credit {
+  color: hsl(var(--sky-h) 16% 82%);
+  background:
+    linear-gradient(150deg,
+      hsl(var(--sky-h) 12% 30%) 0%,
+      hsl(var(--sky-h) 14% 19%) 38%,
+      hsl(var(--sky-h) 12% 27%) 52%,
+      hsl(var(--sky-h) 14% 16%) 100%) padding-box,
+    linear-gradient(90deg,
+      #ff3b30, #ff9500, #ffcc00, #34c759,
+      #00c7be, #007aff, #af52de, #ff2d55,
+      #ff3b30) border-box;
+  box-shadow: var(--shadow-1), inset 0 1px 0 hsl(0 0% 100% / .12);
+}
+
+.credit-link {
+  font-weight: 600;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  transition: color var(--dur) var(--ease),
+              text-decoration-color var(--dur) var(--ease);
+}
+.credit-link:hover {
+  color: var(--primary);
+  text-decoration-color: currentColor;
+}
+
+/* ============================================================
+   THE GATE — everything is blurred until the riddle is answered
+   ============================================================ */
+/* data-locked is set in <head>, before first paint, so the planner is
+   never briefly legible. It's only ever removed by a correct answer.
+   The blur is decoration; the real barrier is the `inert` attribute JS
+   puts on the planner, which takes it out of the tab order and off the
+   accessibility tree too. */
+:root[data-locked] .planner,
+:root[data-locked] .gear,
+:root[data-locked] .cake {
+  filter: blur(9px) saturate(.8);
+  opacity: .55;
+  pointer-events: none;
+  user-select: none;
+}
+/* The cake keeps its own transition list — see .cake, which folds the
+   unblur into it rather than being overridden here. */
+.planner {
+  transition: filter 600ms var(--ease), opacity 600ms var(--ease);
+}
+
+.gate {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+.gate.leaving { animation: gate-out 400ms var(--ease) forwards; }
+@keyframes gate-out { to { opacity: 0; transform: scale(1.05); } }
+
+.gate-card {
+  width: 100%;
+  max-width: 420px;
+  padding: var(--sp-6);
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+}
+
+/* The entrance lives on its own class, dropped once it has played. If it
+   sat on .gate-card itself, every shake would hand back to it afterwards
+   and the card would slide in again on each wrong answer. */
+.gate-card.entering { animation: gate-in 500ms var(--pop-ease) both; }
+@keyframes gate-in {
+  from { opacity: 0; transform: translateY(16px) scale(.95); }
+}
+
+.gate-card.wrong { animation: shake 440ms var(--ease); }
+@keyframes shake {
+  10%, 90% { transform: translateX(-4px); }
+  30%, 70% { transform: translateX(7px); }
+  50%      { transform: translateX(-7px); }
+}
+
+.gate-bot {
+  font-size: 34px;
+  line-height: 1;
+  display: inline-block;
+  animation: bot-tilt 3.4s var(--ease) infinite;
+}
+@keyframes bot-tilt {
+  0%, 100% { transform: rotate(-7deg); }
+  50%      { transform: rotate(7deg) translateY(-3px); }
+}
+
+.gate-eyebrow {
+  margin: var(--sp-3) 0 var(--sp-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.gate-q {
+  margin: 0 0 var(--sp-5);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.gate-input {
+  width: 100%;
+  padding: 12px var(--sp-3);
+  text-align: center;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  transition: border-color var(--dur) var(--ease);
+}
+.gate-input::placeholder { color: var(--fg-faint); opacity: .7; }
+
+.gate-msg {
+  min-height: 20px;
+  margin: var(--sp-3) 0 0;
+  font-size: 13px;
+  color: var(--fg-faint);
+}
+.gate-msg.bad { color: var(--destructive); }
+
+.gate-card .btn { width: 100%; margin-top: var(--sp-3); }
+
+/* ============================================================
    RESPONSIVE — collapse the trifold below 900px
    ============================================================ */
 @media (max-width: 900px) {
@@ -706,6 +1490,19 @@ button {
     animation-iteration-count: 1 !important;
     transition-duration: .01ms !important;
   }
+}
+
+/* Settings → Animations off. Deliberately the same treatment the OS
+   preference gets rather than `animation: none`: everything still runs,
+   it just runs instantly, so nothing that relies on an animation to
+   arrive at its final state is left half-drawn. The particle effects
+   check the setting in JS and skip building anything at all. */
+:root[data-anim-off] *,
+:root[data-anim-off] *::before,
+:root[data-anim-off] *::after {
+  animation-duration: .01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .01ms !important;
 }
 </style>
 </head>
@@ -732,8 +1529,15 @@ button {
   <!-- ============ MIDDLE: CALENDAR ============ -->
   <section class="panel" aria-labelledby="cal-heading">
     <div class="cal-head">
-      <h1 class="cal-month" id="cal-month">&nbsp;</h1>
-      <p class="cal-today" id="cal-today">&nbsp;</p>
+      <div class="cal-nav">
+        <button class="btn-icon" id="cal-prev" aria-label="Previous month" title="Previous month"></button>
+        <div class="cal-nav-text">
+          <h1 class="cal-month" id="cal-month" aria-live="polite">&nbsp;</h1>
+          <p class="cal-today" id="cal-today">&nbsp;</p>
+        </div>
+        <button class="btn-icon" id="cal-next" aria-label="Next month" title="Next month"></button>
+      </div>
+      <button class="btn cal-back" id="cal-back" hidden>Back to today</button>
     </div>
     <h2 class="sr-only" id="cal-heading">Calendar</h2>
     <div class="cal-grid" id="cal-grid" role="group" aria-labelledby="cal-heading"></div>
@@ -741,19 +1545,26 @@ button {
   </section>
 
   <!-- ============ RIGHT: WEATHER ============ -->
-  <section class="panel" aria-labelledby="weather-heading">
+  <section class="panel wx-panel" aria-labelledby="weather-heading">
     <div class="panel-head">
       <h2 class="panel-title" id="weather-heading">Weather</h2>
       <button class="btn-icon" id="weather-refresh" aria-label="Refresh weather" title="Refresh"></button>
     </div>
     <div class="weather" id="weather" aria-live="polite"></div>
+    <!-- Every raindrop, flake and spark is drawn in here. -->
+    <div class="wx-fx" id="wx-fx" aria-hidden="true"></div>
   </section>
 
 </main>
 
+<button class="gear" id="gear-btn" aria-label="Settings" title="Settings"></button>
+
 <button class="cake" id="cake-btn" aria-label="Set your birthday" title="Set your birthday">
   <span aria-hidden="true">🎂</span>
 </button>
+
+<!-- Announcements for anything that's otherwise purely visual. -->
+<p class="sr-only" id="live" role="status" aria-live="polite"></p>
 
 <dialog class="dialog" id="bday-dialog" aria-labelledby="bday-title">
   <form method="dialog">
@@ -768,6 +1579,79 @@ button {
     </menu>
   </form>
 </dialog>
+
+<dialog class="dialog" id="settings-dialog" aria-labelledby="settings-title">
+  <h2 id="settings-title">Settings</h2>
+
+  <div class="set-block">
+    <div class="set-row">
+      <div>
+        <p class="set-label" id="anim-label">Animations</p>
+        <p class="set-note" id="anim-note">The weather, the confetti, all the small moving bits.</p>
+      </div>
+      <button class="switch" id="anim-toggle" role="switch" aria-checked="true"
+              aria-labelledby="anim-label" aria-describedby="anim-note">
+        <span aria-hidden="true"></span>
+      </button>
+    </div>
+  </div>
+
+  <div class="set-block">
+    <p class="set-label">Location</p>
+    <p class="set-note" id="loc-current">&nbsp;</p>
+    <form class="set-form" id="loc-form" autocomplete="off">
+      <input class="gate-input" id="loc-input" type="text" aria-label="Search for a place"
+             placeholder="Town, city, or 35.9, 14.5" autocomplete="off" spellcheck="false">
+      <button class="btn" type="submit">Find</button>
+    </form>
+    <p class="set-note" id="loc-msg" role="status" aria-live="polite"></p>
+    <div class="loc-results" id="loc-results"></div>
+  </div>
+
+  <div class="set-block">
+    <p class="set-label">Clear all data</p>
+    <p class="set-note">Every list, every note, your birthday and these settings.
+       This device only — and there's no undo.</p>
+    <button class="btn btn-danger" id="wipe-btn">Clear everything</button>
+
+    <form class="wipe-check" id="wipe-form" hidden autocomplete="off">
+      <p class="wipe-q" id="wipe-q">One more riddle first: once it's all gone, what will you have left?</p>
+      <input class="gate-input" id="wipe-input" type="text" aria-labelledby="wipe-q"
+             aria-describedby="wipe-msg" placeholder="Your answer"
+             autocomplete="off" autocapitalize="off" spellcheck="false">
+      <p class="gate-msg" id="wipe-msg" role="status" aria-live="polite"></p>
+      <menu>
+        <button class="btn" type="button" id="wipe-cancel">Keep it</button>
+        <button class="btn btn-danger" style="margin-top:0" type="submit">Erase it all</button>
+      </menu>
+    </form>
+  </div>
+
+  <p class="credit">
+    This site was hosted and designed by
+    <a class="credit-link" href="https://home.shcherbakov.co"
+       target="_blank" rel="noopener">shcherbakov.co</a>,
+    a Maltese web design company.
+  </p>
+
+  <menu>
+    <button class="btn btn-primary" id="settings-done">Done</button>
+  </menu>
+</dialog>
+
+<!-- The gate. Removed from the DOM entirely once it's been answered. -->
+<div class="gate" id="gate" role="dialog" aria-modal="true" aria-labelledby="gate-q">
+  <form class="gate-card entering" id="gate-form" autocomplete="off">
+    <span class="gate-bot" aria-hidden="true">🤖</span>
+    <p class="gate-eyebrow">Prove you're not a robot</p>
+    <h2 class="gate-q" id="gate-q">What's the worst combination of letters in the alphabet?</h2>
+    <input class="gate-input" id="gate-input" name="answer" type="text"
+           placeholder="Your answer" aria-describedby="gate-msg"
+           autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="btn btn-primary" type="submit">Let me in</button>
+    <p class="gate-msg" id="gate-msg" role="status" aria-live="polite"></p>
+  </form>
+</div>
 
 <script>
 "use strict";
@@ -792,10 +1676,21 @@ const CONFIG = {
 
 const STORAGE_KEY = "ndp.v1";
 
+/* Settings can move the planner somewhere else; this is what it falls
+   back to when the data is cleared. Kept separately because CONFIG itself
+   is overwritten in place, so the original would otherwise be lost. */
+const HOME = {
+  latitude:  CONFIG.latitude,
+  longitude: CONFIG.longitude,
+  place:     CONFIG.place,
+};
+
 /* ============================================================
    STATE + PERSISTENCE (localStorage — never leaves this browser)
    ============================================================ */
-let state = { lists: [], notes: {}, birthday: null };
+const defaultSettings = () => ({ animations: true, location: null });
+
+let state = { lists: [], notes: {}, birthday: null, settings: defaultSettings() };
 
 /* Colours a list can be tagged with. Mid-tone so they read on both the
    light and the dark palette. "" is the uncoloured default. */
@@ -820,6 +1715,29 @@ const cleanColor = (id) => (colorHex(id) ? id : "");
 const cleanBirthday = (v) =>
   typeof v === "string" && /^\d{2}-\d{2}$/.test(v) ? v : null;
 
+/* A saved location is two numbers that go straight into a URL and a name
+   that goes straight into the page, so both are checked properly: out of
+   range, non-finite or missing and the whole thing is discarded rather
+   than half-applied. */
+function cleanLocation(loc) {
+  if (!loc || typeof loc !== "object") return null;
+  const lat = Number(loc.latitude);
+  const lon = Number(loc.longitude);
+  if (!Number.isFinite(lat) || Math.abs(lat) > 90) return null;
+  if (!Number.isFinite(lon) || Math.abs(lon) > 180) return null;
+
+  const place = typeof loc.place === "string" ? loc.place.trim().slice(0, 80) : "";
+  return { latitude: lat, longitude: lon, place: place || `${lat.toFixed(2)}, ${lon.toFixed(2)}` };
+}
+
+function cleanSettings(s) {
+  const out = defaultSettings();
+  if (!s || typeof s !== "object") return out;
+  if (s.animations === false) out.animations = false;
+  out.location = cleanLocation(s.location);
+  return out;
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -830,6 +1748,7 @@ function load() {
     }
     if (parsed.notes && typeof parsed.notes === "object") state.notes = parsed.notes;
     state.birthday = cleanBirthday(parsed.birthday);
+    state.settings = cleanSettings(parsed.settings);
   } catch (err) {
     // Corrupt or unreadable storage — start clean rather than crash.
     console.warn("Could not read saved data:", err);
@@ -863,18 +1782,23 @@ const ICON = {
   download: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>'),
   upload:  svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>'),
   refresh: svg('<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>'),
+  chevronLeft:  svg('<path d="m15 18-6-6 6-6"/>'),
+  chevronRight: svg('<path d="m9 18 6-6-6-6"/>'),
+  gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>'),
 };
 
+/* The icon-* class is what the stylesheet hangs each icon's animation off:
+   the sun turns, the rain falls, the bolt flashes. */
 const WEATHER_ICON = {
-  sun:   svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>', "weather-icon"),
-  moon:  svg('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>', "weather-icon"),
-  cloudSun: svg('<path d="M12 2v2M4.93 4.93l1.41 1.41M20 12h2M19.07 4.93l-1.41 1.41M15.95 12.65A4 4 0 0 0 10.02 8.52"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/>', "weather-icon"),
-  cloud: svg('<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>', "weather-icon"),
-  fog:   svg('<path d="M17.5 15H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/><path d="M16 18H7M17 22H9"/>', "weather-icon"),
-  drizzle: svg('<path d="M16.5 13H9a5.5 5.5 0 1 1 5.27-7h1.23a3.5 3.5 0 1 1 0 7Z"/><path d="M8 17v1M8 21v1M12 18v1M12 22v1M16 17v1M16 21v1"/>', "weather-icon"),
-  rain:  svg('<path d="M16.5 13H9a5.5 5.5 0 1 1 5.27-7h1.23a3.5 3.5 0 1 1 0 7Z"/><path d="M8 17v4M12 18v4M16 17v4"/>', "weather-icon"),
-  snow:  svg('<path d="M16.5 13H9a5.5 5.5 0 1 1 5.27-7h1.23a3.5 3.5 0 1 1 0 7Z"/><path d="M8 17h.01M8 21h.01M12 19h.01M12 23h.01M16 17h.01M16 21h.01"/>', "weather-icon"),
-  thunder: svg('<path d="M16.5 13H9a5.5 5.5 0 1 1 5.27-7h1.23a3.5 3.5 0 1 1 0 7Z"/><path d="m13 15-3 5h4l-3 5"/>', "weather-icon"),
+  sun:   svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>', "weather-icon icon-sun"),
+  moon:  svg('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>', "weather-icon icon-moon"),
+  cloudSun: svg('<path d="M12 2v2M4.93 4.93l1.41 1.41M20 12h2M19.07 4.93l-1.41 1.41M15.95 12.65A4 4 0 0 0 10.02 8.52"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/>', "weather-icon icon-cloud-sun"),
+  cloud: svg('<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>', "weather-icon icon-cloud"),
+  fog:   svg('<path d="M17.5 15H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/><path d="M16 18H7M17 22H9"/>', "weather-icon icon-fog"),
+  drizzle: svg('<path d="M16.5 13H9a5.5 5.5 0 1 1 5.27-7h1.23a3.5 3.5 0 1 1 0 7Z"/><path d="M8 17v1M8 21v1M12 18v1M12 22v1M16 17v1M16 21v1"/>', "weather-icon icon-drizzle"),
+  rain:  svg('<path d="M16.5 13H9a5.5 5.5 0 1 1 5.27-7h1.23a3.5 3.5 0 1 1 0 7Z"/><path d="M8 17v4M12 18v4M16 17v4"/>', "weather-icon icon-rain"),
+  snow:  svg('<path d="M16.5 13H9a5.5 5.5 0 1 1 5.27-7h1.23a3.5 3.5 0 1 1 0 7Z"/><path d="M8 17h.01M8 21h.01M12 19h.01M12 23h.01M16 17h.01M16 21h.01"/>', "weather-icon icon-snow"),
+  thunder: svg('<path d="M16.5 13H9a5.5 5.5 0 1 1 5.27-7h1.23a3.5 3.5 0 1 1 0 7Z"/><path d="m13 15-3 5h4l-3 5"/>', "weather-icon icon-thunder"),
 };
 
 /* WMO weather codes -> icon + plain-English label. */
@@ -954,6 +1878,155 @@ function applyTheme() {
 darkQuery.addEventListener("change", applyTheme);
 
 /* ============================================================
+   MOTION — the small celebratory bits
+   ============================================================ */
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+
+/* Two ways to ask for stillness: the OS preference, and the switch in
+   settings. Everything built out of DOM nodes asks this first and builds
+   nothing at all; everything built out of CSS is flattened by the two
+   rules at the bottom of the stylesheet. */
+const motionOK = () => state.settings.animations && !reducedMotion.matches;
+
+function applyAnimSetting() {
+  document.documentElement.toggleAttribute("data-anim-off", !state.settings.animations);
+  // Whatever is mid-flight when the switch goes off should go with it.
+  if (!state.settings.animations) {
+    stopWeatherFx();
+    const party = document.querySelector(".bday-fx");
+    if (party) party.remove();
+  } else {
+    scheduleAmbient();
+  }
+}
+
+const rand = (min, max) => min + Math.random() * (max - min);
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+const liveEl = document.getElementById("live");
+const announce = (text) => { liveEl.textContent = text; };
+
+/* Throws a handful of particles out from the centre of an element.
+   `chars` makes them emoji; otherwise they're dots in `color`. The whole
+   thing is decoration, so it does nothing at all when the reader has
+   asked for less motion — better than animating it to zero. */
+function burst(el, { chars, color, count = 10, spread = 34 } = {}) {
+  if (!el || !motionOK()) return;
+
+  const box = el.getBoundingClientRect();
+  const layer = document.createElement("div");
+  layer.className = "burst";
+  layer.style.left = `${box.left + box.width / 2}px`;
+  layer.style.top = `${box.top + box.height / 2}px`;
+
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement("span");
+    // Evenly spaced, then nudged so the ring doesn't look mechanical.
+    const angle = (i / count) * Math.PI * 2 + (i % 3) * 0.21;
+    const dist = spread + (i % 3) * 13;
+    p.style.setProperty("--dx", `${Math.cos(angle) * dist}px`);
+    // Biased upwards, so it reads as thrown rather than dropped.
+    p.style.setProperty("--dy", `${Math.sin(angle) * dist - 10}px`);
+    p.style.animationDelay = `${(i % 4) * 25}ms`;
+
+    if (chars) {
+      p.textContent = chars[i % chars.length];
+    } else {
+      p.className = "dot";
+      p.style.background = color || "currentColor";
+    }
+    layer.appendChild(p);
+  }
+
+  document.body.appendChild(layer);
+  setTimeout(() => layer.remove(), 1000);
+}
+
+/* Restarts a one-shot animation class even if it's already applied.
+
+   Taking the class off and putting it back in the same tick is normally
+   coalesced into no change at all, so something has to force the style
+   to flush in between. The usual `void el.offsetWidth` is no good here:
+   offsetWidth belongs to HTMLElement, and the weather icons are <svg>,
+   where it reads back undefined and forces nothing. getBoundingClientRect
+   is on Element, so it works for both. */
+const replayTimers = new WeakMap();
+
+function replay(el, cls, ms) {
+  if (!el) return;
+
+  // An earlier call's timer would otherwise cut this one short.
+  clearTimeout(replayTimers.get(el));
+
+  el.classList.remove(cls);
+  el.getBoundingClientRect();
+  el.classList.add(cls);
+
+  replayTimers.set(el, setTimeout(() => {
+    replayTimers.delete(el);
+    el.classList.remove(cls);
+  }, ms));
+}
+
+/* ---- The birthday itself --------------------------------------------
+   Confetti over the whole window and the words across the middle of it.
+   Fired by clicking the pink day in the calendar, and once on the way in
+   if today happens to be the day.
+
+   Reduced motion is treated differently from animations-off here: the
+   message is the point, so it's still shown — it just arrives without
+   ninety pieces of paper falling past it. Turning animations off in
+   settings is an explicit "none of this, please", and is obeyed. */
+const CONFETTI = ["#EC4899", "#F97316", "#EAB308", "#22C55E",
+                  "#3B82F6", "#8B5CF6", "#14B8A6", "#F43F5E"];
+
+let partyTimer = null;
+
+function celebrateBirthday(sub = "Many happy returns 🎂") {
+  if (!state.settings.animations) return;
+
+  // A second click part-way through restarts it rather than stacking.
+  const old = document.querySelector(".bday-fx");
+  if (old) old.remove();
+  clearTimeout(partyTimer);
+
+  const layer = document.createElement("div");
+  layer.className = "bday-fx";
+  layer.setAttribute("aria-hidden", "true");
+
+  if (!reducedMotion.matches) {
+    for (let i = 0; i < 110; i++) {
+      const bit = document.createElement("i");
+      if (i % 3 === 0) bit.className = "round";
+      bit.style.left = `${rand(-5, 105)}%`;
+      bit.style.background = pick(CONFETTI);
+      // Drift sideways as it falls, and never straight: a scrap of paper
+      // that drops on a plumb line reads as a bug rather than confetti.
+      bit.style.setProperty("--dx", `${rand(-18, 18)}vw`);
+      bit.style.setProperty("--spin", `${rand(-1080, 1080)}deg`);
+      bit.style.animationDuration = `${rand(2.6, 5).toFixed(2)}s`;
+      bit.style.animationDelay = `${rand(0, 1.6).toFixed(2)}s`;
+      bit.style.width = `${rand(6, 12).toFixed(1)}px`;
+      layer.appendChild(bit);
+    }
+  }
+
+  const title = document.createElement("p");
+  title.className = "bday-title";
+  title.textContent = "Happy Birthday";
+
+  const line = document.createElement("p");
+  line.className = "bday-sub";
+  line.textContent = sub;
+
+  layer.append(title, line);
+  document.body.appendChild(layer);
+  announce(`Happy birthday. ${sub}`);
+
+  partyTimer = setTimeout(() => layer.remove(), 6800);
+}
+
+/* ============================================================
    DATE HELPERS
    ============================================================ */
 const pad = (n) => String(n).padStart(2, "0");
@@ -964,6 +2037,21 @@ const today = new Date();
 const YEAR = today.getFullYear();
 const MONTH = today.getMonth();
 const TODAY_KEY = keyOf(today);
+
+/* Which month the grid is showing. Starts on the real one and can travel
+   MONTH_RANGE either side of it — far enough to plan a quarter ahead or
+   look back at one, without turning the planner into an archive.
+   Months are compared as a single running index so a December→January
+   step is just +1. */
+const MONTH_RANGE = 3;
+const monthIndex = (y, m) => y * 12 + m;
+const NOW_INDEX = monthIndex(YEAR, MONTH);
+
+let viewYear = YEAR;
+let viewMonth = MONTH;
+
+const inRange = (y, m) => Math.abs(monthIndex(y, m) - NOW_INDEX) <= MONTH_RANGE;
+const daysIn = (y, m) => new Date(y, m + 1, 0).getDate();
 
 let selectedKey = TODAY_KEY;
 let selectedDay = today.getDate();
@@ -1031,10 +2119,13 @@ function buildNotable(year) {
   return table;
 }
 
-const NOTABLE = buildNotable(YEAR);
+/* Travelling across New Year means a second year's table, so they're
+   built on demand and kept. */
+const notableCache = {};
+const notableTable = (year) => notableCache[year] || (notableCache[year] = buildNotable(year));
 
 function notableFor(date) {
-  const hit = NOTABLE[monthDay(date)];
+  const hit = notableTable(date.getFullYear())[monthDay(date)];
   if (hit) return hit;
   // Nothing scheduled, but an unlucky Friday is worth marking anyway.
   if (date.getDate() === 13 && date.getDay() === 5) {
@@ -1139,6 +2230,19 @@ listsEl.addEventListener("change", (e) => {
   item.done = e.target.checked;
   row.classList.toggle("done", item.done);
   save();
+
+  // Finishing something pops; un-finishing it quietly doesn't.
+  if (item.done) {
+    replay(row, "just-done", 560);
+    // The dots come out the colour of the tick, which a coloured list
+    // has already re-tinted for us.
+    const tick = getComputedStyle(e.target).accentColor;
+    burst(e.target, {
+      color: tick && tick !== "auto" ? tick : "#22C55E",
+      count: 8,
+      spread: 26,
+    });
+  }
 });
 
 // Structural changes do re-render, so focus is restored explicitly.
@@ -1229,16 +2333,29 @@ const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January", "February", "March", "April", "May", "June",
                 "July", "August", "September", "October", "November", "December"];
 
+const prevBtn = document.getElementById("cal-prev");
+const nextBtn = document.getElementById("cal-next");
+const backBtn = document.getElementById("cal-back");
+
 function renderCalendarHead() {
   const weekday = today.toLocaleDateString(undefined, { weekday: "long" });
-  document.getElementById("cal-month").textContent = `${MONTHS[MONTH]} ${YEAR}`;
-  document.getElementById("cal-today").textContent = `${weekday} ${formatDMY(today)}`;
+  const onNow = viewYear === YEAR && viewMonth === MONTH;
+
+  document.getElementById("cal-month").textContent = `${MONTHS[viewMonth]} ${viewYear}`;
+  // The second line always names the real today, so a month spent looking
+  // ahead never leaves you unsure what the actual date is.
+  document.getElementById("cal-today").textContent =
+    onNow ? `${weekday} ${formatDMY(today)}` : `Today is ${weekday} ${formatDMY(today)}`;
+
+  prevBtn.disabled = !inRange(viewYear, viewMonth - 1);
+  nextBtn.disabled = !inRange(viewYear, viewMonth + 1);
+  backBtn.hidden = onNow;
 }
 
 function renderCalendar() {
-  const first = new Date(YEAR, MONTH, 1);
+  const first = new Date(viewYear, viewMonth, 1);
   const offset = (first.getDay() - CONFIG.weekStart + 7) % 7;
-  const daysInMonth = new Date(YEAR, MONTH + 1, 0).getDate();
+  const daysInMonth = daysIn(viewYear, viewMonth);
 
   // Weekday headers, rotated to match weekStart. Hidden from screen readers —
   // each day button already carries its full date in the aria-label.
@@ -1253,7 +2370,7 @@ function renderCalendar() {
   }
 
   for (let day = 1; day <= daysInMonth; day++) {
-    const date = new Date(YEAR, MONTH, day);
+    const date = new Date(viewYear, viewMonth, day);
     const key = keyOf(date);
     const count = (state.notes[key] || []).length;
 
@@ -1298,6 +2415,70 @@ function renderCalendar() {
 
   gridEl.innerHTML = html;
 }
+
+/* Moves the grid to another month, if it's within reach. `dir` is which
+   way we travelled, so the new month can slide in from that side. */
+function showMonth(y, m, dir, dayHint) {
+  if (!inRange(y, m)) return false;
+
+  // Callers are allowed to pass month 12 or -1 — normalise the rollover
+  // back into a real year/month pair before anything reads them.
+  const idx = monthIndex(y, m);
+  y = Math.floor(idx / 12);
+  m = idx - y * 12;
+
+  viewYear = y;
+  viewMonth = m;
+
+  // Landing back on the current month puts you on today; anywhere else
+  // keeps the day you were on, clamped to a short month. An arrow key
+  // that walked over the edge asks for a specific day instead.
+  const day = dayHint != null
+    ? Math.min(dayHint, daysIn(y, m))
+    : (y === YEAR && m === MONTH ? today.getDate() : Math.min(selectedDay, daysIn(y, m)));
+
+  selectedDay = day;
+  selectedKey = keyOf(new Date(y, m, day));
+
+  renderCalendarHead();
+  renderCalendar();
+  renderNotes();
+
+  if (dir) {
+    gridEl.classList.remove("from-left", "from-right");
+    void gridEl.offsetWidth;
+    gridEl.classList.add(dir > 0 ? "from-right" : "from-left");
+  }
+  return true;
+}
+
+/* Steps by whole months and keeps focus on the grid, so the arrows can be
+   held down or tabbed to without losing your place. */
+function stepMonth(delta) {
+  const moved = showMonth(viewYear, viewMonth + delta, delta);
+  if (!moved) return;
+
+  const active = document.activeElement;
+  // Focus follows into the grid only if it was already there.
+  if (gridEl.contains(active)) focusSelected();
+  // Otherwise it's on an arrow — and that arrow may have just greyed out
+  // at the end of the range, which would drop focus to nowhere.
+  else if (active && active.disabled) (delta < 0 ? nextBtn : prevBtn).focus();
+}
+
+function focusSelected() {
+  const cell = gridEl.querySelector(".cal-day.selected");
+  if (cell) cell.focus();
+}
+
+prevBtn.addEventListener("click", () => stepMonth(-1));
+nextBtn.addEventListener("click", () => stepMonth(1));
+
+backBtn.addEventListener("click", () => {
+  const dir = monthIndex(viewYear, viewMonth) > NOW_INDEX ? -1 : 1;
+  showMonth(YEAR, MONTH, dir);
+  focusSelected();
+});
 
 /* Index of a note just added, so only that one pops on the next render. */
 let popNote = -1;
@@ -1344,14 +2525,35 @@ function selectDay(key, day) {
 gridEl.addEventListener("click", (e) => {
   const cell = e.target.closest(".cal-day[data-key]");
   if (!cell) return;
-  selectDay(cell.dataset.key, Number(cell.dataset.day));
-  gridEl.querySelector(".cal-day.selected").focus();
+
+  // Asked before selectDay(), which rebuilds the grid and leaves this
+  // node detached.
+  const party = cell.classList.contains("birthday");
+  const key = cell.dataset.key;
+
+  selectDay(key, Number(cell.dataset.day));
+  focusSelected();
+
+  // Poking your own birthday should do something, whichever year's
+  // square you poked.
+  if (party) {
+    celebrateBirthday(key === TODAY_KEY
+      ? "Many happy returns 🎂"
+      : `${prettyBirthday(state.birthday)} — it's in the diary 🎂`);
+  }
 });
 
 // Roving tabindex — arrow keys walk the grid instead of tabbing 31 times.
 gridEl.addEventListener("keydown", (e) => {
   const moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
-  const daysInMonth = new Date(YEAR, MONTH + 1, 0).getDate();
+  const daysInMonth = daysIn(viewYear, viewMonth);
+
+  // Page Up/Down jump a whole month, the same as the arrows beside the title.
+  if (e.key === "PageUp" || e.key === "PageDown") {
+    e.preventDefault();
+    stepMonth(e.key === "PageUp" ? -1 : 1);
+    return;
+  }
 
   let target = null;
   if (e.key in moves) target = selectedDay + moves[e.key];
@@ -1359,11 +2561,21 @@ gridEl.addEventListener("keydown", (e) => {
   else if (e.key === "End") target = daysInMonth;
   else return;
 
-  if (target < 1 || target > daysInMonth) return;
-  e.preventDefault();
+  // Walking off either end carries you into the next month rather than
+  // stopping dead — as long as it's still within range.
+  if (target < 1 || target > daysInMonth) {
+    const spill = new Date(viewYear, viewMonth, target);
+    if (!inRange(spill.getFullYear(), spill.getMonth())) return;
+    e.preventDefault();
 
-  selectDay(keyOf(new Date(YEAR, MONTH, target)), target);
-  gridEl.querySelector(".cal-day.selected").focus();
+    showMonth(spill.getFullYear(), spill.getMonth(), target < 1 ? -1 : 1, spill.getDate());
+    focusSelected();
+    return;
+  }
+
+  e.preventDefault();
+  selectDay(keyOf(new Date(viewYear, viewMonth, target)), target);
+  focusSelected();
 });
 
 notesEl.addEventListener("submit", (e) => {
@@ -1402,6 +2614,8 @@ notesEl.addEventListener("click", (e) => {
 const weatherEl = document.getElementById("weather");
 
 function renderWeatherLoading() {
+  wxIcon = null;
+  stopWeatherFx();
   weatherEl.innerHTML = `
     <div class="skeleton circle"></div>
     <div class="skeleton bar-lg"></div>
@@ -1448,14 +2662,24 @@ async function fetchWeather() {
     const hi = data.daily && data.daily.temperature_2m_max[0];
     const lo = data.daily && data.daily.temperature_2m_min[0];
 
+    // The icon is wrapped in a real button rather than being made
+    // clickable in place — it's a control now, and it should be
+    // reachable by keyboard and announced as one.
     weatherEl.innerHTML = `
-      ${WEATHER_ICON[icon]}
+      <button class="wx-btn" id="wx-btn" title="${escapeHtml(label)} — have a bit more of it"
+              aria-label="Play the ${escapeHtml(label.toLowerCase())} animation">
+        ${WEATHER_ICON[icon]}
+      </button>
       <p class="weather-temp">${Math.round(cur.temperature_2m)}${deg}</p>
       <p class="weather-cond">${label}</p>
       <p class="weather-place">${escapeHtml(CONFIG.place)}</p>
       ${hi != null && lo != null
         ? `<p class="weather-range">High ${Math.round(hi)}${deg} · Low ${Math.round(lo)}${deg}</p>`
         : ""}`;
+
+    // What the panel is allowed to throw around until the next refresh.
+    wxIcon = icon;
+    scheduleAmbient();
   } catch (err) {
     // No forecast, so fall back to the clock for day vs night. The sky
     // stays neutral rather than guessing at a condition.
@@ -1474,6 +2698,171 @@ async function fetchWeather() {
 
 document.getElementById("weather-refresh").addEventListener("click", fetchWeather);
 window.addEventListener("online", fetchWeather);
+
+/* ============================================================
+   WEATHER FX — the panel does whatever the sky is doing
+   ============================================================ */
+/* Click the icon and you get the downpour. Left alone, the same recipe
+   runs every half-minute or so at a fraction of the count: three drops
+   rather than fifty, a couple of flakes rather than a flurry. Same code
+   path, one multiplier apart — so there's never a version of this that
+   only exists in the loud mode and quietly rots. */
+const wxLayer = document.getElementById("wx-fx");
+
+let wxIcon = null;        // which icon is on screen, or null while loading
+let ambientTimer = null;
+
+/* count is for a click; the ambient pass takes a fraction of it. */
+const WX_FX = {
+  sun:      { kind: "spark", chars: ["✨", "☀", "✦", "✳"], count: 16 },
+  moon:     { kind: "spark", chars: ["✦", "✧", "⭐", "✩"], count: 14 },
+  cloudSun: { kind: "cloud", chars: ["☁", "⛅"],           count: 6 },
+  cloud:    { kind: "cloud", chars: ["☁", "☁", "🌥"],      count: 7 },
+  fog:      { kind: "band",                                count: 6 },
+  drizzle:  { kind: "rain",                                count: 26 },
+  rain:     { kind: "rain",                                count: 50 },
+  snow:     { kind: "snow", chars: ["❄", "❅", "❆", "✻"],   count: 34 },
+  thunder:  { kind: "rain", count: 44, flash: true },
+};
+
+/* Ambient runs get a quarter of the particles and are slowed down and
+   faded out on top of that, so they read as the weather drifting past
+   rather than as something having gone off. */
+const AMBIENT_SHARE = 0.22;
+
+function stopWeatherFx() {
+  clearTimeout(ambientTimer);
+  ambientTimer = null;
+  wxLayer.replaceChildren();
+}
+
+/* Appends one particle and has it clean itself up. Everything that
+   varies — where it starts, how far it goes, how long it takes — is set
+   here as an inline custom property; the keyframes are shared. */
+function wxSpawn(className, styles, text) {
+  const el = document.createElement("span");
+  el.className = className;
+  if (text) el.textContent = text;
+  Object.entries(styles).forEach(([k, v]) =>
+    k.startsWith("--") ? el.style.setProperty(k, v) : (el.style[k] = v));
+  el.addEventListener("animationend", () => el.remove());
+  wxLayer.appendChild(el);
+}
+
+function playWeather(loud) {
+  if (!motionOK() || !wxIcon) return;
+
+  const fx = WX_FX[wxIcon];
+  if (!fx) return;
+
+  // A hidden or unmeasured panel (mid-refresh, or the tab in the
+  // background) would put everything at 0×0 — better to skip the run.
+  const box = wxLayer.getBoundingClientRect();
+  if (box.height < 40 || box.width < 40) return;
+
+  const count = Math.max(1, Math.round(fx.count * (loud ? 1 : AMBIENT_SHARE)));
+  const slow = loud ? 1 : 1.5;          // ambient drifts rather than falls
+  const dim = loud ? 1 : 0.55;
+  const fall = `${box.height + 60}px`;
+
+  // A held-down click shouldn't be able to pile up thousands of nodes.
+  if (wxLayer.childElementCount > 260) wxLayer.replaceChildren();
+
+  for (let i = 0; i < count; i++) {
+    const delay = `${rand(0, loud ? 0.9 : 2.4).toFixed(2)}s`;
+
+    if (fx.kind === "rain") {
+      wxSpawn("wx-drop", {
+        left: `${rand(0, 100).toFixed(1)}%`,
+        height: `${rand(9, 26).toFixed(0)}px`,
+        animationDuration: `${(rand(0.5, 0.95) * slow).toFixed(2)}s`,
+        animationDelay: delay,
+        "--fall": fall,
+        "--o": (rand(0.3, 0.8) * dim).toFixed(2),
+      });
+    } else if (fx.kind === "snow") {
+      wxSpawn("wx-flake", {
+        left: `${rand(0, 96).toFixed(1)}%`,
+        fontSize: `${rand(9, 19).toFixed(0)}px`,
+        animationDuration: `${(rand(3, 6) * slow).toFixed(2)}s`,
+        animationDelay: delay,
+        "--fall": fall,
+        "--sway": `${rand(-30, 30).toFixed(0)}px`,
+        "--o": (rand(0.45, 0.95) * dim).toFixed(2),
+      }, pick(fx.chars));
+    } else if (fx.kind === "spark") {
+      // Sparks start scattered around the icon and float up out of it.
+      wxSpawn("wx-spark", {
+        left: `${rand(8, 88).toFixed(1)}%`,
+        top: `${rand(28, 78).toFixed(1)}%`,
+        fontSize: `${rand(10, 20).toFixed(0)}px`,
+        animationDuration: `${(rand(1.3, 2.4) * slow).toFixed(2)}s`,
+        animationDelay: delay,
+        "--o": (rand(0.5, 1) * dim).toFixed(2),
+      }, pick(fx.chars));
+    } else if (fx.kind === "cloud") {
+      const right = Math.random() < 0.5;
+      wxSpawn("wx-cloud", {
+        left: right ? "-70px" : "auto",
+        right: right ? "auto" : "-70px",
+        top: `${rand(4, 74).toFixed(1)}%`,
+        fontSize: `${rand(18, 38).toFixed(0)}px`,
+        animationDuration: `${(rand(7, 15) * slow).toFixed(2)}s`,
+        animationDelay: delay,
+        "--cross": `${(right ? 1 : -1) * (box.width + 150)}px`,
+        "--o": (rand(0.25, 0.6) * dim).toFixed(2),
+      }, pick(fx.chars));
+    } else if (fx.kind === "band") {
+      wxSpawn("wx-band", {
+        top: `${rand(8, 88).toFixed(1)}%`,
+        width: `${rand(50, 100).toFixed(0)}%`,
+        height: `${rand(8, 18).toFixed(0)}px`,
+        animationDuration: `${(rand(6, 12) * slow).toFixed(2)}s`,
+        animationDelay: delay,
+        "--cross": `${box.width + 220}px`,
+        "--o": (rand(0.3, 0.7) * dim).toFixed(2),
+      });
+    }
+  }
+
+  // The lightning goes over the top of its own rain.
+  if (fx.flash) {
+    wxSpawn("wx-flash", {
+      animationDelay: `${rand(0.1, 0.5).toFixed(2)}s`,
+      "--o": (loud ? 0.85 : 0.3).toFixed(2),
+    });
+  }
+}
+
+/* Unprompted runs, on a wandering interval so they never settle into a
+   rhythm you can predict. Nothing is scheduled while the tab is hidden,
+   the gate is up, or animations are off. */
+function scheduleAmbient() {
+  clearTimeout(ambientTimer);
+  if (!motionOK() || !wxIcon) return;
+
+  ambientTimer = setTimeout(() => {
+    ambientTimer = null;
+    if (!document.hidden && !document.documentElement.hasAttribute("data-locked")) {
+      playWeather(false);
+    }
+    scheduleAmbient();
+  }, rand(22000, 62000));
+}
+
+// A tab that comes back from the background restarts the clock rather
+// than firing whatever it slept through.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) scheduleAmbient();
+});
+
+weatherEl.addEventListener("click", (e) => {
+  if (!e.target.closest(".wx-btn")) return;
+  playWeather(true);
+  replay(weatherEl.querySelector(".weather-icon"), "wx-hit", 1500);
+  // The next unprompted one shouldn't land right on top of this.
+  scheduleAmbient();
+});
 
 /* ============================================================
    BACKUP — export / import the whole planner as JSON
@@ -1506,12 +2895,18 @@ importFile.addEventListener("change", async () => {
       lists: parsed.lists.map((l) => ({ ...l, color: cleanColor(l.color) })),
       notes: parsed.notes,
       birthday: cleanBirthday(parsed.birthday),
+      // Backups from before settings existed simply come back as defaults.
+      settings: cleanSettings(parsed.settings),
     };
     save();
+    applyLocation();
+    applyAnimSetting();
     renderLists();
     renderCalendar();
     renderNotes();
     renderCake();
+    // The backup may have been made somewhere else entirely.
+    fetchWeather();
   } catch (err) {
     alert("That doesn't look like a Day Planner backup file.");
   } finally {
@@ -1528,9 +2923,14 @@ const bdayInput = document.getElementById("bday-input");
 
 function renderCake() {
   const set = Boolean(state.birthday);
-  cakeBtn.classList.toggle("set", set);
+  const isTheDay = set && isBirthday(today);
 
-  const label = set
+  cakeBtn.classList.toggle("set", set);
+  cakeBtn.classList.toggle("is-today", isTheDay);
+
+  const label = isTheDay
+    ? "Happy birthday! Change your birthday"
+    : set
     ? `Your birthday is ${prettyBirthday(state.birthday)}. Change it`
     : "Set your birthday";
   cakeBtn.setAttribute("aria-label", label);
@@ -1567,9 +2967,298 @@ bdayDialog.addEventListener("close", () => {
   renderCake();
   renderCalendar();
   renderNotes();
-  cakeBtn.classList.remove("pop");
-  void cakeBtn.offsetWidth;   // restart the animation on a repeat save
-  cakeBtn.classList.add("pop");
+
+  // The cake itself pops, and throws a bit of party out with it — but
+  // only when there's actually a birthday to celebrate.
+  if (state.birthday) {
+    replay(cakeBtn, "pop-cake", 700);
+    burst(cakeBtn, { chars: ["🎉", "✨", "🎈", "🍰"], count: 12, spread: 40 });
+  }
+});
+
+/* ============================================================
+   THE GATE — a riddle no robot is going to enjoy
+   ============================================================ */
+const gateEl = document.getElementById("gate");
+const gateForm = document.getElementById("gate-form");
+const gateInput = document.getElementById("gate-input");
+const gateMsg = document.getElementById("gate-msg");
+const plannerEl = document.querySelector(".planner");
+
+/* Answers are compared on letters alone, so punctuation, capitals and
+   spacing are all forgiven — "I don't know!" and "idk" are the same
+   shrug. */
+const ACCEPTED = new Set([
+  "idk", "dunno", "donno",
+  "idontknow", "idonotknow", "dontknow", "donotknow",
+  "noidea", "noclue", "whoknows", "beatsme",
+]);
+
+const normalise = (s) => s.toLowerCase().replace(/[^a-z]/g, "");
+
+let attempts = 0;
+
+/* Nothing behind the gate is reachable: inert takes the planner out of
+   the tab order and off the accessibility tree, so the blur isn't the
+   only thing standing in the way. */
+function lock() {
+  plannerEl.inert = true;
+  cakeBtn.inert = true;
+  gearBtn.inert = true;
+}
+
+function unlock() {
+  document.documentElement.removeAttribute("data-locked");
+  plannerEl.inert = false;
+  cakeBtn.inert = false;
+  gearBtn.inert = false;
+
+  gateEl.classList.add("leaving");
+  burst(gateEl.querySelector(".gate-card"), {
+    chars: ["✅", "✨", "🎊"],
+    count: 12,
+    spread: 90,
+  });
+
+  // Removing the gate takes focus with it, so it's handed to the calendar.
+  setTimeout(() => {
+    gateEl.remove();
+    focusSelected();
+    // If it turns out to be the day, you don't have to go looking for it:
+    // the cake throws a handful and the whole window joins in.
+    if (isBirthday(today)) {
+      burst(cakeBtn, { chars: ["🎉", "🎈", "✨"], count: 14, spread: 46 });
+      celebrateBirthday("Many happy returns 🎂");
+    }
+    scheduleAmbient();
+  }, 420);
+}
+
+gateForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+
+  if (ACCEPTED.has(normalise(gateInput.value))) {
+    gateMsg.classList.remove("bad");
+    gateMsg.textContent = "Correct. Nobody knows.";
+    unlock();
+    return;
+  }
+
+  attempts++;
+  replay(gateForm, "wrong", 500);
+  gateInput.select();
+  gateMsg.classList.add("bad");
+  gateMsg.textContent = attempts === 1
+    ? "No. Think about it less."
+    : attempts === 2
+    ? "Still no. Three letters. You genuinely have no idea."
+    : "The answer is that you don't know. Type that.";
+});
+
+/* ============================================================
+   SETTINGS — the gear in the corner
+   ============================================================ */
+const gearBtn = document.getElementById("gear-btn");
+const settingsDialog = document.getElementById("settings-dialog");
+const animToggle = document.getElementById("anim-toggle");
+const locCurrent = document.getElementById("loc-current");
+const locForm = document.getElementById("loc-form");
+const locInput = document.getElementById("loc-input");
+const locMsg = document.getElementById("loc-msg");
+const locResults = document.getElementById("loc-results");
+const wipeBtn = document.getElementById("wipe-btn");
+const wipeForm = document.getElementById("wipe-form");
+const wipeInput = document.getElementById("wipe-input");
+const wipeMsg = document.getElementById("wipe-msg");
+
+/* CONFIG is edited in place rather than read through a getter, so every
+   existing use of CONFIG.latitude keeps working untouched. HOME is what
+   it goes back to when there's no saved location. */
+function applyLocation() {
+  const loc = state.settings.location || HOME;
+  CONFIG.latitude = loc.latitude;
+  CONFIG.longitude = loc.longitude;
+  CONFIG.place = loc.place;
+}
+
+function renderSettings() {
+  animToggle.setAttribute("aria-checked", String(state.settings.animations));
+  locCurrent.textContent =
+    `${CONFIG.place} · ${CONFIG.latitude.toFixed(2)}, ${CONFIG.longitude.toFixed(2)}` +
+    (state.settings.location ? "" : " (default)");
+}
+
+gearBtn.addEventListener("click", () => {
+  renderSettings();
+  resetWipe();
+  locInput.value = "";
+  locMsg.textContent = "";
+  locResults.replaceChildren();
+  replay(gearBtn, "turning", 800);
+  settingsDialog.showModal();
+});
+
+document.getElementById("settings-done").addEventListener("click", () => settingsDialog.close());
+settingsDialog.addEventListener("close", resetWipe);
+
+/* ---- Animations ---- */
+animToggle.addEventListener("click", () => {
+  state.settings.animations = animToggle.getAttribute("aria-checked") !== "true";
+  save();
+  applyAnimSetting();
+  renderSettings();
+  announce(state.settings.animations ? "Animations on." : "Animations off.");
+  // No burst to celebrate it: a modal dialog sits in the top layer, where
+  // a fixed-position particle can't reach it. The switch slides, which is
+  // demonstration enough.
+});
+
+/* ---- Location -------------------------------------------------------
+   A name goes to Open-Meteo's geocoder; a "lat, lon" pair is taken as
+   read. Same field for both — typing coordinates into a search box is a
+   reasonable thing to try, so it may as well work. */
+const COORD_RE = /^\s*(-?\d{1,3}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/;
+
+function setLocation(loc) {
+  state.settings.location = loc;
+  save();
+  applyLocation();
+  renderSettings();
+  locResults.replaceChildren();
+  locInput.value = "";
+  locMsg.textContent = `Weather is now for ${loc.place}.`;
+  announce(`Location set to ${loc.place}.`);
+  fetchWeather();
+}
+
+locForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const query = locInput.value.trim();
+  if (!query) return;
+  locResults.replaceChildren();
+
+  const coords = query.match(COORD_RE);
+  if (coords) {
+    const loc = cleanLocation({ latitude: coords[1], longitude: coords[2] });
+    if (loc) setLocation(loc);
+    else locMsg.textContent = "That isn't a point on the planet.";
+    return;
+  }
+
+  locMsg.textContent = "Looking…";
+
+  try {
+    const url = new URL("https://geocoding-api.open-meteo.com/v1/search");
+    url.search = new URLSearchParams({ name: query, count: 6, language: "en", format: "json" });
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+
+    const hits = (await res.json()).results || [];
+    if (!hits.length) {
+      locMsg.textContent = `Nothing called “${query}”. Try a bigger town nearby.`;
+      return;
+    }
+
+    locMsg.textContent = hits.length === 1 ? "One match:" : "Which one?";
+
+    // Built as nodes rather than markup: these strings come back from a
+    // third party and go straight onto the page.
+    hits.forEach((hit) => {
+      const loc = cleanLocation({
+        latitude: hit.latitude,
+        longitude: hit.longitude,
+        place: [hit.name, hit.admin1, hit.country].filter(Boolean).join(", "),
+      });
+      if (!loc) return;
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "loc-hit";
+      btn.append(hit.name);
+
+      const detail = [hit.admin1, hit.country].filter(Boolean).join(" · ");
+      if (detail) {
+        const small = document.createElement("small");
+        small.textContent = detail;
+        btn.append(small);
+      }
+
+      btn.addEventListener("click", () => setLocation(loc));
+      locResults.append(btn);
+    });
+  } catch (err) {
+    locMsg.textContent = navigator.onLine
+      ? "Couldn't reach the place finder."
+      : "You're offline — searching needs a connection.";
+  }
+});
+
+/* ---- Clear everything -----------------------------------------------
+   Guarded the same way the front door is: not a confirm box you can
+   click through without reading, but a question you have to answer. The
+   answer is, again, the honest one. */
+const WIPE_ANSWERS = new Set([
+  "nothing", "nothingatall", "notathing", "nada", "nowt", "none", "nil",
+  "zilch", "zip", "zero", "nought", "naught", "empty", "emptiness",
+  "sodall", "buggerall", "sweetfa", "squat", "diddlysquat", "blank",
+]);
+
+let wipeTries = 0;
+
+function resetWipe() {
+  wipeForm.hidden = true;
+  wipeBtn.hidden = false;
+  wipeInput.value = "";
+  wipeMsg.textContent = "";
+  wipeMsg.classList.remove("bad");
+  wipeTries = 0;
+}
+
+wipeBtn.addEventListener("click", () => {
+  wipeBtn.hidden = true;
+  wipeForm.hidden = false;
+  wipeInput.focus();
+});
+
+document.getElementById("wipe-cancel").addEventListener("click", () => {
+  resetWipe();
+  wipeBtn.focus();
+});
+
+wipeForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+
+  if (!WIPE_ANSWERS.has(normalise(wipeInput.value))) {
+    wipeTries++;
+    replay(wipeForm, "wrong", 500);
+    wipeInput.select();
+    wipeMsg.classList.add("bad");
+    wipeMsg.textContent = wipeTries === 1
+      ? "No. Picture the planner with everything gone from it."
+      : wipeTries === 2
+      ? "Still no. One word, and it's what you'd be left holding."
+      : "The answer is nothing. Type that, if you're sure.";
+    return;
+  }
+
+  state = { lists: [], notes: {}, birthday: null, settings: defaultSettings() };
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (err) {
+    console.warn("Could not clear storage:", err);
+  }
+
+  applyLocation();
+  applyAnimSetting();
+  showMonth(YEAR, MONTH, 0);   // back to this month, on today
+  renderLists();
+  renderCake();
+  fetchWeather();
+
+  settingsDialog.close();
+  announce("Everything cleared. The planner is empty.");
 });
 
 /* ============================================================
@@ -1579,8 +3268,15 @@ document.getElementById("add-list-icon").innerHTML = ICON.plus;
 document.getElementById("export-btn").innerHTML = ICON.download;
 document.getElementById("import-btn").innerHTML = ICON.upload;
 document.getElementById("weather-refresh").innerHTML = ICON.refresh;
+gearBtn.innerHTML = ICON.gear;
+prevBtn.innerHTML = ICON.chevronLeft;
+nextBtn.innerHTML = ICON.chevronRight;
 
+lock();
 load();
+applyLocation();
+applyAnimSetting();
+renderSettings();
 applyTheme();
 renderLists();
 renderCalendarHead();
@@ -1588,6 +3284,10 @@ renderCalendar();
 renderNotes();
 renderCake();
 fetchWeather();
+gateInput.focus();
+// The entrance has played by now; letting go of it frees the animation
+// slot for the shake.
+setTimeout(() => gateForm.classList.remove("entering"), 600);
 </script>
 </body>
 </html>
