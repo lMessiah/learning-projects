@@ -1,0 +1,2309 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-motion="on">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>shcherbakov.co — web design, from Malta</title>
+  <meta name="description" content="A small web design group in Malta. Hand-built, fast, careful websites for the businesses around us. Small island, serious websites.">
+  <meta name="theme-color" content="#d9dde3" id="themeColor">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 50 L32 8 L50 24 L68 8 Z M50 50 L92 32 L76 50 L92 68 Z M50 50 L68 92 L50 76 L32 92 Z M50 50 L8 68 L24 50 L8 32 Z' fill='%238d95a1'/%3E%3C/svg%3E">
+
+  <!-- settings are applied before first paint, so there's no flash of the wrong theme -->
+  <script>
+    (function () {
+      var r = document.documentElement, t, m, l;
+      try {
+        t = localStorage.getItem('sc-theme');
+        m = localStorage.getItem('sc-motion');
+        l = localStorage.getItem('sc-lang');
+      } catch (e) {}
+      var dark = t === 'dark' ||
+        ((!t || t === 'auto') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      r.setAttribute('data-theme', dark ? 'dark' : 'light');
+      var on = m === null || m === undefined
+        ? !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        : m === 'on';
+      r.setAttribute('data-motion', on ? 'on' : 'off');
+      /* no language on file yet — the flag picker takes the first screen */
+      if (l === 'mt' || l === 'en') r.setAttribute('lang', l);
+      else r.setAttribute('data-picker', 'on');
+    })();
+  </script>
+
+  <style>
+    /* ─────────────────────────────────────────────
+       shcherbakov.co — home
+       silver, glass, and a rainbow edge
+       ───────────────────────────────────────────── */
+
+    @property --spin {
+      syntax: '<angle>';
+      initial-value: 0deg;
+      inherits: false;
+    }
+
+    /* ── light theme (default) ───────────────────── */
+    :root {
+      --silver-100: #ffffff;
+      --silver-200: #f2f4f7;
+      --silver-300: #dfe3e9;
+      --silver-400: #c6ccd5;
+      --silver-500: #a6aeba;
+      --silver-600: #808997;
+      --ink:        #171a1f;
+      --ink-soft:   #4c545f;
+      --ink-faint:  #79828f;
+
+      --edge:   rgba(255, 255, 255, 0.75);
+      --shadow: rgba(23, 26, 31, 0.14);
+      --shadow-deep: rgba(23, 26, 31, 0.18);
+      --rule:   rgba(23, 26, 31, 0.12);
+
+      /* glass fills — every frosted surface reads from these */
+      --glass-hi: rgba(255, 255, 255, 0.80);
+      --glass-md: rgba(255, 255, 255, 0.46);
+      --glass-lo: rgba(255, 255, 255, 0.28);
+      --glass-in: rgba(255, 255, 255, 0.92);
+      --chip-bg:  rgba(255, 255, 255, 0.68);
+      --chip-edge: rgba(23, 26, 31, 0.07);
+      --mix-base: #ffffff;
+      --url-ink:  #23282f;
+
+      /* ── Malta ── flag red, globigerina limestone, the sea, balcony green */
+      --mt-red:     #c8102e;
+      --mt-red-2:   #e2384f;
+      --mt-stone:   #d3ab6a;
+      --mt-stone-2: #f0dcae;
+      --mt-sea:     #1b7fa8;
+      --mt-sea-2:   #4fb3d0;
+
+      --aurora-1: rgba(200, 16, 46, 0.22);
+      --aurora-2: rgba(27, 127, 168, 0.28);
+      --aurora-3: rgba(211, 171, 106, 0.34);
+
+      --page-bg: #cfd4dc;
+      --page-wash:
+        radial-gradient(120% 80% at 8% -10%,  rgba(255,255,255,0.95), transparent 55%),
+        radial-gradient(72%  56% at 92% 2%,   rgba(211,171,106,0.34), transparent 62%),
+        radial-gradient(60%  48% at 6%  46%,  rgba(200,16,46,0.10),   transparent 64%),
+        radial-gradient(84%  62% at 52% 104%, rgba(27,127,168,0.30),  transparent 64%),
+        linear-gradient(168deg, #f6f7f5 0%, #dcdfe3 26%, #bac1ca 52%, #e2e1dc 74%, #c4cbd4 100%);
+
+      --grain-blend: multiply;
+      --grain-opacity: 0.05;
+
+      /* dark polished steel — the hero has to cut against a pale page, so the
+         sheen band stays narrow and never climbs past mid-grey */
+      --chrome-ramp: linear-gradient(174deg,
+        #0d1015 0%, #222833 14%, #3c4553 26%,
+        #6e7988 33%, #93a0af 35.5%, #545e6b 39%,
+        #2b3340 52%, #10141a 66%, #39424f 82%, #0d1116 100%);
+      --chrome-lift: rgba(255, 255, 255, 0.90);
+      --chrome-halo: rgba(255, 255, 255, 0.85);
+      --chrome-drop: rgba(23, 26, 31, 0.16);
+
+      --btn-ink:  #f7f9fb;
+      --btn-grad: linear-gradient(170deg, #454e5b, #1d2229 60%, #12161b);
+      --btn-glow: rgba(23, 26, 31, 0.30);
+
+      --panel-grad: linear-gradient(165deg, #3a424f, #1c2129 55%, #10141a);
+      --panel-edge: rgba(255, 255, 255, 0.16);
+
+      --glow: rgba(255, 255, 255, 0.55);
+
+      /* the band of light that carries a language change across the page */
+      --swish-lo: rgba(255, 255, 255, 0.42);
+      --swish-hi: rgba(255, 255, 255, 0.98);
+
+      /* the picker sits over a blurred page, so it needs more body than glass */
+      --picker-card: linear-gradient(155deg,
+        rgba(255, 255, 255, 0.93), rgba(255, 255, 255, 0.62));
+
+      --rainbow: conic-gradient(from var(--spin),
+        #ff3b30, #ff9500, #ffcc00, #34c759,
+        #00c7be, #32ade6, #5856d6, #af52de,
+        #ff2d55, #ff3b30);
+      --rainbow-line: linear-gradient(90deg, transparent,
+        #ff3b30, #ff9500, #ffcc00, #34c759, #32ade6, #5856d6, #af52de, transparent);
+
+      --frame: clamp(9px, 1.4vw, 16px);
+      --shell: 1120px;
+
+      --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+    }
+
+    /* ── dark theme ──────────────────────────────── */
+    :root[data-theme="dark"] {
+      --silver-100: #2b313a;
+      --silver-200: #232830;
+      --silver-300: #1d222a;
+      --silver-400: #3a4250;
+      --silver-500: #59626f;
+      --silver-600: #8a929e;
+      --ink:        #eef1f5;
+      --ink-soft:   #a9b2be;
+      --ink-faint:  #7b848f;
+
+      --edge:   rgba(255, 255, 255, 0.10);
+      --shadow: rgba(0, 0, 0, 0.45);
+      --shadow-deep: rgba(0, 0, 0, 0.60);
+      --rule:   rgba(255, 255, 255, 0.12);
+
+      --glass-hi: rgba(255, 255, 255, 0.075);
+      --glass-md: rgba(255, 255, 255, 0.045);
+      --glass-lo: rgba(255, 255, 255, 0.02);
+      --glass-in: rgba(255, 255, 255, 0.10);
+      --chip-bg:  rgba(255, 255, 255, 0.06);
+      --chip-edge: rgba(255, 255, 255, 0.10);
+      --mix-base: #1b2028;
+      --url-ink:  #e8ecf2;
+
+      --mt-red:     #e2384f;
+      --mt-red-2:   #ff6478;
+      --mt-stone:   #dcbb84;
+      --mt-stone-2: #f3e2bd;
+      --mt-sea:     #4fb3d0;
+      --mt-sea-2:   #8ad3e6;
+
+      --aurora-1: rgba(226, 56, 79, 0.24);
+      --aurora-2: rgba(79, 179, 208, 0.22);
+      --aurora-3: rgba(220, 187, 132, 0.18);
+
+      --page-bg: #0b0e12;
+      --page-wash:
+        radial-gradient(120% 80% at 8% -10%,  rgba(120,134,155,0.30), transparent 55%),
+        radial-gradient(78%  60% at 94% 3%,   rgba(220,187,132,0.16), transparent 56%),
+        radial-gradient(60%  48% at 4%  50%,  rgba(226,56,79,0.12),   transparent 62%),
+        radial-gradient(84%  62% at 52% 104%, rgba(27,127,168,0.30),  transparent 62%),
+        linear-gradient(168deg, #191e26 0%, #12161d 26%, #0c1015 52%, #161b23 74%, #0d1116 100%);
+
+      --grain-blend: screen;
+      --grain-opacity: 0.045;
+
+      --chrome-ramp: linear-gradient(174deg,
+        #ffffff 0%, #e2e7ee 12%, #9aa3b1 30%,
+        #5b6472 44%, #ffffff 52%, #67707d 60%,
+        #a8b1bd 74%, #eef2f7 88%, #ffffff 100%);
+      --chrome-lift: rgba(255, 255, 255, 0.14);
+      --chrome-halo: rgba(8, 11, 15, 0.65);
+      --chrome-drop: rgba(0, 0, 0, 0.55);
+
+      --btn-ink:  #14181e;
+      --btn-grad: linear-gradient(170deg, #ffffff, #dfe4ea 60%, #c3cad4);
+      --btn-glow: rgba(0, 0, 0, 0.55);
+
+      --panel-grad: linear-gradient(165deg, #202733, #14191f 55%, #0a0d11);
+      --panel-edge: rgba(255, 255, 255, 0.10);
+
+      --glow: rgba(140, 160, 190, 0.32);
+
+      /* on a near-black page the sheen has to be cool light, not white paint */
+      --swish-lo: rgba(150, 182, 224, 0.16);
+      --swish-hi: rgba(226, 240, 255, 0.62);
+
+      --picker-card: linear-gradient(155deg,
+        rgba(41, 48, 60, 0.95), rgba(15, 19, 25, 0.95));
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      overflow-x: clip;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont,
+                   "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--ink);
+      background-color: var(--page-bg);
+      background-image: var(--page-wash);
+      background-attachment: fixed;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      overflow-x: clip;
+      transition: background-color 0.5s ease, color 0.5s ease;
+    }
+
+    /* brushed-metal grain over the whole page */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background-image: var(--grain);
+      opacity: var(--grain-opacity);
+      mix-blend-mode: var(--grain-blend);
+    }
+
+    /* ── drifting light, behind everything ───────── */
+    .aurora {
+      position: fixed;
+      inset: -20vh -20vw;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .aurora i {
+      position: absolute;
+      display: block;
+      border-radius: 50%;
+      filter: blur(70px);
+      opacity: 0.5;
+      will-change: transform;
+    }
+    .aurora i:nth-child(1) {
+      width: 44vw; height: 44vw;
+      top: 4%; left: 6%;
+      background: radial-gradient(circle, var(--aurora-1), transparent 68%);
+      animation: drift-a 26s ease-in-out infinite;
+    }
+    .aurora i:nth-child(2) {
+      width: 38vw; height: 38vw;
+      top: 28%; right: 4%;
+      background: radial-gradient(circle, var(--aurora-2), transparent 68%);
+      animation: drift-b 32s ease-in-out infinite;
+    }
+    .aurora i:nth-child(3) {
+      width: 46vw; height: 46vw;
+      bottom: 2%; left: 32%;
+      background: radial-gradient(circle, var(--aurora-3), transparent 68%);
+      animation: drift-c 38s ease-in-out infinite;
+    }
+    @keyframes drift-a {
+      50% { transform: translate3d(9vw, 7vh, 0) scale(1.14); }
+    }
+    @keyframes drift-b {
+      50% { transform: translate3d(-11vw, 9vh, 0) scale(0.88); }
+    }
+    @keyframes drift-c {
+      50% { transform: translate3d(7vw, -8vh, 0) scale(1.10); }
+    }
+
+    /* ── pointer glow, desktop only ──────────────── */
+    .cursor-glow {
+      position: fixed;
+      top: 0; left: 0;
+      width: 460px; height: 460px;
+      margin: -230px 0 0 -230px;
+      z-index: 0;
+      pointer-events: none;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--glow), transparent 62%);
+      opacity: 0;
+      transition: opacity 0.6s ease;
+      will-change: transform;
+    }
+    .cursor-glow.live { opacity: 0.7; }
+
+    /* ── the rainbow outline ─────────────────────── */
+    .rainbow-frame {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      pointer-events: none;
+      padding: var(--frame);
+      border-radius: calc(var(--frame) + 16px);
+      background: var(--rainbow);
+      -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+              mask:
+        linear-gradient(#000 0 0) content-box exclude,
+        linear-gradient(#000 0 0);
+      animation: spin 14s linear infinite;
+      filter: saturate(1.15);
+    }
+    /* soft bloom so the edge glows into the silver */
+    .rainbow-frame::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: var(--rainbow);
+      filter: blur(18px);
+      opacity: 0.35;
+      z-index: -1;
+      animation: spin 14s linear infinite;
+    }
+
+    @keyframes spin { to { --spin: 360deg; } }
+
+    /* ── scroll progress, hugging the frame ──────── */
+    .progress {
+      position: fixed;
+      top: var(--frame);
+      left: var(--frame);
+      right: var(--frame);
+      height: 2px;
+      z-index: 95;
+      pointer-events: none;
+      background: var(--rainbow-line);
+      transform: scaleX(var(--p, 0));
+      transform-origin: 0 50%;
+      opacity: 0.9;
+    }
+
+    /* ── layout ──────────────────────────────────── */
+    .page {
+      position: relative;
+      z-index: 1;
+      max-width: var(--shell);
+      margin: 0 auto;
+      padding: 0 clamp(20px, 5vw, 48px);
+    }
+
+    /* ── nav ─────────────────────────────────────── */
+    /* the header sticks, but its top padding is pulled off-screen as it does,
+       so the glass pill lands just inside the rainbow frame — and because
+       sticky elements never leave the flow, nothing below it shifts. */
+    .nav {
+      position: sticky;
+      top: calc(var(--frame) + 4px - clamp(20px, 3.5vw, 36px));
+      z-index: 60;
+      padding: clamp(20px, 3.5vw, 36px) 0 0;
+    }
+    .nav-inner {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 8px 0;
+    }
+    /* glass bar fades in behind the nav once you scroll */
+    .nav-inner::before {
+      content: "";
+      position: absolute;
+      inset: 0 calc(-1 * clamp(12px, 3vw, 26px));
+      border-radius: 100px;
+      background: linear-gradient(150deg, var(--glass-hi), var(--glass-lo));
+      border: 1px solid var(--edge);
+      box-shadow: 0 6px 22px var(--shadow), inset 0 1px 0 var(--glass-in);
+      backdrop-filter: blur(14px);
+      opacity: 0;
+      transform: translateY(-6px) scaleX(0.97);
+      transition: opacity 0.4s ease, transform 0.4s cubic-bezier(.2,.8,.2,1);
+      pointer-events: none;
+    }
+    .nav.stuck .nav-inner::before { opacity: 1; transform: none; }
+    .nav-inner > * { position: relative; }
+    /* the mark tucks in slightly once the bar is live */
+    .nav .mark { transition: transform 0.4s cubic-bezier(.2,.8,.2,1); }
+    .nav.stuck .mark { transform: scale(0.9); }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .mark { width: 38px; height: 38px; flex: none; display: block; }
+    .mark .plate {
+      transform-origin: 50% 50%;
+      animation: hover-float 7s ease-in-out infinite;
+    }
+    @keyframes hover-float {
+      50% { transform: translateY(-1.6px) rotate(2deg); }
+    }
+    .brand:hover .mark .plate { animation: nudge 0.9s cubic-bezier(.2,.8,.2,1); }
+    @keyframes nudge {
+      40% { transform: rotate(-8deg) scale(1.04); }
+      100% { transform: rotate(0) scale(1); }
+    }
+
+    .wordmark {
+      font-size: 15.5px;
+      font-weight: 620;
+      letter-spacing: -0.015em;
+    }
+    .wordmark .dotco { color: var(--ink-faint); font-weight: 500; }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: clamp(14px, 2.5vw, 30px);
+      font-size: 14px;
+      font-weight: 520;
+    }
+    .nav-links a {
+      position: relative;
+      color: var(--ink-soft);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+    .nav-links a::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; bottom: -5px;
+      height: 1.5px;
+      border-radius: 2px;
+      background: var(--rainbow-line);
+      transform: scaleX(0);
+      transform-origin: 0 50%;
+      transition: transform 0.35s cubic-bezier(.2,.8,.2,1);
+    }
+    .nav-links a:hover { color: var(--ink); }
+    .nav-links a:hover::after { transform: scaleX(1); }
+    .nav-links .hide-sm { display: inline; }
+
+    /* ── hero ────────────────────────────────────── */
+    .hero {
+      padding: clamp(56px, 11vw, 128px) 0 clamp(40px, 7vw, 76px);
+      max-width: 830px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 7px 15px 7px 11px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 560;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+      background: linear-gradient(150deg, var(--glass-hi), var(--glass-md));
+      border: 1px solid var(--edge);
+      box-shadow: 0 1px 2px var(--shadow), inset 0 1px 0 var(--glass-in);
+      backdrop-filter: blur(8px);
+    }
+    .eyebrow .mt {
+      color: var(--mt-red);
+      font-weight: 640;
+      letter-spacing: 0.05em;
+    }
+    .pip {
+      position: relative;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--rainbow);
+      animation: spin 6s linear infinite;
+      box-shadow: 0 0 0 2px var(--glass-in);
+    }
+    /* a slow ring pulses out of the pip */
+    .pip::after {
+      content: "";
+      position: absolute;
+      inset: -3px;
+      border-radius: 50%;
+      border: 1.5px solid var(--mt-red);
+      animation: pulse-ring 2.8s ease-out infinite;
+    }
+    @keyframes pulse-ring {
+      0%   { transform: scale(0.7); opacity: 0.8; }
+      70%  { transform: scale(2.1); opacity: 0; }
+      100% { transform: scale(2.1); opacity: 0; }
+    }
+
+    h1 {
+      margin: 26px 0 0;
+      font-size: clamp(46px, 9.2vw, 104px);
+      line-height: 0.94;
+      letter-spacing: -0.045em;
+      font-weight: 680;
+    }
+
+    /* the chrome ramp — slowly sweeps like light across metal */
+    .chrome {
+      background-image: var(--chrome-ramp);
+      background-size: 100% 260%;
+      background-position: 0% 0%;
+      -webkit-background-clip: text;
+              background-clip: text;
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 1px 0 var(--chrome-lift))
+              drop-shadow(0 0 26px var(--chrome-halo))
+              drop-shadow(0 3px 14px var(--chrome-drop));
+      animation: metal-sweep 9s ease-in-out infinite;
+    }
+    h1 .line-2 { animation-delay: -4.5s; }
+    @keyframes metal-sweep {
+      50% { background-position: 0% 100%; }
+    }
+
+    /* each hero line rises out from behind its own mask */
+    .lift { display: block; overflow: hidden; padding: 0 0.06em 0.06em 0; }
+    .lift > span {
+      display: block;
+      transform: translateY(118%);
+      transition: transform 1s cubic-bezier(.16,.84,.24,1);
+    }
+    .ready .lift > span { transform: none; }
+    .ready .lift:nth-of-type(2) > span { transition-delay: 0.12s; }
+
+    h1 .line-2 {
+      font-style: italic;
+      font-weight: 500;
+      letter-spacing: -0.05em;
+    }
+
+    .lede {
+      margin: 30px 0 0;
+      max-width: 60ch;
+      font-size: clamp(16.5px, 2.1vw, 20px);
+      line-height: 1.62;
+      color: var(--ink-soft);
+    }
+    .lede strong { color: var(--ink); font-weight: 600; }
+
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 38px;
+    }
+
+    /* on-load entrance, staggered by --i */
+    .enter {
+      opacity: 0;
+      transform: translateY(16px);
+      transition: opacity 0.8s ease, transform 0.8s cubic-bezier(.2,.8,.2,1);
+      transition-delay: calc(var(--i, 0) * 110ms);
+    }
+    .ready .enter { opacity: 1; transform: none; }
+
+    .btn {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 13px 22px;
+      border-radius: 100px;
+      font-size: 14.5px;
+      font-weight: 580;
+      text-decoration: none;
+      border: 1px solid transparent;
+      overflow: hidden;
+      transition: transform 0.22s cubic-bezier(.2,.8,.2,1),
+                  box-shadow 0.22s ease, background 0.22s ease;
+    }
+    .btn:hover { transform: translateY(-2px); }
+    .btn svg { transition: transform 0.28s cubic-bezier(.2,.8,.2,1); }
+    .btn:hover svg { transform: translateX(3px); }
+    /* light sweeps across the pill on hover */
+    .btn::after {
+      content: "";
+      position: absolute;
+      top: 0; bottom: 0;
+      left: -60%;
+      width: 45%;
+      background: linear-gradient(100deg, transparent, rgba(255,255,255,0.42), transparent);
+      transform: skewX(-18deg);
+      opacity: 0;
+    }
+    .btn:hover::after { animation: sweep 0.75s ease-out; }
+    @keyframes sweep {
+      0%   { left: -60%; opacity: 1; }
+      100% { left: 120%; opacity: 0; }
+    }
+
+    .btn-primary {
+      color: var(--btn-ink);
+      background: var(--btn-grad);
+      box-shadow: 0 6px 18px var(--btn-glow),
+                  inset 0 1px 0 rgba(255,255,255,0.22);
+    }
+    .btn-primary:hover { box-shadow: 0 12px 28px var(--btn-glow),
+                                     inset 0 1px 0 rgba(255,255,255,0.28); }
+
+    .btn-ghost {
+      color: var(--ink);
+      background: linear-gradient(160deg, var(--glass-hi), var(--glass-md));
+      border-color: var(--edge);
+      box-shadow: 0 2px 8px var(--shadow), inset 0 1px 0 var(--glass-in);
+      backdrop-filter: blur(8px);
+    }
+    .btn-ghost:hover { box-shadow: 0 8px 20px var(--shadow), inset 0 1px 0 var(--glass-in); }
+
+    /* ── ticker strip ────────────────────────────── */
+    .strip {
+      position: relative;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 0;
+      align-items: center;
+      padding: 18px clamp(18px, 3vw, 30px);
+      border-radius: 18px;
+      font-size: 13px;
+      font-weight: 540;
+      letter-spacing: 0.02em;
+      color: var(--ink-soft);
+      background: linear-gradient(150deg, var(--glass-hi), var(--glass-lo));
+      border: 1px solid var(--edge);
+      box-shadow: 0 2px 14px var(--shadow), inset 0 1px 0 var(--glass-in);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+    }
+    /* a flag spine down the leading edge */
+    .strip::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 5px;
+      background: linear-gradient(180deg, var(--silver-100) 50%, var(--mt-red) 50%);
+      box-shadow: 1px 0 0 var(--rule);
+      opacity: 0.92;
+    }
+    /* a shine passes along the strip every few seconds */
+    .strip::after {
+      content: "";
+      position: absolute;
+      top: 0; bottom: 0;
+      width: 30%;
+      background: linear-gradient(100deg, transparent, var(--glass-in), transparent);
+      transform: skewX(-16deg);
+      animation: strip-shine 7s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @keyframes strip-shine {
+      0%, 60%  { left: -35%; }
+      100%     { left: 110%; }
+    }
+    .strip span {
+      padding: 0 clamp(10px, 2vw, 22px);
+      transition: color 0.25s ease, transform 0.25s ease;
+    }
+    .strip span:hover { color: var(--ink); transform: translateY(-1px); }
+    .strip span + span { border-left: 1px solid var(--rule); }
+
+    /* ── sections ────────────────────────────────── */
+    section { padding: clamp(64px, 10vw, 112px) 0 0; }
+
+    .sec-head { max-width: 640px; margin-bottom: clamp(30px, 5vw, 48px); }
+
+    .kicker {
+      font-size: 12.5px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      margin: 0 0 14px;
+    }
+    /* the flag, cut down to a dash: white half, red half */
+    .kicker::before {
+      content: "";
+      display: inline-block;
+      width: 20px; height: 4px;
+      margin: 0 11px 3px 0;
+      vertical-align: middle;
+      border-radius: 2px;
+      background: linear-gradient(90deg, var(--silver-100) 50%, var(--mt-red) 50%);
+      box-shadow: 0 0 0 1px var(--chip-edge);
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(30px, 5vw, 46px);
+      line-height: 1.08;
+      letter-spacing: -0.035em;
+      font-weight: 660;
+    }
+
+    .sec-head p {
+      margin: 16px 0 0;
+      font-size: clamp(15.5px, 1.8vw, 17.5px);
+      line-height: 1.65;
+      color: var(--ink-soft);
+    }
+
+    /* ── about ───────────────────────────────────── */
+    .about-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: clamp(18px, 3vw, 26px);
+    }
+
+    .note {
+      /* each card carries one colour off the island */
+      --gl: linear-gradient(145deg, var(--mt-red), var(--mt-red-2));
+      --gl-tint: var(--mt-red);
+      padding: clamp(24px, 3vw, 32px);
+      border-radius: 20px;
+      background: linear-gradient(155deg, var(--glass-hi), var(--glass-lo));
+      border: 1px solid var(--edge);
+      box-shadow: 0 2px 16px var(--shadow), inset 0 1px 0 var(--glass-in);
+      backdrop-filter: blur(10px);
+      transition: transform 0.4s cubic-bezier(.2,.8,.2,1), box-shadow 0.4s ease;
+    }
+    .about-grid .note:nth-child(2) {
+      --gl: linear-gradient(145deg, var(--mt-sea), var(--mt-sea-2));
+      --gl-tint: var(--mt-sea);
+    }
+    .about-grid .note:nth-child(3) {
+      --gl: linear-gradient(145deg, var(--mt-stone), var(--mt-stone-2));
+      --gl-tint: var(--mt-stone);
+    }
+    .note:hover {
+      transform: translateY(-4px);
+      border-color: color-mix(in srgb, var(--gl-tint) 34%, var(--mix-base));
+      box-shadow: 0 16px 38px color-mix(in srgb, var(--gl-tint) 20%, transparent),
+                  0 2px 10px var(--shadow),
+                  inset 0 1px 0 var(--glass-in);
+    }
+    .note h3 {
+      margin: 0 0 10px;
+      font-size: 17px;
+      font-weight: 640;
+      letter-spacing: -0.02em;
+    }
+    .note p {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.68;
+      color: var(--ink-soft);
+    }
+    .note .glyph {
+      display: block;
+      width: 30px; height: 30px;
+      margin-bottom: 16px;
+      border-radius: 9px;
+      background: linear-gradient(150deg, var(--silver-100), var(--silver-400));
+      box-shadow: inset 0 1px 0 var(--glass-in), 0 2px 6px var(--shadow);
+      position: relative;
+      transition: transform 0.45s cubic-bezier(.2,.8,.2,1);
+    }
+    .note:hover .glyph { transform: rotate(-8deg) scale(1.08); }
+    .note .glyph::after {
+      content: "";
+      position: absolute;
+      inset: 8px;
+      border-radius: 3px;
+      background: var(--gl);
+      box-shadow: 0 1px 4px color-mix(in srgb, var(--gl-tint) 45%, transparent);
+      opacity: 0.92;
+    }
+
+    /* ── the work box ────────────────────────────── */
+    .workbox {
+      position: relative;
+      padding: clamp(22px, 3.4vw, 38px);
+      border-radius: 30px;
+      background: linear-gradient(160deg, var(--glass-hi), var(--glass-lo));
+      border: 1px solid var(--edge);
+      box-shadow: 0 20px 60px var(--shadow-deep),
+                  0 2px 6px var(--shadow),
+                  inset 0 1px 0 var(--glass-in);
+      backdrop-filter: blur(16px);
+      overflow: hidden;
+    }
+    /* rainbow hairline along the top of the box — echoes the frame */
+    .workbox::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 8%; right: 8%;
+      height: 2px;
+      background: var(--rainbow-line);
+      opacity: 0.85;
+      animation: hairline-slide 11s ease-in-out infinite;
+    }
+    @keyframes hairline-slide {
+      0%, 100% { left: 8%;  right: 8%;  opacity: 0.55; }
+      50%      { left: 2%;  right: 2%;  opacity: 0.95; }
+    }
+
+    .work-list { display: grid; gap: 12px; perspective: 1100px; }
+
+    .work-card {
+      --tint: #8d95a1;
+      --tint-2: #c6ccd5;
+      --rx: 0deg;
+      --ry: 0deg;
+      --mx: 50%;
+      --my: 50%;
+      position: relative;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: start;
+      gap: clamp(14px, 2.4vw, 26px);
+      padding: clamp(20px, 2.8vw, 28px);
+      border-radius: 20px;
+      text-decoration: none;
+      color: inherit;
+      background: linear-gradient(150deg, var(--glass-hi), var(--glass-md));
+      border: 1px solid var(--edge);
+      box-shadow: 0 1px 3px var(--shadow), inset 0 1px 0 var(--glass-in);
+      overflow: hidden;
+      isolation: isolate;
+      transform-style: preserve-3d;
+      transition: transform 0.3s cubic-bezier(.2,.8,.2,1),
+                  box-shadow 0.3s ease, border-color 0.3s ease;
+    }
+    /* colour wash that blooms in on hover */
+    .work-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background: linear-gradient(115deg,
+        color-mix(in srgb, var(--tint) 16%, transparent),
+        color-mix(in srgb, var(--tint-2) 12%, transparent) 60%,
+        transparent);
+      opacity: 0;
+      transition: opacity 0.35s ease;
+    }
+    /* spotlight that tracks the pointer */
+    .work-card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background: radial-gradient(240px circle at var(--mx) var(--my),
+        color-mix(in srgb, var(--tint) 26%, transparent), transparent 70%);
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      pointer-events: none;
+    }
+    .work-card:hover {
+      transform: translateY(-3px) rotateX(var(--rx)) rotateY(var(--ry));
+      border-color: color-mix(in srgb, var(--tint) 38%, var(--mix-base));
+      box-shadow: 0 14px 34px color-mix(in srgb, var(--tint) 24%, transparent),
+                  0 2px 6px var(--shadow),
+                  inset 0 1px 0 var(--glass-in);
+    }
+    .work-card:hover::before { opacity: 1; }
+    .work-card:hover::after  { opacity: 1; }
+
+    .swatch {
+      width: 52px; height: 52px;
+      flex: none;
+      border-radius: 15px;
+      background: linear-gradient(150deg, var(--tint-2), var(--tint));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.55),
+                  0 4px 12px color-mix(in srgb, var(--tint) 40%, transparent);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      transform: translateZ(22px);
+      transition: transform 0.3s cubic-bezier(.2,.8,.2,1);
+    }
+    .work-card:hover .swatch { transform: translateZ(30px) scale(1.06) rotate(-3deg); }
+    .swatch.prism { background: var(--rainbow); animation: spin 8s linear infinite; }
+
+    .work-body h3 {
+      margin: 0;
+      font-size: clamp(19px, 2.4vw, 23px);
+      font-weight: 650;
+      letter-spacing: -0.028em;
+    }
+    .work-url {
+      display: inline-block;
+      margin: 7px 0 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12.5px;
+      letter-spacing: -0.01em;
+      color: color-mix(in srgb, var(--tint) 62%, var(--url-ink));
+      background: color-mix(in srgb, var(--tint) 12%, var(--chip-bg));
+      border: 1px solid color-mix(in srgb, var(--tint) 22%, transparent);
+      padding: 3px 9px;
+      border-radius: 7px;
+    }
+    .work-body p {
+      margin: 12px 0 0;
+      max-width: 56ch;
+      font-size: 14.8px;
+      line-height: 1.65;
+      color: var(--ink-soft);
+    }
+
+    .tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+    .tag {
+      font-size: 11.5px;
+      font-weight: 560;
+      letter-spacing: 0.03em;
+      padding: 4px 10px;
+      border-radius: 100px;
+      color: var(--ink-soft);
+      background: var(--chip-bg);
+      border: 1px solid var(--chip-edge);
+      transition: transform 0.3s cubic-bezier(.2,.8,.2,1), color 0.3s ease;
+    }
+    .work-card:hover .tag { transform: translateY(-2px); color: var(--ink); }
+    .work-card:hover .tag:nth-child(2) { transition-delay: 0.04s; }
+    .work-card:hover .tag:nth-child(3) { transition-delay: 0.08s; }
+
+    .arrow {
+      align-self: center;
+      width: 34px; height: 34px;
+      flex: none;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--chip-bg);
+      border: 1px solid var(--chip-edge);
+      color: var(--ink-soft);
+      transition: transform 0.3s cubic-bezier(.2,.8,.2,1),
+                  background 0.3s ease, color 0.3s ease;
+    }
+    .work-card:hover .arrow {
+      transform: translate(3px, -3px);
+      background: color-mix(in srgb, var(--tint) 88%, #fff);
+      color: #fff;
+    }
+
+    /* ── contact ─────────────────────────────────── */
+    .contact {
+      margin-top: clamp(64px, 10vw, 112px);
+      padding: clamp(34px, 6vw, 64px);
+      border-radius: 30px;
+      text-align: center;
+      background: var(--panel-grad);
+      border: 1px solid var(--panel-edge);
+      box-shadow: 0 24px 60px var(--shadow-deep),
+                  inset 0 1px 0 var(--panel-edge);
+      position: relative;
+      overflow: hidden;
+    }
+    .contact::before {
+      content: "";
+      position: absolute;
+      inset: -40% -10% auto;
+      height: 70%;
+      background: var(--rainbow);
+      filter: blur(70px);
+      opacity: 0.30;
+      animation: spin 18s linear infinite;
+    }
+    .contact > * { position: relative; }
+    .contact h2 {
+      color: #f4f6f9;
+      font-size: clamp(27px, 4.4vw, 42px);
+    }
+    .contact p {
+      margin: 16px auto 0;
+      max-width: 46ch;
+      font-size: clamp(15px, 1.8vw, 17px);
+      line-height: 1.65;
+      color: rgba(230, 234, 240, 0.72);
+    }
+    .contact .btn-light {
+      margin-top: 30px;
+      color: #171a1f;
+      background: linear-gradient(165deg, #ffffff, #d5dae1);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.30), inset 0 1px 0 #fff;
+    }
+    .contact .btn-light:hover { box-shadow: 0 14px 34px rgba(0,0,0,0.38), inset 0 1px 0 #fff; }
+
+    /* ── footer ──────────────────────────────────── */
+    footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 24px;
+      align-items: center;
+      justify-content: space-between;
+      padding: clamp(30px, 5vw, 46px) 0 clamp(34px, 5vw, 52px);
+      font-size: 13px;
+      color: var(--ink-faint);
+    }
+    footer a { color: var(--ink-soft); text-decoration: none; }
+    footer a:hover { color: var(--ink); text-decoration: underline; }
+    .hairline {
+      height: 1px;
+      background: linear-gradient(90deg,
+        transparent,
+        var(--mt-red) 20%,
+        var(--mt-stone) 50%,
+        var(--mt-sea) 80%,
+        transparent);
+      opacity: 0.55;
+    }
+
+    /* ── settings bar ────────────────────────────── */
+    .settings {
+      position: fixed;
+      right: calc(var(--frame) + 12px);
+      bottom: calc(var(--frame) + 12px);
+      z-index: 120;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 10px;
+      font-size: 13px;
+      pointer-events: none;
+    }
+    .settings-btn, .settings-panel { pointer-events: auto; }
+
+    .settings-btn {
+      width: 46px; height: 46px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      cursor: pointer;
+      color: var(--ink-soft);
+      background: linear-gradient(150deg, var(--glass-hi), var(--glass-md));
+      border: 1px solid var(--edge);
+      box-shadow: 0 6px 20px var(--shadow), inset 0 1px 0 var(--glass-in);
+      backdrop-filter: blur(14px);
+      transition: transform 0.3s cubic-bezier(.2,.8,.2,1),
+                  box-shadow 0.3s ease, color 0.3s ease;
+    }
+    .settings-btn:hover {
+      color: var(--ink);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px var(--shadow), inset 0 1px 0 var(--glass-in);
+    }
+    /* the cog only turns when you're actually looking at it */
+    .settings-btn svg { transition: transform 0.5s cubic-bezier(.2,.8,.2,1); }
+    .settings-btn:hover svg { transform: rotate(40deg); }
+    .settings-btn[aria-expanded="true"] svg { animation: cog 9s linear infinite; }
+    @keyframes cog { to { transform: rotate(360deg); } }
+
+    .settings-panel {
+      width: 258px;
+      padding: 16px 16px 14px;
+      border-radius: 20px;
+      background: linear-gradient(155deg, var(--glass-hi), var(--glass-lo));
+      border: 1px solid var(--edge);
+      box-shadow: 0 18px 44px var(--shadow-deep), inset 0 1px 0 var(--glass-in);
+      backdrop-filter: blur(18px) saturate(1.2);
+      transform-origin: 100% 100%;
+      opacity: 0;
+      transform: translateY(10px) scale(0.94);
+      transition: opacity 0.28s ease, transform 0.34s cubic-bezier(.2,.9,.2,1),
+                  visibility 0.28s;
+      visibility: hidden;
+    }
+    .settings.open .settings-panel {
+      opacity: 1;
+      transform: none;
+      visibility: visible;
+    }
+
+    .settings-title {
+      margin: 0 0 14px;
+      font-size: 11.5px;
+      font-weight: 640;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+
+    .setting {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+    }
+    .setting + .setting { border-top: 1px solid var(--rule); }
+    .setting-label { font-weight: 560; color: var(--ink-soft); }
+
+    .segmented {
+      display: flex;
+      padding: 2px;
+      border-radius: 100px;
+      background: var(--chip-bg);
+      border: 1px solid var(--chip-edge);
+    }
+    .segmented button {
+      appearance: none;
+      border: 0;
+      background: none;
+      cursor: pointer;
+      padding: 5px 9px;
+      border-radius: 100px;
+      font: inherit;
+      font-size: 11.5px;
+      font-weight: 580;
+      color: var(--ink-faint);
+      transition: color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+    }
+    .segmented button:hover { color: var(--ink); }
+    .segmented button[aria-pressed="true"] {
+      color: var(--ink);
+      background: linear-gradient(160deg, var(--glass-in), var(--glass-md));
+      box-shadow: 0 1px 4px var(--shadow), inset 0 1px 0 var(--glass-in);
+    }
+
+    .switch {
+      appearance: none;
+      position: relative;
+      width: 46px; height: 26px;
+      flex: none;
+      padding: 0;
+      cursor: pointer;
+      border-radius: 100px;
+      border: 1px solid var(--chip-edge);
+      background: var(--chip-bg);
+      transition: background 0.3s ease, border-color 0.3s ease;
+    }
+    .switch .knob {
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: linear-gradient(160deg, #ffffff, #c6ccd5);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.28);
+      transition: transform 0.34s cubic-bezier(.2,.9,.2,1);
+    }
+    .switch[aria-checked="true"] {
+      background: var(--rainbow);
+      animation: spin 6s linear infinite;
+      border-color: transparent;
+    }
+    .switch[aria-checked="true"] .knob { transform: translateX(20px); }
+
+    .settings-credit {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--rule);
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--ink-faint);
+    }
+    .settings-credit strong {
+      display: block;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .settings-credit a { color: inherit; text-decoration: none; }
+    .settings-credit a:hover { text-decoration: underline; }
+
+    /* ── the language picker ─────────────────────── */
+    /* shown only when nothing is stored — the very first thing you see */
+    .lang-picker {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      display: none;
+      place-items: center;
+      padding: calc(var(--frame) + 14px);
+      background: color-mix(in srgb, var(--page-bg) 58%, transparent);
+      backdrop-filter: blur(20px) saturate(1.1);
+    }
+    :root[data-picker="on"] .lang-picker { display: grid; }
+    /* the page behind stays put until a flag is chosen */
+    :root[data-picker="on"],
+    :root[data-picker="on"] body { overflow: hidden; }
+
+    .lang-card {
+      position: relative;
+      width: min(560px, 100%);
+      max-height: 100%;
+      overflow: auto;
+      padding: clamp(26px, 4.4vw, 42px) clamp(20px, 4vw, 38px) clamp(22px, 3.4vw, 32px);
+      border-radius: 30px;
+      text-align: center;
+      background: var(--picker-card);
+      border: 1px solid var(--edge);
+      box-shadow: 0 30px 80px var(--shadow-deep),
+                  0 2px 8px var(--shadow),
+                  inset 0 1px 0 var(--glass-in);
+      backdrop-filter: blur(8px) saturate(1.15);
+      /* no fill mode — if the animation never runs, the card must still be here */
+      animation: card-in 0.7s cubic-bezier(.16,.84,.24,1);
+    }
+    /* the same rainbow hairline that runs along the work box */
+    .lang-card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 10%; right: 10%;
+      height: 2px;
+      background: var(--rainbow-line);
+      opacity: 0.9;
+      animation: hairline-slide 11s ease-in-out infinite;
+    }
+    @keyframes card-in {
+      from { opacity: 0; transform: translateY(22px) scale(0.95); }
+    }
+    .lang-picker.closing { animation: picker-out 0.42s ease both; }
+    .lang-picker.closing .lang-card { animation: card-out 0.42s cubic-bezier(.4,0,.6,1) both; }
+    @keyframes picker-out { to { opacity: 0; } }
+    @keyframes card-out { to { opacity: 0; transform: translateY(-10px) scale(1.04); } }
+
+    .lang-card .pip { margin: 0 auto 16px; }
+
+    .lang-title {
+      margin: 0;
+      font-size: clamp(26px, 5vw, 38px);
+      line-height: 1.06;
+      letter-spacing: -0.035em;
+      font-weight: 680;
+    }
+    .lang-sub {
+      margin: 10px 0 0;
+      font-size: clamp(15px, 2vw, 17px);
+      line-height: 1.5;
+      color: var(--ink-soft);
+    }
+
+    .lang-choices {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(12px, 2.4vw, 18px);
+      margin-top: clamp(24px, 3.6vw, 32px);
+    }
+
+    .flag-btn {
+      display: grid;
+      justify-items: center;
+      gap: 4px;
+      padding: clamp(16px, 2.6vw, 22px) 12px clamp(14px, 2vw, 18px);
+      border-radius: 22px;
+      cursor: pointer;
+      font: inherit;
+      color: inherit;
+      background: linear-gradient(160deg, var(--glass-hi), var(--glass-md));
+      border: 1px solid var(--edge);
+      box-shadow: 0 2px 10px var(--shadow), inset 0 1px 0 var(--glass-in);
+      transition: transform 0.3s cubic-bezier(.2,.8,.2,1),
+                  box-shadow 0.3s ease, border-color 0.3s ease;
+    }
+    .flag-btn:hover {
+      transform: translateY(-4px);
+      border-color: color-mix(in srgb, var(--mt-sea) 34%, var(--mix-base));
+      box-shadow: 0 18px 42px var(--shadow-deep), inset 0 1px 0 var(--glass-in);
+    }
+    .flag-btn:active { transform: translateY(-1px) scale(0.985); }
+
+    .flag-wrap {
+      position: relative;
+      width: clamp(86px, 24vw, 116px);
+      aspect-ratio: 3 / 2;
+      margin-bottom: 14px;
+      border-radius: 9px;
+      overflow: hidden;
+      box-shadow: 0 6px 18px var(--shadow), 0 0 0 1px var(--chip-edge);
+      transition: transform 0.4s cubic-bezier(.2,.8,.2,1);
+    }
+    .flag-wrap svg {
+      position: absolute;
+      inset: 0;
+      width: 100%; height: 100%;
+      display: block;
+    }
+    /* the flag gives a little in the wind when you reach for it */
+    .flag-btn:hover .flag-wrap { animation: flag-wave 1.1s ease-in-out; }
+    @keyframes flag-wave {
+      30% { transform: perspective(420px) rotateY(15deg) rotateX(-5deg) scale(1.04); }
+      65% { transform: perspective(420px) rotateY(-9deg) rotateX(3deg) scale(1.04); }
+    }
+    /* british and american, trading places */
+    .flag-en .us { opacity: 0; animation: flag-swap 7s ease-in-out infinite; }
+    @keyframes flag-swap {
+      0%, 38%   { opacity: 0; }
+      48%, 86%  { opacity: 1; }
+      96%, 100% { opacity: 0; }
+    }
+
+    .flag-name {
+      font-size: clamp(16px, 2.2vw, 18.5px);
+      font-weight: 640;
+      letter-spacing: -0.02em;
+    }
+    .flag-note {
+      font-size: 12.5px;
+      line-height: 1.4;
+      color: var(--ink-faint);
+    }
+
+    .lang-foot {
+      margin: clamp(18px, 2.6vw, 24px) 0 0;
+      padding-top: 14px;
+      border-top: 1px solid var(--rule);
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--ink-faint);
+    }
+
+    /* ── the swish ───────────────────────────────── */
+    /* a band of light crosses the page and every string turns over as it passes */
+    .swish-wave {
+      position: fixed;
+      inset: 0;
+      z-index: 210;
+      pointer-events: none;
+      overflow: hidden;
+      opacity: 0;
+      visibility: hidden;
+    }
+    .swishing .swish-wave { opacity: 1; visibility: visible; }
+    .swish-wave i {
+      position: absolute;
+      top: -25%; bottom: -25%;
+      left: 0;
+      display: block;
+      transform: translate3d(-80vw, 0, 0) skewX(-13deg);
+      will-change: transform;
+    }
+    /* the body of the sheen — widest, softest, and last to arrive */
+    .swish-wave i:nth-child(1) {
+      width: 42vw;
+      background: linear-gradient(100deg, transparent,
+        var(--swish-lo) 34%, var(--swish-hi) 54%, var(--swish-lo) 72%, transparent);
+      filter: blur(14px);
+    }
+    /* the rainbow leading edge, out in front of everything */
+    .swish-wave i:nth-child(2) {
+      width: 14px;
+      background: linear-gradient(180deg,
+        #ff3b30, #ff9500, #ffcc00, #34c759, #00c7be, #32ade6, #5856d6, #af52de, #ff2d55);
+      filter: blur(5px);
+      opacity: 0.95;
+    }
+    /* a hard white hairline just behind it, to give the edge a snap */
+    .swish-wave i:nth-child(3) {
+      width: 2px;
+      background: var(--swish-hi);
+      box-shadow: 0 0 22px 5px var(--swish-hi);
+      opacity: 0.9;
+    }
+    .swishing .swish-wave i {
+      animation: swish-run 1.02s cubic-bezier(.45,.03,.25,1) both;
+    }
+    /* a later start means it trails further behind the front */
+    .swishing .swish-wave i:nth-child(1) { animation-delay: 105ms; }
+    .swishing .swish-wave i:nth-child(3) { animation-delay: 45ms; }
+    @keyframes swish-run {
+      from { transform: translate3d(-80vw, 0, 0) skewX(-13deg); }
+      to   { transform: translate3d(120vw, 0, 0) skewX(-13deg); }
+    }
+
+    /* each string is blown out to the right and re-enters from the left */
+    .sw {
+      animation: swish-el 560ms cubic-bezier(.42,0,.24,1) var(--sd, 0ms) both;
+    }
+    @keyframes swish-el {
+      0%   { opacity: 1; transform: none; filter: blur(0); }
+      38%  { opacity: 0; transform: translate3d(42px, 0, 0) skewX(-9deg) scale(0.97);
+             filter: blur(7px); }
+      39%  { opacity: 0; transform: translate3d(-42px, 0, 0) skewX(9deg) scale(0.97);
+             filter: blur(7px); }
+      100% { opacity: 1; transform: none; filter: blur(0); }
+    }
+    /* the hero masks would clip the sideways travel, so let them out for a moment —
+       but only once the entrance has landed, or the lines spill over the lede */
+    .swishing.settled .lift { overflow: visible; }
+
+    /* ── reveal on scroll ────────────────────────── */
+    .reveal,
+    .reveal-left,
+    .reveal-right,
+    .reveal-pop {
+      opacity: 0;
+      transition: opacity 0.7s cubic-bezier(.2,.8,.2,1),
+                  transform 0.7s cubic-bezier(.2,.8,.2,1);
+    }
+    .reveal       { transform: translateY(22px); }
+    .reveal-left  { transform: translateX(-26px); }
+    .reveal-right { transform: translateX(26px); }
+    .reveal-pop   { transform: scale(0.955) translateY(14px); }
+
+    .reveal.in, .reveal-left.in, .reveal-right.in, .reveal-pop.in {
+      opacity: 1;
+      transform: none;
+    }
+
+    /* ── focus + motion ──────────────────────────── */
+    ::selection {
+      background: color-mix(in srgb, var(--mt-red) 82%, transparent);
+      color: #fff;
+    }
+
+    a:focus-visible, .btn:focus-visible,
+    button:focus-visible {
+      outline: 2px solid var(--mt-sea);
+      outline-offset: 3px;
+      border-radius: 8px;
+    }
+
+    /* the animations-off switch, and the OS-level preference */
+    :root[data-motion="off"] { scroll-behavior: auto; }
+    :root[data-motion="off"] *,
+    :root[data-motion="off"] *::before,
+    :root[data-motion="off"] *::after {
+      animation: none !important;
+      transition-duration: 0.01ms !important;
+      transition-delay: 0ms !important;
+    }
+    :root[data-motion="off"] .reveal,
+    :root[data-motion="off"] .reveal-left,
+    :root[data-motion="off"] .reveal-right,
+    :root[data-motion="off"] .reveal-pop,
+    :root[data-motion="off"] .enter { opacity: 1; transform: none; }
+    :root[data-motion="off"] .lift > span { transform: none; }
+    :root[data-motion="off"] .aurora,
+    :root[data-motion="off"] .cursor-glow,
+    :root[data-motion="off"] .swish-wave { display: none; }
+    :root[data-motion="off"] .lang-card { opacity: 1; transform: none; }
+    :root[data-motion="off"] .work-card:hover { transform: none; }
+
+    @media (max-width: 640px) {
+      .nav-links .hide-sm { display: none; }
+      .work-card { grid-template-columns: auto 1fr; }
+      .arrow { display: none; }
+      .strip { justify-content: center; text-align: center; }
+      .strip span + span { border-left: none; }
+      .settings { right: calc(var(--frame) + 6px); bottom: calc(var(--frame) + 6px); }
+      .settings-panel { width: min(268px, calc(100vw - 2 * var(--frame) - 24px)); }
+    }
+
+    @media (max-width: 400px) {
+      .lang-choices { grid-template-columns: 1fr; }
+      .flag-wrap { width: 96px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="cursor-glow" id="cursorGlow" aria-hidden="true"></div>
+  <div class="rainbow-frame" aria-hidden="true"></div>
+  <div class="progress" id="progress" aria-hidden="true"></div>
+
+  <div class="page">
+
+    <!-- ── nav ───────────────────────────────────── -->
+    <header class="nav" id="nav">
+      <div class="nav-inner">
+      <a class="brand" href="#top" aria-label="shcherbakov.co home">
+        <svg class="mark" viewBox="0 0 100 100" role="img" aria-hidden="true">
+          <defs>
+            <linearGradient id="chromePlate" x1="0" y1="0" x2="0.4" y2="1">
+              <stop offset="0%"   stop-color="#ffffff"/>
+              <stop offset="34%"  stop-color="#c3cad4"/>
+              <stop offset="52%"  stop-color="#6e7783"/>
+              <stop offset="66%"  stop-color="#e9edf2"/>
+              <stop offset="100%" stop-color="#9aa2ae"/>
+            </linearGradient>
+            <linearGradient id="prismEdge" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%"   stop-color="#ff3b30"/>
+              <stop offset="25%"  stop-color="#ffcc00"/>
+              <stop offset="50%"  stop-color="#34c759"/>
+              <stop offset="75%"  stop-color="#32ade6"/>
+              <stop offset="100%" stop-color="#af52de"/>
+            </linearGradient>
+          </defs>
+          <g class="plate">
+            <!-- eight-point Maltese cross, one arm rotated four ways -->
+            <path d="M50 50 L31 7 L50 23 L69 7 Z
+                     M50 50 L93 31 L77 50 L93 69 Z
+                     M50 50 L69 93 L50 77 L31 93 Z
+                     M50 50 L7 69 L23 50 L7 31 Z"
+                  fill="url(#chromePlate)"
+                  stroke="url(#prismEdge)" stroke-width="1.6" stroke-linejoin="round"/>
+          </g>
+        </svg>
+        <span class="wordmark">shcherbakov<span class="dotco">.co</span></span>
+      </a>
+
+      <nav class="nav-links" aria-label="Primary" data-i18n-aria="ariaNav">
+        <a class="hide-sm" href="#studio" data-i18n="navStudio">Studio</a>
+        <a href="#work" data-i18n="navWork">Work</a>
+        <a href="#contact" data-i18n="navContact">Contact</a>
+      </nav>
+      </div>
+    </header>
+
+    <!-- ── hero ──────────────────────────────────── -->
+    <main id="top">
+      <div class="hero">
+        <span class="eyebrow enter" style="--i:0"><span class="pip" aria-hidden="true"></span> <span data-i18n="eyebrow">Web design group · <span class="mt">Malta</span></span></span>
+
+        <h1>
+          <span class="lift" data-i18n="heroLine1"><span class="chrome">Small island.</span></span>
+          <span class="lift" data-i18n="heroLine2"><span class="line-2 chrome">Serious websites.</span></span>
+        </h1>
+
+        <p class="lede enter" style="--i:2" data-i18n="lede">
+          We're a small web design group on a small island. We build
+          <strong>fast, hand-written, carefully finished</strong> websites for the
+          businesses around us — the woodworkers, the traders, the people who do
+          good work and deserve to look like they do.
+        </p>
+
+        <div class="cta-row enter" style="--i:3">
+          <a class="btn btn-primary" href="#work">
+            <span data-i18n="ctaWork">See our work</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12h13M12 5l7 7-7 7"/>
+            </svg>
+          </a>
+          <a class="btn btn-ghost" href="#contact" data-i18n="ctaStart">Start a project</a>
+        </div>
+      </div>
+
+      <div class="strip reveal-pop">
+        <span data-i18n="strip1">Hand-coded, never templated</span>
+        <span data-i18n="strip2">Built and hosted in Malta</span>
+        <span data-i18n="strip3">Loads in under a second</span>
+        <span data-i18n="strip4">English &amp; Malti</span>
+      </div>
+
+      <!-- ── studio ──────────────────────────────── -->
+      <section id="studio">
+        <div class="sec-head reveal-left">
+          <p class="kicker" data-i18n="studioKicker">The studio</p>
+          <h2 data-i18n="studioH2">316 square kilometres is an advantage, not a limit.</h2>
+          <p data-i18n="studioP">
+            Malta is small enough that we can come to you — see the workshop, hear how
+            you actually talk about what you do — and big enough that your customers are
+            already looking for you online. We sit in the middle of that.
+          </p>
+        </div>
+
+        <div class="about-grid">
+          <article class="note reveal">
+            <span class="glyph" aria-hidden="true"></span>
+            <h3 data-i18n="note1H">Made by hand</h3>
+            <p data-i18n="note1P">
+              Every site is written line by line. No page builders, no forty plugins,
+              nothing bolted on that we can't explain to you in plain language.
+            </p>
+          </article>
+
+          <article class="note reveal">
+            <span class="glyph" aria-hidden="true"></span>
+            <h3 data-i18n="note2H">Built for the phone</h3>
+            <p data-i18n="note2P">
+              Most of your customers will meet you on a phone, one-handed, on patchy
+              signal somewhere in Valletta. That's the screen we design for first.
+            </p>
+          </article>
+
+          <article class="note reveal">
+            <span class="glyph" aria-hidden="true"></span>
+            <h3 data-i18n="note3H">Yours to keep</h3>
+            <p data-i18n="note3P">
+              You own the domain, the files, and the words. We stay on for as long as
+              you want us and not a month longer.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <!-- ── work ────────────────────────────────── -->
+      <section id="work">
+        <div class="sec-head reveal-right">
+          <p class="kicker" data-i18n="workKicker">Selected work</p>
+          <h2 data-i18n="workH2">A few things we've put on the internet.</h2>
+        </div>
+
+        <div class="workbox reveal-pop">
+          <div class="work-list">
+
+            <!-- Saliba Woodworks — oak &amp; brass -->
+            <a class="work-card tilt" style="--tint:#8a5a3b; --tint-2:#c9a227;"
+               href="https://saliba.shcherbakov.co">
+              <span class="swatch" aria-hidden="true">SW</span>
+              <div class="work-body">
+                <h3>Saliba Woodworks</h3>
+                <span class="work-url">saliba.shcherbakov.co</span>
+                <p data-i18n="w1P">
+                  A site for a Maltese woodworking business. Warm oak and brass, a
+                  gallery big enough to let the grain do the talking, and an enquiry
+                  form that lands straight in the workshop.
+                </p>
+                <div class="tags">
+                  <span class="tag" data-i18n="w1t1">Local business</span>
+                  <span class="tag" data-i18n="w1t2">Gallery</span>
+                  <span class="tag" data-i18n="w1t3">Enquiries</span>
+                </div>
+              </div>
+              <span class="arrow" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M7 17 17 7M9 7h8v8"/>
+                </svg>
+              </span>
+            </a>
+
+            <!-- Day Planner — indigo &amp; cyan -->
+            <a class="work-card tilt" style="--tint:#3b5bdb; --tint-2:#22b8cf;"
+               href="https://dayplanner.shcherbakov.co">
+              <span class="swatch" aria-hidden="true">DP</span>
+              <div class="work-body">
+                <h3>Day Planner</h3>
+                <span class="work-url">dayplanner.shcherbakov.co</span>
+                <p data-i18n="w2P">
+                  A calendar, to-do lists, and quiet anti-bot measures keeping the
+                  junk out. Built for people who plan the week on a Sunday night and
+                  want it to still make sense by Thursday.
+                </p>
+                <div class="tags">
+                  <span class="tag" data-i18n="w2t1">Web app</span>
+                  <span class="tag" data-i18n="w2t2">Calendar</span>
+                  <span class="tag" data-i18n="w2t3">Anti-bot</span>
+                </div>
+              </div>
+              <span class="arrow" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M7 17 17 7M9 7h8v8"/>
+                </svg>
+              </span>
+            </a>
+
+            <!-- And much more — the full spectrum -->
+            <a class="work-card tilt" style="--tint:#7d6cf0; --tint-2:#f06cae;" href="#contact">
+              <span class="swatch prism" aria-hidden="true"></span>
+              <div class="work-body">
+                <h3 data-i18n="w3H">And much more</h3>
+                <span class="work-url">yours.shcherbakov.co</span>
+                <p data-i18n="w3P">
+                  Cafés, contractors, one-page launches, maintenance crews, portfolios —
+                  plus the quiet ongoing work that never gets a case study. Tell us what
+                  you're building and we'll show you the rest.
+                </p>
+                <div class="tags">
+                  <span class="tag" data-i18n="w3t1">Say hello</span>
+                  <span class="tag" data-i18n="w3t2">Full portfolio</span>
+                </div>
+              </div>
+              <span class="arrow" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h13M12 5l7 7-7 7"/>
+                </svg>
+              </span>
+            </a>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ── contact ─────────────────────────────── -->
+      <section id="contact" class="contact reveal-pop">
+        <h2 data-i18n="contactH2">Let's make yours the next one.</h2>
+        <p data-i18n="contactP">
+          Send us a line about the business, the deadline, and roughly what you had in
+          mind. We'll come back with a plan — and a straight answer on price.
+        </p>
+        <a class="btn btn-light" href="mailto:retrocriticsmalta@gmail.com">
+          retrocriticsmalta@gmail.com
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h13M12 5l7 7-7 7"/>
+          </svg>
+        </a>
+      </section>
+    </main>
+
+    <div class="hairline" style="margin-top: clamp(40px, 6vw, 64px);"></div>
+
+    <footer>
+      <span>© <span id="year">2026</span> <span data-i18n="footLeft">shcherbakov.co — web design, Malta 🇲🇹</span></span>
+      <span data-i18n="footRight">
+        <a href="https://saliba.shcherbakov.co">Saliba</a> ·
+        <a href="https://dayplanner.shcherbakov.co">Day Planner</a> ·
+        <a href="mailto:retrocriticsmalta@gmail.com">Contact</a> ·
+        Made by Nicholas Shcherbakov
+      </span>
+    </footer>
+
+  </div>
+
+  <!-- ── settings bar ────────────────────────────── -->
+  <div class="settings" id="settings">
+    <div class="settings-panel" id="settingsPanel" role="group" aria-label="Site settings"
+         data-i18n-aria="ariaSettings">
+      <p class="settings-title" data-i18n="setTitle">Settings</p>
+
+      <div class="setting">
+        <span class="setting-label" data-i18n="setLanguage">Language</span>
+        <div class="segmented" id="langGroup" role="group" aria-label="Language"
+             data-i18n-aria="ariaLanguage">
+          <button type="button" data-lang-set="en" aria-pressed="false" lang="en">EN</button>
+          <button type="button" data-lang-set="mt" aria-pressed="false" lang="mt">MT</button>
+        </div>
+      </div>
+
+      <div class="setting">
+        <span class="setting-label" data-i18n="setAppearance">Appearance</span>
+        <div class="segmented" id="themeGroup" role="group" aria-label="Colour theme"
+             data-i18n-aria="ariaTheme">
+          <button type="button" data-theme-set="light" aria-pressed="false" data-i18n="setLight">Light</button>
+          <button type="button" data-theme-set="dark"  aria-pressed="false" data-i18n="setDark">Dark</button>
+          <button type="button" data-theme-set="auto"  aria-pressed="false" data-i18n="setAuto">Auto</button>
+        </div>
+      </div>
+
+      <div class="setting">
+        <span class="setting-label" data-i18n="setMotion">Animations</span>
+        <button type="button" class="switch" id="motionToggle" role="switch"
+                aria-checked="true" aria-label="Animations" data-i18n-aria="ariaMotion">
+          <span class="knob"></span>
+        </button>
+      </div>
+
+      <p class="settings-credit" data-i18n="setCredit">
+        <strong>Made by Nicholas Shcherbakov</strong>
+        <a href="https://shcherbakov.co">shcherbakov.co</a> — Malta
+      </p>
+    </div>
+
+    <button type="button" class="settings-btn" id="settingsBtn"
+            aria-expanded="false" aria-controls="settingsPanel" aria-label="Site settings"
+            data-i18n-aria="ariaSettings">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3.1"/>
+        <path d="M12 2.6v2.2M12 19.2v2.2M4.2 12H2M22 12h-2.2M6.5 6.5 4.9 4.9M19.1 19.1l-1.6-1.6M17.5 6.5l1.6-1.6M4.9 19.1l1.6-1.6"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- ── the swish: a band of light that carries the translation ── -->
+  <div class="swish-wave" id="swishWave" aria-hidden="true"><i></i><i></i><i></i></div>
+
+  <!-- ── first visit: pick a flag ─────────────────── -->
+  <div class="lang-picker" id="langPicker" role="dialog" aria-modal="true"
+       aria-labelledby="langPickerTitle">
+    <div class="lang-card">
+      <span class="pip" aria-hidden="true"></span>
+      <h2 class="lang-title" id="langPickerTitle"><span class="chrome">Choose your language</span></h2>
+      <p class="lang-sub" lang="mt">Agħżel il-lingwa tiegħek</p>
+
+      <div class="lang-choices">
+        <button type="button" class="flag-btn" data-lang-pick="mt" lang="mt">
+          <span class="flag-wrap" aria-hidden="true">
+            <!-- Malta: white and red, with the George Cross -->
+            <svg viewBox="0 0 60 40">
+              <rect width="30" height="40" fill="#ffffff"/>
+              <rect x="30" width="30" height="40" fill="#cf142b"/>
+              <path d="M5.6 3.2h3.2v3.2H12v3.2H8.8v3.2H5.6V9.6H2.4V6.4h3.2z"
+                    fill="#c8ccd2" stroke="#cf142b" stroke-width="0.7" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="flag-name">Malti</span>
+          <span class="flag-note">Aqra s-sit bil-Malti</span>
+        </button>
+
+        <button type="button" class="flag-btn" data-lang-pick="en" lang="en">
+          <span class="flag-wrap flag-en" aria-hidden="true">
+            <!-- Union Jack -->
+            <svg viewBox="0 0 60 40" class="uj">
+              <rect width="60" height="40" fill="#012169"/>
+              <path d="M0 0 60 40M60 0 0 40" stroke="#ffffff" stroke-width="8"/>
+              <path d="M0 0 60 40M60 0 0 40" stroke="#c8102e" stroke-width="4"/>
+              <path d="M30 0V40M0 20H60" stroke="#ffffff" stroke-width="13"/>
+              <path d="M30 0V40M0 20H60" stroke="#c8102e" stroke-width="7.5"/>
+            </svg>
+            <!-- and the stars and stripes, taking a turn -->
+            <svg viewBox="0 0 60 40" class="us">
+              <defs>
+                <path id="usStar" d="M 0 -1.05 L 0.236 -0.324 L 0.999 -0.324 L 0.381 0.124
+                                     L 0.617 0.849 L 0 0.401 L -0.617 0.849 L -0.381 0.124
+                                     L -0.999 -0.324 L -0.236 -0.324 Z"/>
+              </defs>
+              <rect width="60" height="40" fill="#ffffff"/>
+              <g fill="#b31942">
+                <rect y="0"       width="60" height="3.08"/>
+                <rect y="6.15"    width="60" height="3.08"/>
+                <rect y="12.31"   width="60" height="3.08"/>
+                <rect y="18.46"   width="60" height="3.08"/>
+                <rect y="24.62"   width="60" height="3.08"/>
+                <rect y="30.77"   width="60" height="3.08"/>
+                <rect y="36.92"   width="60" height="3.08"/>
+              </g>
+              <rect width="24" height="21.54" fill="#3c3b6e"/>
+              <g fill="#ffffff">
+                <use href="#usStar" x="2.4"  y="2.69"/>
+                <use href="#usStar" x="7.2"  y="2.69"/>
+                <use href="#usStar" x="12"   y="2.69"/>
+                <use href="#usStar" x="16.8" y="2.69"/>
+                <use href="#usStar" x="21.6" y="2.69"/>
+                <use href="#usStar" x="4.8"  y="8.08"/>
+                <use href="#usStar" x="9.6"  y="8.08"/>
+                <use href="#usStar" x="14.4" y="8.08"/>
+                <use href="#usStar" x="19.2" y="8.08"/>
+                <use href="#usStar" x="2.4"  y="13.46"/>
+                <use href="#usStar" x="7.2"  y="13.46"/>
+                <use href="#usStar" x="12"   y="13.46"/>
+                <use href="#usStar" x="16.8" y="13.46"/>
+                <use href="#usStar" x="21.6" y="13.46"/>
+                <use href="#usStar" x="4.8"  y="18.85"/>
+                <use href="#usStar" x="9.6"  y="18.85"/>
+                <use href="#usStar" x="14.4" y="18.85"/>
+                <use href="#usStar" x="19.2" y="18.85"/>
+              </g>
+            </svg>
+          </span>
+          <span class="flag-name">English</span>
+          <span class="flag-note">Read the site in English</span>
+        </button>
+      </div>
+
+      <p class="lang-foot">
+        You can change this any time in settings ·
+        <span lang="mt">Tista' tibdilha meta trid mill-preferenzi</span>
+      </p>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    'use strict';
+
+    const root = document.documentElement;
+    const store = {
+      get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+      set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+    };
+
+    /* ── current year ─────────────────────────────── */
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    /* ── theme ────────────────────────────────────── */
+    const sysDark = window.matchMedia('(prefers-color-scheme: dark)');
+    const metaTheme = document.getElementById('themeColor');
+    const themeBtns = Array.prototype.slice.call(
+      document.querySelectorAll('#themeGroup button'));
+
+    let themePref = store.get('sc-theme') || 'auto';
+
+    function applyTheme() {
+      const dark = themePref === 'dark' || (themePref === 'auto' && sysDark.matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      if (metaTheme) metaTheme.setAttribute('content', dark ? '#0b0e12' : '#d9dde3');
+      themeBtns.forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.themeSet === themePref));
+      });
+    }
+
+    themeBtns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        themePref = b.dataset.themeSet;
+        store.set('sc-theme', themePref);
+        applyTheme();
+      });
+    });
+    if (sysDark.addEventListener) {
+      sysDark.addEventListener('change', function () {
+        if (themePref === 'auto') applyTheme();
+      });
+    }
+    applyTheme();
+
+    /* ── animations on / off ──────────────────────── */
+    const sysReduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const motionToggle = document.getElementById('motionToggle');
+    const saved = store.get('sc-motion');
+    let motionOn = saved === null ? !sysReduced.matches : saved === 'on';
+
+    function applyMotion() {
+      root.setAttribute('data-motion', motionOn ? 'on' : 'off');
+      motionToggle.setAttribute('aria-checked', String(motionOn));
+      if (!motionOn) {
+        revealAll();
+        glow.classList.remove('live');
+      }
+    }
+
+    motionToggle.addEventListener('click', function () {
+      motionOn = !motionOn;
+      store.set('sc-motion', motionOn ? 'on' : 'off');
+      applyMotion();
+    });
+
+    /* ── language ─────────────────────────────────── */
+    /* every visible string lives here twice, so switching is a repaint, not a reload */
+    const I18N = {
+      en: {
+        docTitle: `shcherbakov.co — web design, from Malta`,
+        metaDesc: `A small web design group in Malta. Hand-built, fast, careful websites for the businesses around us. Small island, serious websites.`,
+
+        navStudio: `Studio`,
+        navWork: `Work`,
+        navContact: `Contact`,
+
+        eyebrow: `Web design group · <span class="mt">Malta</span>`,
+        heroLine1: `<span class="chrome">Small island.</span>`,
+        heroLine2: `<span class="line-2 chrome">Serious websites.</span>`,
+        lede: `We're a small web design group on a small island. We build <strong>fast, hand-written, carefully finished</strong> websites for the businesses around us — the woodworkers, the traders, the people who do good work and deserve to look like they do.`,
+        ctaWork: `See our work`,
+        ctaStart: `Start a project`,
+
+        strip1: `Hand-coded, never templated`,
+        strip2: `Built and hosted in Malta`,
+        strip3: `Loads in under a second`,
+        strip4: `English &amp; Malti`,
+
+        studioKicker: `The studio`,
+        studioH2: `316 square kilometres is an advantage, not a limit.`,
+        studioP: `Malta is small enough that we can come to you — see the workshop, hear how you actually talk about what you do — and big enough that your customers are already looking for you online. We sit in the middle of that.`,
+
+        note1H: `Made by hand`,
+        note1P: `Every site is written line by line. No page builders, no forty plugins, nothing bolted on that we can't explain to you in plain language.`,
+        note2H: `Built for the phone`,
+        note2P: `Most of your customers will meet you on a phone, one-handed, on patchy signal somewhere in Valletta. That's the screen we design for first.`,
+        note3H: `Yours to keep`,
+        note3P: `You own the domain, the files, and the words. We stay on for as long as you want us and not a month longer.`,
+
+        workKicker: `Selected work`,
+        workH2: `A few things we've put on the internet.`,
+
+        w1P: `A site for a Maltese woodworking business. Warm oak and brass, a gallery big enough to let the grain do the talking, and an enquiry form that lands straight in the workshop.`,
+        w1t1: `Local business`,
+        w1t2: `Gallery`,
+        w1t3: `Enquiries`,
+
+        w2P: `A calendar, to-do lists, and quiet anti-bot measures keeping the junk out. Built for people who plan the week on a Sunday night and want it to still make sense by Thursday.`,
+        w2t1: `Web app`,
+        w2t2: `Calendar`,
+        w2t3: `Anti-bot`,
+
+        w3H: `And much more`,
+        w3P: `Cafés, contractors, one-page launches, maintenance crews, portfolios — plus the quiet ongoing work that never gets a case study. Tell us what you're building and we'll show you the rest.`,
+        w3t1: `Say hello`,
+        w3t2: `Full portfolio`,
+
+        contactH2: `Let's make yours the next one.`,
+        contactP: `Send us a line about the business, the deadline, and roughly what you had in mind. We'll come back with a plan — and a straight answer on price.`,
+
+        footLeft: `shcherbakov.co — web design, Malta 🇲🇹`,
+        footRight: `<a href="https://saliba.shcherbakov.co">Saliba</a> · <a href="https://dayplanner.shcherbakov.co">Day Planner</a> · <a href="mailto:retrocriticsmalta@gmail.com">Contact</a> · Made by Nicholas Shcherbakov`,
+
+        setTitle: `Settings`,
+        setLanguage: `Language`,
+        setAppearance: `Appearance`,
+        setLight: `Light`,
+        setDark: `Dark`,
+        setAuto: `Auto`,
+        setMotion: `Animations`,
+        setCredit: `<strong>Made by Nicholas Shcherbakov</strong> <a href="https://shcherbakov.co">shcherbakov.co</a> — Malta`,
+
+        ariaNav: `Primary`,
+        ariaSettings: `Site settings`,
+        ariaTheme: `Colour theme`,
+        ariaMotion: `Animations`,
+        ariaLanguage: `Language`
+      },
+
+      mt: {
+        docTitle: `shcherbakov.co — disinn tal-web, minn Malta`,
+        metaDesc: `Grupp żgħir ta' disinn tal-web f'Malta. Siti maħduma bl-idejn, mgħaġġla u b'attenzjoni, għan-negozji ta' madwarna. Gżira żgħira, siti serji.`,
+
+        navStudio: `L-Istudjo`,
+        navWork: `Xogħol`,
+        navContact: `Kuntatt`,
+
+        eyebrow: `Grupp ta' disinn tal-web · <span class="mt">Malta</span>`,
+        heroLine1: `<span class="chrome">Gżira żgħira.</span>`,
+        heroLine2: `<span class="line-2 chrome">Siti serji.</span>`,
+        lede: `Aħna grupp żgħir ta' disinn tal-web fuq gżira żgħira. Nibnu siti <strong>mgħaġġla, miktuba bl-idejn u rfinuti bir-reqqa</strong> għan-negozji ta' madwarna — il-mastrudaxxi, in-negozjanti, in-nies li jagħmlu xogħol tajjeb u li jistħoqqilhom jidhru hekk.`,
+        ctaWork: `Ara xogħolna`,
+        ctaStart: `Ibda proġett`,
+
+        strip1: `Miktub bl-idejn, qatt template`,
+        strip2: `Mibni u ospitat f'Malta`,
+        strip3: `Jitla' f'inqas minn sekonda`,
+        strip4: `Bl-Ingliż u bil-Malti`,
+
+        studioKicker: `L-istudjo`,
+        studioH2: `316-il kilometru kwadru huma vantaġġ, mhux limitu.`,
+        studioP: `Malta hija żgħira biżżejjed biex nistgħu niġu għandek — naraw il-workshop, nisimgħu kif tassew titkellem dwar xogħlok — u kbira biżżejjed li l-klijenti tiegħek diġà qed ifittxuk online. Aħna noqogħdu eżatt f'nofs dan kollu.`,
+
+        note1H: `Maħdum bl-idejn`,
+        note1P: `Kull sit jinkiteb linja b'linja. Ebda page builder, ebda erbgħin plugin, u xejn imwaħħal miegħu li ma nistgħux nispjegawlek b'lingwaġġ ċar.`,
+        note2H: `Mibni għall-mowbajl`,
+        note2P: `Ħafna mill-klijenti tiegħek se jsibuk fuq mowbajl, b'id waħda, b'sinjal dgħajjef x'imkien il-Belt Valletta. Dak hu l-iskrin li niddisinjaw għalih l-ewwel.`,
+        note3H: `Tiegħek biex iżżomm`,
+        note3P: `Id-dominju, il-fajls u l-kliem huma tiegħek. Nibqgħu miegħek sakemm tridna u lanqas xahar iżjed.`,
+
+        workKicker: `Xogħol magħżul`,
+        workH2: `Ftit affarijiet li tellajna fuq l-internet.`,
+
+        w1P: `Sit għal negozju Malti tax-xogħol tal-injam. Ballut sħun u ram isfar, gallerija kbira biżżejjed biex tħalli l-vina tal-injam titkellem, u formola ta' mistoqsija li tasal dritt fil-workshop.`,
+        w1t1: `Negozju lokali`,
+        w1t2: `Gallerija`,
+        w1t3: `Mistoqsijiet`,
+
+        w2P: `Kalendarju, listi ta' x'hemm xi jsir, u miżuri kwieti kontra l-bots li jżommu l-ħmieġ barra. Mibni għan-nies li jippjanaw il-ġimgħa nhar ta' Ħadd filgħaxija u jridu li xorta tagħmel sens sal-Ħamis.`,
+        w2t1: `App tal-web`,
+        w2t2: `Kalendarju`,
+        w2t3: `Kontra l-bots`,
+
+        w3H: `U ħafna aktar`,
+        w3P: `Kafetteriji, kuntratturi, siti ta' paġna waħda, timijiet tal-manutenzjoni, portafolji — flimkien max-xogħol kontinwu u kwiet li qatt ma jsirlu case study. Għidilna x'qed tibni u nurulek il-bqija.`,
+        w3t1: `Ikkuntattjana`,
+        w3t2: `Portafoll sħiħ`,
+
+        contactH2: `Ejja nagħmlu tiegħek li jmiss.`,
+        contactP: `Ibgħatilna żewġ kelmiet dwar in-negozju, id-data tal-għeluq, u bejn wieħed u ieħor x'kellek f'moħħok. Nerġgħu lura bi pjan — u b'tweġiba ċara fuq il-prezz.`,
+
+        footLeft: `shcherbakov.co — disinn tal-web, Malta 🇲🇹`,
+        footRight: `<a href="https://saliba.shcherbakov.co">Saliba</a> · <a href="https://dayplanner.shcherbakov.co">Day Planner</a> · <a href="mailto:retrocriticsmalta@gmail.com">Kuntatt</a> · Maħdum minn Nicholas Shcherbakov`,
+
+        setTitle: `Preferenzi`,
+        setLanguage: `Lingwa`,
+        setAppearance: `Dehra`,
+        setLight: `Ċar`,
+        setDark: `Skur`,
+        setAuto: `Awto`,
+        setMotion: `Animazzjonijiet`,
+        setCredit: `<strong>Maħdum minn Nicholas Shcherbakov</strong> <a href="https://shcherbakov.co">shcherbakov.co</a> — Malta`,
+
+        ariaNav: `Prinċipali`,
+        ariaSettings: `Preferenzi tas-sit`,
+        ariaTheme: `Tema tal-kulur`,
+        ariaMotion: `Animazzjonijiet`,
+        ariaLanguage: `Lingwa`
+      }
+    };
+
+    const langBtns = Array.prototype.slice.call(
+      document.querySelectorAll('#langGroup button'));
+    const i18nEls = Array.prototype.slice.call(
+      document.querySelectorAll('[data-i18n]'));
+    const i18nAria = Array.prototype.slice.call(
+      document.querySelectorAll('[data-i18n-aria]'));
+    const metaDesc = document.querySelector('meta[name="description"]');
+
+    let langPref = store.get('sc-lang');
+    if (langPref !== 'mt' && langPref !== 'en') langPref = 'en';
+
+    /* only the innerHTML — this is what the swish swaps mid-flight */
+    function paintOne(el, dict) {
+      const v = dict[el.dataset.i18n];
+      if (v != null) el.innerHTML = v;
+    }
+
+    /* everything you can't see move: title, description, labels, the lang attribute */
+    function paintChrome(dict, l) {
+      root.setAttribute('lang', l);
+      document.title = dict.docTitle;
+      if (metaDesc) metaDesc.setAttribute('content', dict.metaDesc);
+      i18nAria.forEach(function (el) {
+        const v = dict[el.dataset.i18nAria];
+        if (v != null) el.setAttribute('aria-label', v);
+      });
+      langBtns.forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.langSet === l));
+      });
+    }
+
+    function applyLang(l) {
+      const dict = I18N[l] || I18N.en;
+      i18nEls.forEach(function (el) { paintOne(el, dict); });
+      paintChrome(dict, l);
+    }
+
+    /* ── the swish ────────────────────────────────── */
+    /* a band of light crosses the page; each string turns over as the light
+       reaches it, so the translation looks like it's being carried across */
+    let swishing = false;
+
+    function runSwish(l) {
+      const dict = I18N[l] || I18N.en;
+      const vw = window.innerWidth || 1;
+      const vh = window.innerHeight || 1;
+      const LEAD = 116;   /* the front is still off-screen for this long */
+      const SPAN = 300;   /* and this is how long it takes to cross */
+      const DUR = 560;    /* how long one string spends in the air */
+      const SWAP = 0.4;   /* the point in that flight where it turns over */
+      const WAVE = 1180;  /* the band's own animation, delay included */
+
+      /* measure first, then write — one layout pass, not forty */
+      const plan = i18nEls.map(function (el) {
+        const r = el.getBoundingClientRect();
+        const cx = Math.min(1, Math.max(0, (r.left + r.width / 2) / vw));
+        const cy = Math.min(1, Math.max(0, (r.top + r.height / 2) / vh));
+        /* a string leaves just before the light reaches it, and is back by the
+           time the light has passed — so the wave looks like it did the work */
+        return {
+          el: el,
+          delay: Math.round(LEAD + (cx * 0.78 + cy * 0.22) * SPAN),
+          inline: getComputedStyle(el).display === 'inline'
+        };
+      });
+
+      let last = 0;
+      swishing = true;
+      document.body.classList.add('swishing');
+
+      plan.forEach(function (p) {
+        if (p.delay > last) last = p.delay;
+        /* inline elements ignore transforms — lift them for the flight */
+        if (p.inline) p.el.style.display = 'inline-block';
+        p.el.style.setProperty('--sd', p.delay + 'ms');
+        p.el.classList.add('sw');
+        setTimeout(function () { paintOne(p.el, dict); }, p.delay + DUR * SWAP);
+      });
+
+      setTimeout(function () { paintChrome(dict, l); }, LEAD + SPAN * 0.5 + DUR * SWAP);
+
+      /* wait for the band as well as the last string, or it snaps off mid-flight */
+      setTimeout(function () {
+        plan.forEach(function (p) {
+          p.el.classList.remove('sw');
+          p.el.style.removeProperty('--sd');
+          if (p.inline) p.el.style.removeProperty('display');
+        });
+        document.body.classList.remove('swishing');
+        swishing = false;
+      }, Math.max(last + DUR + 90, WAVE + 60));
+    }
+
+    function setLang(l, animate) {
+      if (l !== 'mt' && l !== 'en') return;
+      langPref = l;
+      store.set('sc-lang', l);
+      if (animate && motionOn && !swishing) runSwish(l);
+      else if (!swishing) applyLang(l);
+    }
+
+    langBtns.forEach(function (b) {
+      b.addEventListener('click', function () { setLang(b.dataset.langSet, true); });
+    });
+
+    /* ── first visit: the flag picker ─────────────── */
+    const picker = document.getElementById('langPicker');
+
+    Array.prototype.slice.call(picker.querySelectorAll('[data-lang-pick]'))
+      .forEach(function (b) {
+        b.addEventListener('click', function () {
+          const chosen = b.dataset.langPick;
+          picker.classList.add('closing');
+          setTimeout(function () {
+            root.removeAttribute('data-picker');
+            picker.classList.remove('closing');
+            setLang(chosen, true);
+          }, motionOn ? 380 : 0);
+        });
+      });
+
+    applyLang(langPref);
+
+    if (root.getAttribute('data-picker') === 'on') {
+      const firstFlag = picker.querySelector('.flag-btn');
+      /* keep tab and shift-tab inside the two flags until one is chosen */
+      picker.addEventListener('keydown', function (e) {
+        if (e.key !== 'Tab') return;
+        const flags = picker.querySelectorAll('.flag-btn');
+        const edge = e.shiftKey ? flags[0] : flags[flags.length - 1];
+        if (document.activeElement === edge || !picker.contains(document.activeElement)) {
+          e.preventDefault();
+          (e.shiftKey ? flags[flags.length - 1] : flags[0]).focus();
+        }
+      });
+      if (firstFlag) requestAnimationFrame(function () { firstFlag.focus(); });
+    }
+
+    /* ── settings panel ───────────────────────────── */
+    const settings = document.getElementById('settings');
+    const settingsBtn = document.getElementById('settingsBtn');
+
+    function setPanel(open) {
+      settings.classList.toggle('open', open);
+      settingsBtn.setAttribute('aria-expanded', String(open));
+    }
+    settingsBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      setPanel(!settings.classList.contains('open'));
+    });
+    document.addEventListener('click', function (e) {
+      if (!settings.contains(e.target)) setPanel(false);
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') setPanel(false);
+    });
+
+    /* ── reveal on scroll ─────────────────────────── */
+    const items = Array.prototype.slice.call(
+      document.querySelectorAll('.reveal, .reveal-left, .reveal-right, .reveal-pop'));
+
+    function revealAll() { items.forEach(function (el) { el.classList.add('in'); }); }
+
+    if (!('IntersectionObserver' in window)) {
+      revealAll();
+    } else {
+      const io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry, i) {
+          if (!entry.isIntersecting) return;
+          entry.target.style.transitionDelay = (i * 70) + 'ms';
+          entry.target.classList.add('in');
+          io.unobserve(entry.target);
+        });
+      }, { rootMargin: '0px 0px -12% 0px', threshold: 0.08 });
+
+      items.forEach(function (el) { io.observe(el); });
+    }
+
+    /* ── hero entrance ────────────────────────────── */
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        document.body.classList.add('ready');
+        /* once the hero lines have finished rising, their masks can be opened */
+        setTimeout(function () { document.body.classList.add('settled'); }, 1400);
+      });
+    });
+
+    /* ── scroll: progress bar + sticky nav ────────── */
+    const progress = document.getElementById('progress');
+    const nav = document.getElementById('nav');
+    let queued = false;
+
+    function onScroll() {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(function () {
+        queued = false;
+        const max = document.documentElement.scrollHeight - window.innerHeight;
+        const y = window.scrollY || window.pageYOffset;
+        progress.style.setProperty('--p', max > 0 ? Math.min(y / max, 1) : 0);
+        nav.classList.toggle('stuck', y > 24);
+      });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    onScroll();
+
+    /* ── pointer: card tilt, spotlight, cursor glow ─ */
+    const glow = document.getElementById('cursorGlow');
+    const fine = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+    if (fine) {
+      let gx = window.innerWidth / 2, gy = window.innerHeight / 2;
+      let tx = gx, ty = gy, raf = 0;
+
+      function ease() {
+        gx += (tx - gx) * 0.09;
+        gy += (ty - gy) * 0.09;
+        glow.style.transform = 'translate3d(' + gx.toFixed(1) + 'px,' + gy.toFixed(1) + 'px,0)';
+        raf = (Math.abs(tx - gx) > 0.5 || Math.abs(ty - gy) > 0.5)
+          ? requestAnimationFrame(ease) : 0;
+      }
+
+      window.addEventListener('pointermove', function (e) {
+        if (!motionOn) return;
+        tx = e.clientX; ty = e.clientY;
+        glow.classList.add('live');
+        if (!raf) raf = requestAnimationFrame(ease);
+      }, { passive: true });
+
+      document.querySelectorAll('.tilt').forEach(function (card) {
+        card.addEventListener('pointermove', function (e) {
+          if (!motionOn) return;
+          const r = card.getBoundingClientRect();
+          const px = (e.clientX - r.left) / r.width;
+          const py = (e.clientY - r.top) / r.height;
+          card.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+          card.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+          card.style.setProperty('--ry', ((px - 0.5) * 4).toFixed(2) + 'deg');
+          card.style.setProperty('--rx', ((0.5 - py) * 3).toFixed(2) + 'deg');
+        }, { passive: true });
+
+        card.addEventListener('pointerleave', function () {
+          card.style.setProperty('--rx', '0deg');
+          card.style.setProperty('--ry', '0deg');
+        });
+      });
+    }
+
+    applyMotion();
+  })();
+  </script>
+</body>
+</html>
