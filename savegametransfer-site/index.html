@@ -1,0 +1,4004 @@
+<!DOCTYPE html>
+<html lang="en" data-motion="on">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SaveGameTransfer — transfer save data between devices</title>
+  <meta name="description" content="Keep your ROMs, disc images and emulator save states in one place. Organise them into folders by platform, upload your files, and retrieve them on any other device.">
+  <meta name="theme-color" content="#0b0d13">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='26' height='26' rx='3' fill='%2358e6c8'/%3E%3Crect x='10' y='5' width='12' height='9' rx='1' fill='%230b0d13'/%3E%3Crect x='8' y='18' width='16' height='9' rx='1' fill='%230b0d13'/%3E%3Crect x='11' y='20' width='10' height='2' fill='%2358e6c8'/%3E%3Crect x='11' y='23' width='7' height='2' fill='%2358e6c8'/%3E%3C/svg%3E">
+
+  <script>
+    /* motion + language are read before first paint: nothing animates on load if it
+       shouldn't, and the page never flashes English before switching */
+    (function () {
+      var el = document.documentElement;
+      try {
+        var m = localStorage.getItem('sgt-motion');
+        var on = (m === null) ? !window.matchMedia('(prefers-reduced-motion: reduce)').matches : m === 'on';
+        el.setAttribute('data-motion', on ? 'on' : 'off');
+      } catch (e) {}
+      try {
+        var known = { en: 1, zh: 1, hi: 1, es: 1, fr: 1, ar: 1, pt: 1, mt: 1 };
+        var l = localStorage.getItem('sgt-lang');
+        if (!known[l]) {
+          l = String(navigator.language || 'en').slice(0, 2).toLowerCase();
+          if (!known[l]) l = 'en';
+        }
+        el.setAttribute('lang', l);
+        el.setAttribute('dir', l === 'ar' ? 'rtl' : 'ltr');
+      } catch (e) {}
+    })();
+  </script>
+
+  <style>
+    /* ─────────────────────────────────────────────
+       SaveGameTransfer
+       a dark cabinet, a mint glow, and a lot of file
+       extensions nobody should have to remember
+       ───────────────────────────────────────────── */
+
+    :root {
+      --bg:        #0b0d13;
+      --bg-grid:   rgba(255, 255, 255, 0.022);
+      --panel:     #141826;
+      --panel-2:   #1a1f30;
+      --panel-3:   #212739;
+      --line:      rgba(255, 255, 255, 0.075);
+      --line-2:    rgba(255, 255, 255, 0.15);
+
+      --txt:       #e9edf6;
+      --txt-2:     #a6b0c4;
+      --txt-3:     #6d778e;
+
+      --acc:       #58e6c8;
+      --acc-dim:   #2f8f7c;
+      --acc-glow:  rgba(88, 230, 200, 0.16);
+      --violet:    #8b7cff;
+      --warn:      #ffb454;
+      --bad:       #ff6b6b;
+
+      --r-sm: 7px;
+      --r:    11px;
+      --r-lg: 17px;
+
+      --shadow:   0 2px 5px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.32);
+      --shadow-lg: 0 8px 20px rgba(0,0,0,.42), 0 32px 70px rgba(0,0,0,.45);
+
+      --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+
+      --ease: cubic-bezier(.22, .68, .36, 1);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html[data-motion="off"] *,
+    html[data-motion="off"] *::before,
+    html[data-motion="off"] *::after {
+      animation-duration: .001ms !important;
+      transition-duration: .001ms !important;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--txt);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      overflow-wrap: break-word;
+    }
+
+    /* The grid lives on its own fixed layer rather than on <body>, so the
+       drift below is a compositor transform instead of a full-page repaint. */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: -44px;
+      z-index: -1;
+      pointer-events: none;
+      background-image:
+        linear-gradient(var(--bg-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
+      background-size: 44px 44px;
+    }
+
+    h1, h2, h3 { line-height: 1.18; margin: 0; letter-spacing: -.02em; font-weight: 650; }
+    p { margin: 0; }
+    a { color: var(--acc); }
+
+    :focus-visible {
+      outline: 2px solid var(--acc);
+      outline-offset: 2px;
+      border-radius: 3px;
+    }
+
+    .wrap { width: min(1140px, calc(100% - 40px)); margin-inline: auto; }
+
+    .hidden { display: none !important; }
+
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
+
+    /* ── shared bits ──────────────────────────────── */
+
+    .logo {
+      display: inline-flex; align-items: center; gap: 10px;
+      font-family: var(--mono); font-weight: 700; font-size: 15px;
+      letter-spacing: -.02em; color: var(--txt); text-decoration: none;
+      /* "SaveGameTransfer" is a name, not a sentence — bidi reordering would
+         render it "Transfer Game Save" on the Arabic page */
+      direction: ltr; unicode-bidi: isolate;
+    }
+    .logo-mark {
+      width: 26px; height: 26px; flex: none;
+      border-radius: 6px;
+      background: linear-gradient(145deg, var(--acc), #35b9a0);
+      display: grid; place-items: center;
+      box-shadow: 0 0 0 1px rgba(255,255,255,.1) inset, 0 4px 14px var(--acc-glow);
+    }
+    .logo-mark svg { width: 15px; height: 15px; display: block; }
+    .logo b { color: var(--acc); font-weight: 700; }
+
+    .btn {
+      font: inherit; font-size: 14px; font-weight: 560;
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      padding: 9px 16px;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--line-2);
+      background: var(--panel-2);
+      color: var(--txt);
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: background .16s var(--ease), border-color .16s var(--ease), transform .12s var(--ease), color .16s var(--ease);
+    }
+    .btn:hover { background: var(--panel-3); border-color: rgba(255,255,255,.24); }
+    .btn:active { transform: translateY(1px); }
+    .btn svg { width: 15px; height: 15px; flex: none; }
+
+    .btn-primary {
+      background: linear-gradient(160deg, var(--acc), #3dc4a9);
+      border-color: transparent;
+      color: #06231d;
+      font-weight: 650;
+      box-shadow: 0 4px 16px var(--acc-glow);
+    }
+    .btn-primary:hover { background: linear-gradient(160deg, #6ff0d5, #46d2b6); border-color: transparent; }
+
+    .btn-ghost { background: transparent; border-color: var(--line); color: var(--txt-2); }
+    .btn-ghost:hover { background: var(--panel-2); color: var(--txt); }
+
+    .btn-danger { color: var(--bad); border-color: rgba(255,107,107,.3); background: rgba(255,107,107,.07); }
+    .btn-danger:hover { background: rgba(255,107,107,.14); border-color: rgba(255,107,107,.5); }
+
+    .btn-sm { padding: 6px 11px; font-size: 13px; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    .icon-btn {
+      width: 32px; height: 32px; padding: 0; flex: none;
+      display: grid; place-items: center;
+      border-radius: var(--r-sm);
+      border: 1px solid transparent;
+      background: transparent; color: var(--txt-3);
+      cursor: pointer;
+      transition: background .16s var(--ease), color .16s var(--ease);
+    }
+    .icon-btn:hover { background: var(--panel-3); color: var(--txt); }
+    .icon-btn svg { width: 16px; height: 16px; display: block; }
+
+    .field { display: block; margin-bottom: 15px; }
+    .field > span {
+      display: block;
+      font-size: 12px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+      color: var(--txt-3);
+      margin-bottom: 7px;
+    }
+    .input {
+      font: inherit; font-size: 15px;
+      width: 100%;
+      padding: 10px 13px;
+      color: var(--txt);
+      background: var(--bg);
+      border: 1px solid var(--line-2);
+      border-radius: var(--r-sm);
+      transition: border-color .16s var(--ease), box-shadow .16s var(--ease);
+    }
+    .input:focus {
+      outline: none;
+      border-color: var(--acc-dim);
+      box-shadow: 0 0 0 3px var(--acc-glow);
+    }
+    .input::placeholder { color: var(--txt-3); }
+
+    .note { font-size: 13px; color: var(--txt-3); line-height: 1.55; }
+
+    .err {
+      font-size: 13.5px; color: #ffb0b0;
+      background: rgba(255,107,107,.09);
+      border: 1px solid rgba(255,107,107,.26);
+      border-radius: var(--r-sm);
+      padding: 9px 12px;
+      margin-bottom: 14px;
+    }
+
+    /* ── landing ──────────────────────────────────── */
+
+    .site-head {
+      padding: 20px 0;
+      border-bottom: 1px solid var(--line);
+      position: sticky; top: 0; z-index: 30;
+      background: rgba(11,13,19,.82);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    .site-head .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+
+    .hero { padding: 84px 0 64px; position: relative; overflow: hidden; }
+    .hero::before {
+      content: ''; position: absolute; inset: -40% 20% auto -10%; height: 520px;
+      background: radial-gradient(48% 50% at 30% 40%, var(--acc-glow), transparent 70%);
+      pointer-events: none;
+    }
+    .hero .wrap { position: relative; }
+
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+      color: var(--acc);
+      border: 1px solid rgba(88,230,200,.28);
+      background: rgba(88,230,200,.06);
+      border-radius: 100px;
+      padding: 5px 13px;
+      margin-bottom: 22px;
+    }
+    .eyebrow .dot {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--acc);
+      box-shadow: 0 0 8px var(--acc);
+    }
+
+    .hero h1 {
+      font-size: clamp(2.3rem, 6.2vw, 3.9rem);
+      max-width: 15ch;
+      margin-bottom: 20px;
+    }
+    .hero h1 em { font-style: normal; color: var(--acc); }
+
+    .hero-lede {
+      font-size: clamp(1.02rem, 2vw, 1.2rem);
+      color: var(--txt-2);
+      max-width: 56ch;
+      margin-bottom: 30px;
+    }
+
+    .hero-cta { display: flex; flex-wrap: wrap; gap: 11px; align-items: center; }
+    .hero-cta .btn { padding: 12px 22px; font-size: 15px; }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+      gap: 14px;
+      padding: 8px 0 72px;
+    }
+    .step {
+      background: linear-gradient(170deg, var(--panel), var(--panel) 60%, rgba(88,230,200,.03));
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      padding: 22px 20px 20px;
+    }
+    .step-n {
+      font-family: var(--mono); font-size: 12px; font-weight: 700;
+      color: var(--acc);
+      display: inline-grid; place-items: center;
+      width: 26px; height: 26px;
+      border-radius: 7px;
+      background: rgba(88,230,200,.1);
+      border: 1px solid rgba(88,230,200,.22);
+      margin-bottom: 13px;
+    }
+    .step h3 { font-size: 16px; margin-bottom: 6px; }
+    .step p { font-size: 14px; color: var(--txt-2); line-height: 1.55; }
+
+    .section { padding: 0 0 76px; }
+    .section-head { margin-bottom: 24px; }
+    .section-head h2 { font-size: clamp(1.4rem, 3.2vw, 1.85rem); margin-bottom: 8px; }
+    .section-head p { color: var(--txt-2); max-width: 62ch; font-size: 15px; }
+
+    .plat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+      gap: 10px;
+    }
+    .plat-chip {
+      display: flex; align-items: center; gap: 11px;
+      padding: 12px 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      transition: border-color .18s var(--ease), transform .18s var(--ease);
+    }
+    .plat-chip:hover { border-color: var(--line-2); transform: translateY(-2px); }
+    .plat-dot {
+      width: 9px; height: 9px; border-radius: 50%; flex: none;
+      box-shadow: 0 0 10px currentColor;
+      background: currentColor;
+    }
+    .plat-chip b { font-size: 14px; font-weight: 600; display: block; }
+    .plat-chip small { font-family: var(--mono); font-size: 11.5px; color: var(--txt-3); }
+
+    /* ── auth ─────────────────────────────────────── */
+
+    .auth-wrap { padding: 0 0 90px; }
+    .auth-card {
+      width: min(430px, 100%);
+      margin-inline: auto;
+      background: var(--panel);
+      border: 1px solid var(--line-2);
+      border-radius: var(--r-lg);
+      padding: 30px 28px 26px;
+      box-shadow: var(--shadow-lg);
+    }
+    .auth-card h2 { font-size: 21px; margin-bottom: 6px; }
+    .auth-card > p.note { margin-bottom: 22px; }
+
+    .tabs {
+      display: flex; gap: 4px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      padding: 4px;
+      margin-bottom: 22px;
+    }
+    .tab {
+      flex: 1; font: inherit; font-size: 14px; font-weight: 560;
+      padding: 8px; border: 0; border-radius: 5px;
+      background: transparent; color: var(--txt-3); cursor: pointer;
+      transition: background .16s var(--ease), color .16s var(--ease);
+    }
+    .tab[aria-selected="true"] { background: var(--panel-3); color: var(--txt); }
+
+    .auth-card .btn-primary { width: 100%; padding: 11px; margin-top: 4px; }
+
+    /* ── app shell ────────────────────────────────── */
+
+    .app-head {
+      position: sticky; top: 0; z-index: 30;
+      padding: 13px 0;
+      border-bottom: 1px solid var(--line);
+      background: rgba(11,13,19,.86);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    .app-head .wrap { display: flex; align-items: center; gap: 14px; }
+    .app-head .spacer { flex: 1; }
+
+    .meter { min-width: 132px; }
+    .meter-label {
+      display: flex; justify-content: space-between; gap: 10px;
+      font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em;
+      color: var(--txt-3);
+      margin-bottom: 5px;
+    }
+    .meter-bar { height: 4px; border-radius: 100px; background: var(--panel-3); overflow: hidden; }
+    .meter-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--acc), var(--violet));
+      border-radius: 100px;
+      transition: width .5s var(--ease);
+    }
+
+    .user-chip {
+      display: flex; align-items: center; gap: 9px;
+      padding: 5px 6px 5px 5px;
+      border: 1px solid var(--line);
+      border-radius: 100px;
+      background: var(--panel);
+    }
+    .avatar {
+      width: 26px; height: 26px; flex: none;
+      border-radius: 50%;
+      display: grid; place-items: center;
+      font-family: var(--mono); font-size: 12px; font-weight: 700;
+      color: #06231d;
+      background: linear-gradient(145deg, var(--acc), #3dc4a9);
+    }
+    .user-chip .uname { font-size: 13.5px; font-weight: 560; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .app-main { padding: 32px 0 100px; }
+
+    .view-head {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 16px; flex-wrap: wrap;
+      margin-bottom: 22px;
+    }
+    .view-head h2 { font-size: clamp(1.35rem, 3vw, 1.7rem); }
+    .view-head .sub { font-size: 14px; color: var(--txt-3); margin-top: 4px; }
+    .view-actions { display: flex; gap: 9px; flex-wrap: wrap; }
+
+    /* ── folders ──────────────────────────────────── */
+
+    .folder-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
+      gap: 14px;
+    }
+
+    .folder-card {
+      position: relative;
+      text-align: start;
+      font: inherit; color: inherit;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      padding: 18px 18px 16px;
+      cursor: pointer;
+      overflow: hidden;
+      transition: border-color .18s var(--ease), transform .18s var(--ease), box-shadow .18s var(--ease);
+    }
+    .folder-card::before {
+      content: ''; position: absolute; inset: 0 0 auto 0; height: 3px;
+      background: var(--pc, var(--acc));
+      opacity: .85;
+    }
+    .folder-card:hover { transform: translateY(-3px); border-color: var(--line-2); box-shadow: var(--shadow); }
+    .folder-card.drop-on {
+      border-color: var(--acc);
+      box-shadow: 0 0 0 3px var(--acc-glow);
+      transform: translateY(-3px);
+    }
+
+    .folder-top { display: flex; align-items: flex-start; gap: 11px; margin-bottom: 14px; }
+    .folder-ico {
+      width: 34px; height: 34px; flex: none;
+      border-radius: 9px;
+      display: grid; place-items: center;
+      background: color-mix(in srgb, var(--pc, var(--acc)) 15%, transparent);
+      color: var(--pc, var(--acc));
+      border: 1px solid color-mix(in srgb, var(--pc, var(--acc)) 32%, transparent);
+    }
+    .folder-ico svg { width: 17px; height: 17px; }
+    /* both live inside a <button>, so they need to be told to stack */
+    .folder-name { display: block; font-size: 16px; font-weight: 620; letter-spacing: -.01em; }
+    .folder-plat { display: block; font-family: var(--mono); font-size: 11.5px; color: var(--txt-3); margin-top: 2px; }
+    .folder-top > span:last-child { display: block; }
+
+    .folder-stats {
+      display: flex; gap: 14px; align-items: center;
+      padding-top: 13px;
+      border-top: 1px solid var(--line);
+      font-size: 12.5px; color: var(--txt-3);
+    }
+    .folder-stats b { color: var(--txt-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    /* ── empty states ─────────────────────────────── */
+
+    .empty {
+      text-align: center;
+      padding: 62px 24px;
+      border: 1px dashed var(--line-2);
+      border-radius: var(--r-lg);
+      background: rgba(255,255,255,.012);
+    }
+    .empty svg { width: 40px; height: 40px; color: var(--txt-3); margin-bottom: 14px; }
+    .empty h3 { font-size: 17px; margin-bottom: 7px; }
+    .empty p { color: var(--txt-3); font-size: 14.5px; max-width: 44ch; margin: 0 auto 20px; }
+
+    /* ── folder detail ────────────────────────────── */
+
+    .crumb {
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 13.5px; color: var(--txt-3);
+      background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit;
+      margin-bottom: 14px;
+    }
+    .crumb:hover { color: var(--txt); }
+    .crumb svg { width: 14px; height: 14px; }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: var(--mono); font-size: 11.5px;
+      padding: 3px 9px;
+      border-radius: 100px;
+      border: 1px solid color-mix(in srgb, var(--pc, var(--acc)) 30%, transparent);
+      background: color-mix(in srgb, var(--pc, var(--acc)) 11%, transparent);
+      color: var(--pc, var(--acc));
+      vertical-align: middle;
+    }
+
+    .dropzone {
+      border: 1.5px dashed var(--line-2);
+      border-radius: var(--r-lg);
+      padding: 26px;
+      text-align: center;
+      margin-bottom: 18px;
+      background: rgba(255,255,255,.012);
+      transition: border-color .18s var(--ease), background .18s var(--ease);
+    }
+    .dropzone.drop-on {
+      border-color: var(--acc);
+      background: var(--acc-glow);
+    }
+    .dropzone p { font-size: 14.5px; color: var(--txt-2); }
+    .dropzone .exts {
+      font-family: var(--mono); font-size: 12px; color: var(--txt-3);
+      margin-top: 9px; line-height: 1.7;
+    }
+    .dropzone .exts b { color: var(--txt-2); font-weight: 500; }
+
+    .game-list { display: flex; flex-direction: column; gap: 9px; }
+
+    .game {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      overflow: hidden;
+      transition: border-color .16s var(--ease);
+    }
+    .game:hover { border-color: var(--line-2); }
+
+    .game-row {
+      display: flex; align-items: center; gap: 13px;
+      padding: 13px 14px;
+      cursor: pointer;
+    }
+    .game-row:hover { background: rgba(255,255,255,.02); }
+
+    .game-ico {
+      width: 36px; height: 36px; flex: none;
+      border-radius: 9px;
+      display: grid; place-items: center;
+      background: var(--panel-3);
+      color: var(--txt-3);
+      font-family: var(--mono); font-size: 13px; font-weight: 700;
+    }
+    .game-meta { flex: 1; min-width: 0; }
+    .game-name {
+      display: block;
+      font-size: 15px; font-weight: 580;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .game-tags { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 4px; }
+    .tag {
+      font-family: var(--mono); font-size: 11px;
+      padding: 2px 7px; border-radius: 5px;
+      background: var(--panel-3); color: var(--txt-3);
+      border: 1px solid var(--line);
+    }
+    .tag.rom { color: var(--violet); border-color: rgba(139,124,255,.28); background: rgba(139,124,255,.09); }
+    .tag.save { color: var(--acc); border-color: rgba(88,230,200,.26); background: rgba(88,230,200,.08); }
+    .tag.none { color: var(--txt-3); }
+
+    .game-hint {
+      font-size: 12.5px; color: var(--txt-3);
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity .16s var(--ease);
+    }
+    .game-row:hover .game-hint { opacity: 1; }
+    @media (max-width: 700px) { .game-hint { display: none; } }
+
+    .game-acts { display: flex; gap: 2px; flex: none; }
+
+    .game-files {
+      border-top: 1px solid var(--line);
+      background: rgba(0,0,0,.2);
+      padding: 6px 8px;
+    }
+    .file-row {
+      display: flex; align-items: center; gap: 11px;
+      padding: 8px 8px 8px 10px;
+      border-radius: var(--r-sm);
+      font-size: 13.5px;
+    }
+    .file-row:hover { background: rgba(255,255,255,.03); }
+    .file-kind {
+      width: 4px; height: 26px; flex: none; border-radius: 100px;
+      background: var(--txt-3);
+    }
+    .file-kind.rom { background: var(--violet); }
+    .file-kind.save { background: var(--acc); }
+    .file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12.5px; }
+    .file-size { font-family: var(--mono); font-size: 11.5px; color: var(--txt-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+    .chev { transition: transform .2s var(--ease); }
+    .game[data-open="1"] .chev { transform: rotate(180deg); }
+
+    /* ── modal ────────────────────────────────────── */
+
+    .modal-back {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(6,8,12,.72);
+      backdrop-filter: blur(5px);
+      -webkit-backdrop-filter: blur(5px);
+      display: grid; place-items: center;
+      padding: 22px;
+      animation: fade .18s var(--ease);
+    }
+    @keyframes fade { from { opacity: 0; } }
+    @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+
+    .modal {
+      width: min(560px, 100%);
+      max-height: min(86vh, 760px);
+      display: flex; flex-direction: column;
+      background: var(--panel);
+      border: 1px solid var(--line-2);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow-lg);
+      animation: rise .22s var(--ease);
+    }
+    .modal-head {
+      padding: 20px 22px 14px;
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+      flex: none;
+    }
+    .modal-head h3 { font-size: 18px; }
+    .modal-head p { font-size: 13.5px; color: var(--txt-3); margin-top: 4px; }
+    .modal-body { padding: 0 22px; overflow-y: auto; flex: 1; }
+    .modal-foot {
+      padding: 16px 22px 20px;
+      display: flex; gap: 9px; justify-content: flex-end; flex-wrap: wrap;
+      flex: none;
+    }
+
+    /* platform picker inside the modal */
+    .plat-group { margin-bottom: 18px; }
+    .plat-group > h4 {
+      font-family: var(--mono); font-size: 11px; letter-spacing: .09em; text-transform: uppercase;
+      color: var(--txt-3); font-weight: 600;
+      margin: 0 0 9px;
+    }
+    .plat-opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(152px, 1fr)); gap: 8px; }
+    .plat-opt {
+      position: relative;
+      display: flex; align-items: center; gap: 9px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--bg);
+      cursor: pointer;
+      transition: border-color .15s var(--ease), background .15s var(--ease);
+    }
+    .plat-opt:hover { border-color: var(--line-2); }
+    .plat-opt input { position: absolute; opacity: 0; pointer-events: none; }
+    .plat-opt input:focus-visible + .plat-opt-in { outline: 2px solid var(--acc); outline-offset: 3px; border-radius: 4px; }
+    .plat-opt:has(input:checked) {
+      border-color: color-mix(in srgb, var(--pc) 55%, transparent);
+      background: color-mix(in srgb, var(--pc) 9%, var(--bg));
+    }
+    .plat-opt-in { display: flex; align-items: center; gap: 9px; min-width: 0; }
+    .plat-opt b { font-size: 13.5px; font-weight: 580; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .plat-opt small { font-family: var(--mono); font-size: 10.5px; color: var(--txt-3); display: block; }
+
+    .kind-opts { display: grid; gap: 10px; margin-bottom: 6px; }
+    .kind-opt {
+      display: flex; align-items: center; gap: 13px;
+      width: 100%; text-align: start;
+      font: inherit; color: inherit;
+      padding: 15px 16px;
+      border: 1px solid var(--line-2);
+      border-radius: var(--r);
+      background: var(--bg);
+      cursor: pointer;
+      transition: border-color .15s var(--ease), background .15s var(--ease);
+    }
+    .kind-opt:hover { border-color: var(--acc-dim); background: var(--panel-2); }
+    .kind-opt .kico {
+      width: 36px; height: 36px; flex: none;
+      border-radius: 9px; display: grid; place-items: center;
+    }
+    .kind-opt .kico svg { width: 17px; height: 17px; }
+    .kind-opt b { display: block; font-size: 14.5px; font-weight: 600; }
+    .kind-opt small { display: block; font-size: 12.5px; color: var(--txt-3); }
+
+    .check {
+      display: flex; align-items: center; gap: 9px;
+      font-size: 13.5px; color: var(--txt-2);
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .check input { width: 15px; height: 15px; accent-color: var(--acc); cursor: pointer; }
+
+    /* ── toast ────────────────────────────────────── */
+
+    .toasts {
+      position: fixed; z-index: 200;
+      bottom: 20px; left: 50%; transform: translateX(-50%);
+      display: flex; flex-direction: column; gap: 8px; align-items: center;
+      pointer-events: none;
+      width: min(440px, calc(100% - 32px));
+    }
+    .toast {
+      pointer-events: auto;
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 15px;
+      font-size: 14px;
+      background: var(--panel-3);
+      border: 1px solid var(--line-2);
+      border-radius: var(--r);
+      box-shadow: var(--shadow-lg);
+      animation: rise .22s var(--ease);
+      max-width: 100%;
+    }
+    .toast.ok { border-color: rgba(88,230,200,.35); }
+    .toast.bad { border-color: rgba(255,107,107,.4); }
+    .toast svg { width: 16px; height: 16px; flex: none; }
+    .toast.ok svg { color: var(--acc); }
+    .toast.bad svg { color: var(--bad); }
+
+    /* ── studio credit ────────────────────────────── */
+
+    @property --credit-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+    @keyframes creditSpin { to { --credit-angle: 360deg; } }
+
+    .credit {
+      display: block;
+      max-width: 520px;
+      margin: 34px auto 0;
+      padding: 2px;                      /* the rainbow ring */
+      border-radius: calc(var(--r) + 2px);
+      text-decoration: none;
+      /* falls back to a static rainbow where @property is unsupported */
+      background: conic-gradient(from var(--credit-angle, 0deg),
+        #ff5f6d, #ffb454, #ffe66d, #58e6c8, #4fa8ff, #8b7cff, #ff6ec7, #ff5f6d);
+      animation: creditSpin 7s linear infinite;
+      box-shadow: 0 6px 22px rgba(0,0,0,.4);
+      transition: transform .18s var(--ease), box-shadow .18s var(--ease);
+    }
+    .credit:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+    .credit:focus-visible { outline-offset: 4px; }
+    /* an infinite spin would repaint at random angles under the global
+       .001ms override, so stop it outright when motion is reduced */
+    html[data-motion="off"] .credit { animation: none !important; }
+
+    .credit-inner {
+      display: block;
+      border-radius: var(--r);
+      padding: 15px 20px;
+      text-align: center;
+      background:
+        linear-gradient(160deg,
+          #fbfcfe 0%, #dfe4ec 26%, #b8c0cd 46%,
+          #f2f4f8 58%, #c6cedb 78%, #e8ecf2 100%);
+      color: #1b2130;
+      font-size: 14.5px;
+      line-height: 1.5;
+      letter-spacing: -.005em;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.9), inset 0 -1px 0 rgba(0,0,0,.12);
+    }
+    .credit-inner b { font-weight: 700; color: #0d1220; }
+    .credit-arrow {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      font-family: var(--mono);
+      color: #4a5468;
+    }
+
+    /* ── site foot ────────────────────────────────── */
+
+    .site-foot {
+      border-top: 1px solid var(--line);
+      padding: 26px 0 40px;
+      font-size: 13px; color: var(--txt-3);
+    }
+    .site-foot .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }
+    .site-foot button {
+      font: inherit; font-size: 13px; background: none; border: 0; color: var(--txt-3);
+      cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 3px;
+    }
+    .site-foot button:hover { color: var(--txt-2); }
+
+    /* ══════════════════════════════════════════════════
+       MOTION
+       Everything below is decoration. The global
+       html[data-motion="off"] override at the top of the
+       sheet flattens all of it; the few things that
+       can't be flattened by duration alone are switched
+       off explicitly where they're defined.
+       ══════════════════════════════════════════════════ */
+
+    /* ── scroll reveal ────────────────────────────────
+       No transition in the resting state, so nothing
+       animates backwards when an element is re-hidden. */
+
+    [data-reveal] {
+      opacity: 0;
+      transform: translateY(20px);
+      will-change: opacity, transform;
+    }
+    [data-reveal].seen {
+      opacity: 1;
+      transform: none;
+      transition: opacity .62s var(--ease), transform .62s var(--ease);
+      transition-delay: var(--d, 0ms);
+      will-change: auto;
+    }
+    [data-reveal="scale"] { transform: translateY(24px) scale(.97); }
+    [data-reveal="side"]  { transform: translateX(-22px); }
+    [dir="rtl"] [data-reveal="side"] { transform: translateX(22px); }
+
+    html[data-motion="off"] [data-reveal] {
+      opacity: 1 !important;
+      transform: none !important;
+    }
+
+    /* ── hero entrance ────────────────────────────── */
+
+    @keyframes heroIn {
+      from { opacity: 0; transform: translateY(24px); filter: blur(6px); }
+      to   { opacity: 1; transform: none; filter: blur(0); }
+    }
+    /* `backwards`, never `both`: a forwards-filling animation would pin the
+       final transform and quietly defeat every :hover lift underneath it */
+    html[data-motion="on"] .hero [data-in] {
+      animation: heroIn .78s var(--ease) backwards;
+      animation-delay: calc(var(--i, 0) * 110ms + 60ms);
+    }
+
+    /* the mint bloom behind the headline breathes, very slowly */
+    @keyframes bloom {
+      0%, 100% { transform: translate3d(0, 0, 0) scale(1);      opacity: 1; }
+      50%      { transform: translate3d(4%, 3%, 0) scale(1.14); opacity: .72; }
+    }
+    html[data-motion="on"] .hero::before { animation: bloom 17s ease-in-out infinite; }
+
+    /* a second, cooler bloom drifting the other way */
+    .hero::after {
+      content: ''; position: absolute; inset: auto -15% -60% 40%; height: 460px;
+      background: radial-gradient(45% 50% at 60% 50%, rgba(139,124,255,.13), transparent 70%);
+      pointer-events: none;
+    }
+    html[data-motion="on"] .hero::after { animation: bloom 23s ease-in-out infinite reverse; }
+
+    /* the grid drifts one cell every 90s — you only notice it if you look */
+    @keyframes gridPan { to { transform: translate3d(44px, 44px, 0); } }
+    html[data-motion="on"] body::before { animation: gridPan 90s linear infinite; }
+
+    /* ── the live dot ─────────────────────────────── */
+
+    @keyframes dotPulse {
+      0%, 100% { box-shadow: 0 0 8px var(--acc), 0 0 0 0 rgba(88,230,200,.45); }
+      55%      { box-shadow: 0 0 12px var(--acc), 0 0 0 7px rgba(88,230,200,0); }
+    }
+    html[data-motion="on"] .eyebrow .dot { animation: dotPulse 2.6s ease-out infinite; }
+
+    /* ── buttons ──────────────────────────────────── */
+
+    .btn-primary { position: relative; overflow: hidden; }
+    .btn-primary::after {
+      content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%;
+      background: linear-gradient(100deg, transparent, rgba(255,255,255,.42), transparent);
+      transform: skewX(-18deg);
+      pointer-events: none;
+      opacity: 0;
+    }
+    @keyframes shine { from { left: -60%; opacity: 1; } to { left: 120%; opacity: 1; } }
+    html[data-motion="on"] .btn-primary:hover::after { animation: shine .72s var(--ease); }
+
+    .logo-mark svg { transition: transform .22s var(--ease); }
+    .logo:hover .logo-mark svg { transform: translateX(2px); }
+    [dir="rtl"] .logo:hover .logo-mark svg { transform: translateX(-2px); }
+
+    .icon-btn:active { transform: scale(.9); }
+
+    /* ── platform chips ───────────────────────────── */
+
+    .plat-chip:hover .plat-dot { box-shadow: 0 0 16px currentColor; }
+    .plat-dot { transition: box-shadow .18s var(--ease); }
+
+    /* [data-reveal].seen pins transform:none at equal specificity, so the
+       hover lift has to out-rank it explicitly */
+    .plat-chip[data-reveal].seen:hover { transform: translateY(-2px); }
+
+    .icon-btn { transition: background .16s var(--ease), color .16s var(--ease), transform .12s var(--ease); }
+
+    /* the crumb and logo arrows point the other way in a right-to-left page */
+    [dir="rtl"] .crumb svg { transform: scaleX(-1); }
+
+    /* Filenames, extension lists, sizes and codes are technical strings. On the
+       Arabic page the paragraph direction would otherwise shuffle their parts —
+       ".sav 12 MB" is not the same string as "MB 12 sav." */
+    .file-name, .file-size, .plat-chip small, .plat-opt small,
+    .folder-plat, .lang-opt .lsub, .credit-arrow {
+      direction: ltr;
+      unicode-bidi: isolate;
+    }
+
+    /* ── cards arriving ───────────────────────────── */
+
+    @keyframes popIn {
+      from { opacity: 0; transform: translateY(14px) scale(.985); }
+      to   { opacity: 1; transform: none; }
+    }
+    html[data-motion="on"] .pop-in {
+      animation: popIn .42s var(--ease) backwards;
+      animation-delay: calc(var(--d, 0) * 1ms);
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(9px); }
+      to   { opacity: 1; transform: none; }
+    }
+    html[data-motion="on"] .slide-in {
+      animation: slideIn .34s var(--ease) backwards;
+      animation-delay: calc(var(--d, 0) * 1ms);
+    }
+
+    /* the file list unrolling under a game */
+    @keyframes unroll {
+      from { opacity: 0; transform: translateY(-8px); clip-path: inset(0 0 100% 0); }
+      to   { opacity: 1; transform: none;             clip-path: inset(0 0 0 0); }
+    }
+    html[data-motion="on"] .game-files { animation: unroll .3s var(--ease); }
+
+    /* ── dropzone ─────────────────────────────────── */
+
+    @keyframes dropPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(88,230,200,.28); }
+      60%      { box-shadow: 0 0 0 10px rgba(88,230,200,0); }
+    }
+    html[data-motion="on"] .dropzone.drop-on { animation: dropPulse 1.5s ease-out infinite; }
+    .dropzone.drop-on p b { color: var(--acc); }
+
+    /* ── storage meter ────────────────────────────── */
+
+    .meter-fill { position: relative; overflow: hidden; }
+    .meter-fill::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.5), transparent);
+      transform: translateX(-100%);
+    }
+    @keyframes meterShine { to { transform: translateX(220%); } }
+    html[data-motion="on"] .meter-fill::after { animation: meterShine 3.4s var(--ease) 1.2s infinite; }
+
+    /* ══════════════════════════════════════════════════
+       SETTINGS
+       ══════════════════════════════════════════════════ */
+
+    .gear-btn {
+      position: fixed; z-index: 240;
+      bottom: 18px; inset-inline-end: 18px;
+      width: 46px; height: 46px; padding: 0;
+      display: grid; place-items: center;
+      border-radius: 50%;
+      border: 1px solid var(--line-2);
+      background: var(--panel-2);
+      color: var(--txt-2);
+      cursor: pointer;
+      box-shadow: var(--shadow);
+      transition: background .18s var(--ease), color .18s var(--ease),
+                  border-color .18s var(--ease), transform .3s var(--ease);
+    }
+    .gear-btn:hover { background: var(--panel-3); color: var(--acc); border-color: var(--acc-dim); }
+    .gear-btn svg { width: 21px; height: 21px; display: block; transition: transform .5s var(--ease); }
+    .gear-btn:hover svg { transform: rotate(60deg); }
+    .set-wrap.open ~ .gear-btn svg,
+    .gear-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+    .gear-btn .gear-flag {
+      position: absolute; bottom: -2px; inset-inline-end: -2px;
+      width: 20px; height: 14px;
+      border-radius: 3px;
+      box-shadow: 0 0 0 2px var(--bg);
+      overflow: hidden;
+    }
+
+    /* a slow idle wobble so the gear is findable without being loud */
+    @keyframes gearHint {
+      0%, 92%, 100% { transform: rotate(0); }
+      95%           { transform: rotate(11deg); }
+      98%           { transform: rotate(-7deg); }
+    }
+    html[data-motion="on"] .gear-btn:not(:hover) svg { animation: gearHint 12s ease-in-out infinite; }
+
+    .set-wrap { position: fixed; inset: 0; z-index: 250; visibility: hidden; }
+    .set-wrap.open { visibility: visible; }
+
+    .set-back {
+      position: absolute; inset: 0;
+      background: rgba(6,8,12,.6);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      opacity: 0;
+      transition: opacity .28s var(--ease);
+    }
+    .set-wrap.open .set-back { opacity: 1; }
+
+    .set-panel {
+      position: absolute; top: 0; bottom: 0; inset-inline-end: 0;
+      width: min(384px, 100%);
+      display: flex; flex-direction: column;
+      background: var(--panel);
+      border-inline-start: 1px solid var(--line-2);
+      box-shadow: var(--shadow-lg);
+      transform: translateX(102%);
+      transition: transform .38s var(--ease);
+    }
+    [dir="rtl"] .set-panel { transform: translateX(-102%); }
+    .set-wrap.open .set-panel { transform: none; }
+
+    .set-head {
+      flex: none;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .set-head h2 { font-size: 17px; display: flex; align-items: center; gap: 9px; }
+    .set-head h2 svg { width: 17px; height: 17px; color: var(--acc); }
+
+    .set-body { flex: 1; overflow-y: auto; padding: 20px; }
+
+    .set-block { margin-bottom: 26px; }
+    .set-block > h3 {
+      font-family: var(--mono); font-size: 11px; font-weight: 600;
+      letter-spacing: .1em; text-transform: uppercase;
+      color: var(--txt-3);
+      margin-bottom: 4px;
+    }
+    .set-block > p.note { margin-bottom: 13px; }
+
+    /* motion switch */
+    .switch-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 14px;
+      width: 100%;
+      font: inherit; text-align: start;
+      padding: 13px 15px;
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      background: var(--bg);
+      color: var(--txt);
+      cursor: pointer;
+      transition: border-color .16s var(--ease), background .16s var(--ease);
+    }
+    .switch-row:hover { border-color: var(--line-2); background: var(--panel-2); }
+    .switch-row b { display: block; font-size: 14.5px; font-weight: 580; }
+    .switch-row small { display: block; font-size: 12.5px; color: var(--txt-3); margin-top: 2px; }
+
+    .switch {
+      flex: none;
+      width: 42px; height: 24px;
+      border-radius: 100px;
+      background: var(--panel-3);
+      border: 1px solid var(--line-2);
+      position: relative;
+      transition: background .22s var(--ease), border-color .22s var(--ease);
+    }
+    .switch::after {
+      content: ''; position: absolute; top: 2px; inset-inline-start: 2px;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: var(--txt-3);
+      transition: transform .26s var(--ease), background .22s var(--ease);
+    }
+    [aria-pressed="true"] .switch {
+      background: rgba(88,230,200,.22);
+      border-color: var(--acc-dim);
+    }
+    [aria-pressed="true"] .switch::after {
+      background: var(--acc);
+      transform: translateX(18px);
+      box-shadow: 0 0 10px var(--acc-glow);
+    }
+    [dir="rtl"] [aria-pressed="true"] .switch::after { transform: translateX(-18px); }
+
+    /* language grid */
+    .lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    .lang-opt {
+      position: relative;
+      display: flex; align-items: center; gap: 10px;
+      font: inherit; text-align: start;
+      padding: 10px 11px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--bg);
+      color: var(--txt);
+      cursor: pointer;
+      overflow: hidden;
+      transition: border-color .16s var(--ease), background .16s var(--ease), transform .16s var(--ease);
+    }
+    .lang-opt:hover { border-color: var(--line-2); background: var(--panel-2); transform: translateY(-2px); }
+    .lang-opt[aria-pressed="true"] {
+      border-color: var(--acc-dim);
+      background: rgba(88,230,200,.08);
+    }
+    .lang-opt[aria-pressed="true"]::after {
+      content: ''; position: absolute; inset-inline-end: 8px; top: 8px;
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--acc);
+      box-shadow: 0 0 8px var(--acc);
+    }
+    .lang-opt .lname { display: block; font-size: 13.5px; font-weight: 580; line-height: 1.3; }
+    .lang-opt .lsub  { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--txt-3); }
+
+    .flag {
+      flex: none;
+      width: 26px; height: 18px;
+      border-radius: 3px;
+      overflow: hidden;
+      display: block;
+      box-shadow: 0 0 0 1px rgba(255,255,255,.14) inset, 0 1px 3px rgba(0,0,0,.4);
+    }
+    .flag svg { width: 100%; height: 100%; display: block; }
+
+    /* the credit lives in here now */
+    .set-block .credit { margin: 0; max-width: none; }
+    .set-block .credit-inner { padding: 13px 16px; font-size: 13.5px; }
+
+    /* ══════════════════════════════════════════════════
+       LANGUAGE SWEEP
+       A band rides across the viewport carrying the new
+       flag; the swap happens under it, at the moment the
+       band covers the middle of the screen.
+       ══════════════════════════════════════════════════ */
+
+    .sweep {
+      position: fixed; inset: 0; z-index: 400;
+      pointer-events: none;
+      overflow: hidden;
+      contain: layout paint style;
+    }
+
+    .sweep-rider {
+      position: absolute; top: -8%; bottom: -8%;
+      width: 62vw; min-width: 380px;
+      inset-inline-start: 0;
+      display: grid; place-items: center;
+      transform: skewX(-11deg);
+      background: linear-gradient(90deg,
+        transparent 0%,
+        color-mix(in srgb, var(--sw-a, #58e6c8) 40%, transparent) 22%,
+        color-mix(in srgb, var(--sw-b, #8b7cff) 88%, transparent) 52%,
+        color-mix(in srgb, var(--sw-a, #58e6c8) 40%, transparent) 80%,
+        transparent 100%);
+      animation: ride 980ms cubic-bezier(.62, .02, .24, 1) both;
+    }
+    @keyframes ride {
+      from { transform: skewX(-11deg) translateX(calc(-100% - 10vw)); }
+      to   { transform: skewX(-11deg) translateX(calc(100vw + 10vw)); }
+    }
+    /* inset-inline-start already flips the box to the right edge in RTL;
+       only the physical transform needs reversing */
+    [dir="rtl"] .sweep-rider { animation-name: rideRtl; }
+    @keyframes rideRtl {
+      from { transform: skewX(11deg) translateX(calc(100% + 10vw)); }
+      to   { transform: skewX(11deg) translateX(calc(-100vw - 10vw)); }
+    }
+
+    /* a thin bright leading edge, so the band reads as a wipe rather than a blob */
+    .sweep-rider::before {
+      content: ''; position: absolute; top: 0; bottom: 0; inset-inline-end: 12%;
+      width: 2px;
+      background: rgba(255,255,255,.85);
+      box-shadow: 0 0 22px 5px rgba(255,255,255,.5);
+    }
+
+    .sweep-badge {
+      transform: skewX(11deg);
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 20px;
+      border-radius: 100px;
+      background: rgba(8,10,16,.62);
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
+      box-shadow: 0 10px 40px rgba(0,0,0,.5);
+      animation: badgeIn 980ms var(--ease) both;
+    }
+    [dir="rtl"] .sweep-badge { transform: skewX(-11deg); }
+    @keyframes badgeIn {
+      0%        { opacity: 0; }
+      22%, 74%  { opacity: 1; }
+      100%      { opacity: 0; }
+    }
+    .sweep-badge .flag { width: 40px; height: 28px; }
+    .sweep-badge span {
+      font-size: 19px; font-weight: 650; letter-spacing: -.01em;
+      color: #fff;
+      white-space: nowrap;
+      text-shadow: 0 2px 10px rgba(0,0,0,.6);
+    }
+
+    /* the page dips out of focus while the text underneath is being replaced */
+    #landing, #app { transition: filter .3s var(--ease), opacity .3s var(--ease); }
+    body.swapping #landing, body.swapping #app { filter: blur(5px); opacity: .55; }
+
+    @media (max-width: 620px) {
+      .hero { padding: 56px 0 44px; }
+      .app-head .wrap { flex-wrap: wrap; }
+      .meter { display: none; }
+      .game-acts .opt-hide { display: none; }
+      .lang-grid { grid-template-columns: 1fr; }
+      .gear-btn { bottom: 14px; inset-inline-end: 14px; }
+      .sweep-badge span { font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════
+     LANDING  (logged out)
+     ══════════════════════════════════════════════════ -->
+<div id="landing">
+
+  <header class="site-head">
+    <div class="wrap">
+      <a class="logo" href="#top">
+        <span class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#06231d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14M13 6l6 6-6 6"/>
+          </svg>
+        </span>
+        Save<b>Game</b>Transfer
+      </a>
+      <button class="btn btn-ghost btn-sm" data-goto-auth data-i18n="nav_signin">Sign in</button>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="wrap">
+        <span class="eyebrow" data-in style="--i:0"><span class="dot"></span> <span data-i18n="hero_eyebrow">Save data, transferred from one device to the next</span></span>
+        <h1 data-in style="--i:1" data-i18n-html="hero_h1">Your <em>save files</em>, available on every device.</h1>
+        <p class="hero-lede" data-in style="--i:2" data-i18n="hero_lede">
+          Create an account, add a folder for each platform you emulate, and upload your ROMs, disc
+          images and save states. Everything is organised by system — NES, SNES, PS1, PS2, GBA and
+          the rest — so when you move to a new phone, handheld or PC, you retrieve the exact file you
+          need in seconds.
+        </p>
+        <div class="hero-cta" data-in style="--i:3">
+          <button class="btn btn-primary" data-goto-auth data-mode="signup" data-i18n="hero_cta1">Create a free account</button>
+          <button class="btn btn-ghost" data-goto-auth data-mode="login" data-i18n="hero_cta2">Sign in to an existing account</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="wrap">
+      <div class="steps">
+        <div class="step" data-reveal="scale" style="--d:0ms">
+          <span class="step-n">1</span>
+          <h3 data-i18n="s1_h">Create a folder</h3>
+          <p data-i18n="s1_p">Name it and select a platform. The folder then recognises which extensions are ROMs and which are save data.</p>
+        </div>
+        <div class="step" data-reveal="scale" style="--d:90ms">
+          <span class="step-n">2</span>
+          <h3 data-i18n="s2_h">Upload your files</h3>
+          <p data-i18n-html="s2_p">Drag in an entire library at once, or select files individually with <b>+ Add game</b>. Save files are matched to the correct game by filename.</p>
+        </div>
+        <div class="step" data-reveal="scale" style="--d:180ms">
+          <span class="step-n">3</span>
+          <h3 data-i18n="s3_h">Select a game, attach a state</h3>
+          <p data-i18n="s3_p">Select any game and the file picker opens directly on its save slot. Attach as many states as you need.</p>
+        </div>
+        <div class="step" data-reveal="scale" style="--d:270ms">
+          <span class="step-n">4</span>
+          <h3 data-i18n="s4_h">Retrieve it anywhere</h3>
+          <p data-i18n="s4_p">Sign in on another device and download the file into your emulator's save directory.</p>
+        </div>
+      </div>
+
+      <section class="section">
+        <div class="section-head" data-reveal="side">
+          <h2 data-i18n="plats_h">Compatible platforms</h2>
+          <p data-i18n="plats_p">
+            Each platform carries its own list of ROM and save extensions, so uploaded files are
+            sorted automatically.
+          </p>
+        </div>
+        <div class="plat-grid" id="landingPlats"></div>
+      </section>
+    </div>
+
+    <section class="auth-wrap" id="authSection">
+      <div class="wrap">
+        <div class="auth-card" data-reveal="scale">
+          <div class="tabs" role="tablist">
+            <button class="tab" role="tab" id="tabLogin" aria-selected="true" aria-controls="loginPane" data-i18n="tab_signin">Sign in</button>
+            <button class="tab" role="tab" id="tabSignup" aria-selected="false" aria-controls="signupPane" data-i18n="tab_create">Create account</button>
+          </div>
+
+          <form id="loginPane" role="tabpanel" aria-labelledby="tabLogin" novalidate>
+            <h2 data-i18n="login_h">Welcome back</h2>
+            <p class="note" data-i18n="login_p">Your folders are exactly where you left them.</p>
+            <div class="err hidden" id="loginErr"></div>
+            <label class="field">
+              <span data-i18n="f_user">Username</span>
+              <input class="input" id="loginUser" autocomplete="username" spellcheck="false" required>
+            </label>
+            <label class="field">
+              <span data-i18n="f_pass">Password</span>
+              <input class="input" id="loginPass" type="password" autocomplete="current-password" required>
+            </label>
+            <button class="btn btn-primary" type="submit" data-i18n="tab_signin">Sign in</button>
+          </form>
+
+          <form id="signupPane" class="hidden" role="tabpanel" aria-labelledby="tabSignup" novalidate>
+            <h2 data-i18n="signup_h">Create an account</h2>
+            <p class="note" data-i18n="signup_p">No email address and no confirmation link. Choose a username to begin.</p>
+            <div class="err hidden" id="signupErr"></div>
+            <label class="field">
+              <span data-i18n="f_user">Username</span>
+              <input class="input" id="signupUser" autocomplete="username" spellcheck="false" placeholder="e.g. retro_nick" data-i18n-ph="f_user_ph" required>
+            </label>
+            <label class="field">
+              <span data-i18n="f_pass">Password</span>
+              <input class="input" id="signupPass" type="password" autocomplete="new-password" placeholder="At least 8 characters" data-i18n-ph="f_pass_ph" required>
+            </label>
+            <label class="field">
+              <span data-i18n="f_pass2">Confirm password</span>
+              <input class="input" id="signupPass2" type="password" autocomplete="new-password" required>
+            </label>
+            <button class="btn btn-primary" type="submit" data-i18n="tab_create">Create account</button>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <span><span data-i18n="foot_built">SaveGameTransfer — built</span> 08/05/26</span>
+      <span data-i18n="foot_files">Files remain in this browser.</span>
+    </div>
+  </footer>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     APP  (logged in)
+     ══════════════════════════════════════════════════ -->
+<div id="app" class="hidden">
+
+  <header class="app-head">
+    <div class="wrap">
+      <a class="logo" href="#" id="homeLink">
+        <span class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#06231d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14M13 6l6 6-6 6"/>
+          </svg>
+        </span>
+        Save<b>Game</b>Transfer
+      </a>
+      <span class="spacer"></span>
+
+      <div class="meter" id="meter" hidden>
+        <div class="meter-label"><span id="meterUsed">—</span><span id="meterPct"></span></div>
+        <div class="meter-bar"><div class="meter-fill" id="meterFill"></div></div>
+      </div>
+
+      <div class="user-chip">
+        <span class="avatar" id="avatar">?</span>
+        <span class="uname" id="uname"></span>
+        <button class="icon-btn" id="logoutBtn" title="Sign out" aria-label="Sign out"
+                data-i18n-title="app_signout" data-i18n-aria="app_signout">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <div class="wrap">
+      <!-- folder list -->
+      <section id="viewFolders">
+        <div class="view-head">
+          <div>
+            <h2 data-i18n="app_folders_h">Your folders</h2>
+            <p class="sub" id="foldersSub"></p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-primary" id="newFolderBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              <span data-i18n="app_newfolder">New folder</span>
+            </button>
+          </div>
+        </div>
+        <div id="folderHost"></div>
+      </section>
+
+      <!-- one folder -->
+      <section id="viewFolder" class="hidden">
+        <button class="crumb" id="backBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
+          <span data-i18n="app_back">All folders</span>
+        </button>
+
+        <div class="view-head">
+          <div>
+            <h2 id="folderTitle"></h2>
+            <p class="sub" id="folderSub"></p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-primary" id="addGameBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              <span data-i18n="app_addgame">Add game</span>
+            </button>
+            <button class="btn btn-ghost" id="downloadAllBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              <span data-i18n="app_dlsaves">Download saves</span>
+            </button>
+            <button class="btn btn-danger btn-sm" id="delFolderBtn" data-i18n="app_delfolder">Delete folder</button>
+          </div>
+        </div>
+
+        <div class="dropzone" id="dropzone">
+          <p data-i18n-html="app_drop"><b>Drag files here</b> — ROMs, disc images, memory cards, save states.</p>
+          <p class="exts" id="dropExts"></p>
+        </div>
+
+        <div id="gameHost"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <span><span data-i18n="foot_built">SaveGameTransfer — built</span> 08/05/26</span>
+      <span data-i18n="foot_files_app">All data is stored in this browser, on this device.</span>
+    </div>
+  </footer>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     SETTINGS  (shared by both shells)
+     ══════════════════════════════════════════════════ -->
+<div class="set-wrap" id="setWrap" aria-hidden="true">
+  <div class="set-back" id="setBack"></div>
+
+  <aside class="set-panel" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <div class="set-head">
+      <h2 id="setTitle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3.2"/>
+          <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>
+        </svg>
+        <span data-i18n="set_title">Settings</span>
+      </h2>
+      <button class="icon-btn" id="setClose" aria-label="Close" data-i18n-aria="set_close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="set-body">
+      <div class="set-block">
+        <h3 data-i18n="set_motion_h">Motion</h3>
+        <p class="note" data-i18n="set_motion_p">Fades, reveals and the rotating credit ring. Disable them for a completely static page.</p>
+        <button class="switch-row" id="motionToggle" aria-pressed="true">
+          <span>
+            <b data-i18n="set_motion_label">Animations</b>
+            <small id="motionState" data-i18n="set_on">On</small>
+          </span>
+          <span class="switch" aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <div class="set-block">
+        <h3 data-i18n="set_lang_h">Language</h3>
+        <p class="note" data-i18n="set_lang_p">Eight languages available, including the one spoken where this site was built.</p>
+        <div class="lang-grid" id="langGrid"></div>
+      </div>
+
+      <div class="set-block">
+        <h3 data-i18n="set_made_h">Made by</h3>
+        <a class="credit" href="https://home.shcherbakov.co" target="_blank" rel="noopener">
+          <span class="credit-inner">
+            <span data-i18n-html="credit_text">This site was developed by <b>shcherbakov.co</b>, a Maltese web design group.</span>
+            <span class="credit-arrow" data-i18n="credit_arrow">home.shcherbakov.co →</span>
+          </span>
+        </a>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<button class="gear-btn" id="gearBtn" aria-expanded="false" aria-controls="setWrap"
+        aria-label="Settings" title="Settings" data-i18n-aria="set_open" data-i18n-title="set_open">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="3.2"/>
+    <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>
+  </svg>
+  <span class="flag gear-flag" id="gearFlag" aria-hidden="true"></span>
+</button>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<input type="file" id="filePicker" multiple class="sr-only" tabindex="-1" aria-hidden="true">
+<div id="modalHost"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ══════════════════════════════════════════════════
+     Platform table
+     Extensions are what the common emulators actually
+     write out — that's what makes drag-and-drop sorting
+     work without asking the user anything.
+     ══════════════════════════════════════════════════ */
+
+  var PLATFORMS = [
+    // ── 8-bit ──
+    { id: 'nes', name: 'NES / Famicom', gen: '8-bit', color: '#e0574b',
+      rom: ['.nes', '.fds', '.unf', '.unif', '.nsf'],
+      save: ['.sav', '.srm', '.state', '.fc0', '.fc1', '.fc2', '.fc3', '.fc4', '.fc5', '.fc6', '.fc7', '.fc8', '.fc9', '.ns0'],
+      emus: 'FCEUX · Mesen · Nestopia' },
+    { id: 'gb', name: 'Game Boy / Color', gen: '8-bit', color: '#9bcc4b',
+      rom: ['.gb', '.gbc', '.cgb', '.sgb'],
+      save: ['.sav', '.srm', '.rtc', '.state', '.s01', '.s02', '.sgm'],
+      emus: 'SameBoy · mGBA · Gambatte' },
+    { id: 'sms', name: 'Master System / GG', gen: '8-bit', color: '#5b8dd6',
+      rom: ['.sms', '.gg', '.sg'],
+      save: ['.sav', '.srm', '.brm', '.state', '.gs0'],
+      emus: 'Genesis Plus GX · Emulicious' },
+    { id: 'a2600', name: 'Atari 2600', gen: '8-bit', color: '#c98a3d',
+      rom: ['.a26', '.a78', '.bin'],
+      save: ['.sav', '.sta', '.state'],
+      emus: 'Stella' },
+
+    // ── 16-bit ──
+    { id: 'snes', name: 'SNES / Super Famicom', gen: '16-bit', color: '#8b7cff',
+      rom: ['.sfc', '.smc', '.fig', '.swc'],
+      save: ['.srm', '.sav', '.frz', '.state', '.zst', '.000', '.001', '.002'],
+      emus: 'Snes9x · bsnes · higan' },
+    { id: 'genesis', name: 'Mega Drive / Genesis', gen: '16-bit', color: '#4b8fe0',
+      rom: ['.md', '.gen', '.smd', '.bin', '.32x'],
+      save: ['.srm', '.sav', '.brm', '.state', '.gs0', '.gs1'],
+      emus: 'Genesis Plus GX · BlastEm · Kega' },
+    { id: 'pce', name: 'PC Engine / TurboGrafx', gen: '16-bit', color: '#e0794b',
+      rom: ['.pce', '.sgx', '.cue', '.chd'],
+      save: ['.sav', '.brm', '.bup', '.state', '.mc2'],
+      emus: 'Mednafen · Beetle PCE' },
+    { id: 'neogeo', name: 'Neo Geo / Arcade', gen: '16-bit', color: '#e0b04b',
+      rom: ['.zip', '.7z', '.neo'],
+      save: ['.nv', '.fs', '.sav', '.state', '.st0'],
+      emus: 'FinalBurn Neo · MAME' },
+
+    // ── 32/64-bit ──
+    { id: 'ps1', name: 'PlayStation 1', gen: '32 / 64-bit', color: '#a0a8bb',
+      rom: ['.bin', '.cue', '.img', '.iso', '.pbp', '.chd', '.ecm', '.m3u'],
+      save: ['.mcr', '.mcd', '.mc', '.gme', '.vgs', '.vmp', '.srm', '.psv', '.mcs'],
+      emus: 'DuckStation · Beetle PSX · ePSXe' },
+    { id: 'n64', name: 'Nintendo 64', gen: '32 / 64-bit', color: '#43c47a',
+      rom: ['.n64', '.z64', '.v64', '.rom'],
+      save: ['.eep', '.sra', '.fla', '.mpk', '.srm', '.state', '.st0', '.pj'],
+      emus: 'Mupen64Plus · simple64 · Project64' },
+    { id: 'saturn', name: 'Sega Saturn', gen: '32 / 64-bit', color: '#7c8cd6',
+      rom: ['.cue', '.bin', '.chd', '.iso', '.mds'],
+      save: ['.bkr', '.bcr', '.bup', '.sav', '.state'],
+      emus: 'Beetle Saturn · Yabause · SSF' },
+    { id: 'dreamcast', name: 'Dreamcast', gen: '32 / 64-bit', color: '#e0684b',
+      rom: ['.gdi', '.cdi', '.chd', '.cue'],
+      save: ['.vmu', '.bin', '.dcs', '.vms', '.state'],
+      emus: 'Flycast · redream' },
+
+    // ── handhelds ──
+    { id: 'gba', name: 'Game Boy Advance', gen: 'Handhelds', color: '#5bc4e0',
+      rom: ['.gba', '.agb', '.bin'],
+      save: ['.sav', '.srm', '.sgm', '.ss0', '.ss1', '.ss2', '.state', '.flash'],
+      emus: 'mGBA · VBA-M · NanoBoyAdvance' },
+    { id: 'nds', name: 'Nintendo DS', gen: 'Handhelds', color: '#c45be0',
+      rom: ['.nds', '.dsi', '.srl', '.ids'],
+      save: ['.sav', '.dsv', '.ds0', '.ds1', '.mln', '.state'],
+      emus: 'melonDS · DeSmuME' },
+    { id: 'psp', name: 'PSP', gen: 'Handhelds', color: '#c8cbd6',
+      rom: ['.iso', '.cso', '.pbp', '.chd', '.prx'],
+      save: ['.bin', '.ppst', '.sav', '.sfo', '.state'],
+      emus: 'PPSSPP' },
+    { id: 'ngp', name: 'Neo Geo Pocket / WS', gen: 'Handhelds', color: '#d6a05b',
+      rom: ['.ngp', '.ngc', '.ws', '.wsc'],
+      save: ['.flash', '.sav', '.state', '.eeprom'],
+      emus: 'Mednafen · Beetle NGP' },
+
+    // ── discs ──
+    { id: 'ps2', name: 'PlayStation 2', gen: 'Disc era', color: '#4b6ee0',
+      rom: ['.iso', '.bin', '.cue', '.chd', '.mdf', '.nrg', '.gz', '.cso'],
+      save: ['.ps2', '.max', '.cbs', '.xps', '.p2s', '.sps', '.psu', '.mcd', '.mc2'],
+      emus: 'PCSX2' },
+    { id: 'gc', name: 'GameCube', gen: 'Disc era', color: '#8b5be0',
+      rom: ['.iso', '.gcm', '.rvz', '.gcz', '.ciso'],
+      save: ['.gci', '.raw', '.sav', '.gcs', '.gcp'],
+      emus: 'Dolphin' },
+    { id: 'wii', name: 'Wii', gen: 'Disc era', color: '#5be0c4',
+      rom: ['.iso', '.wbfs', '.rvz', '.wad', '.nkit'],
+      save: ['.bin', '.sav', '.dat', '.savegame'],
+      emus: 'Dolphin' },
+    { id: 'xbox', name: 'Original Xbox', gen: 'Disc era', color: '#7ac43d',
+      rom: ['.iso', '.xiso', '.xbe'],
+      save: ['.sav', '.dat', '.bin', '.uds'],
+      emus: 'xemu' },
+
+    // ── other ──
+    { id: 'dos', name: 'DOS / PC', gen: 'Other', color: '#b0b6c4',
+      rom: ['.zip', '.exe', '.img', '.ima', '.iso', '.7z'],
+      save: ['.sav', '.dat', '.sv0', '.gam', '.cfg', '.state'],
+      emus: 'DOSBox · ScummVM' },
+    { id: 'amiga', name: 'Amiga / C64', gen: 'Other', color: '#e05b9b',
+      rom: ['.adf', '.d64', '.t64', '.tap', '.crt', '.lha', '.ipf'],
+      save: ['.sav', '.uss', '.vsf', '.state', '.dat'],
+      emus: 'WinUAE · VICE' },
+    { id: 'other', name: 'Anything else', gen: 'Other', color: '#6d778e',
+      rom: [],
+      save: [],
+      emus: 'Files are sorted manually' }
+  ];
+
+  var PLAT_BY_ID = {};
+  PLATFORMS.forEach(function (p) { PLAT_BY_ID[p.id] = p; });
+
+  var GENS = [];
+  PLATFORMS.forEach(function (p) { if (GENS.indexOf(p.gen) === -1) GENS.push(p.gen); });
+
+  /* ══════════════════════════════════════════════════
+     Icons
+     ══════════════════════════════════════════════════ */
+
+  var ICON = {
+    folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>',
+    disc:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>',
+    save:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>',
+    down:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>',
+    trash:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
+    chev:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+    plus:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    x:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+    check:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+    warn:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
+    box:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg>'
+  };
+
+  /* ══════════════════════════════════════════════════
+     Flags
+     Drawn rather than emoji: 🇲🇹 renders as the letters
+     "MT" on Windows, which defeats the point of using a
+     flag to recognise a language.
+     ══════════════════════════════════════════════════ */
+
+  var STAR = 'M0,-1L.2245,-.309L.9511,-.309L.3633,.1181L.5878,.809L0,.382' +
+             'L-.5878,.809L-.3633,.1181L-.9511,-.309L-.2245,-.309Z';
+
+  function star(x, y, s, rot) {
+    return '<path d="' + STAR + '" transform="translate(' + x + ',' + y + ') rotate(' + rot + ') scale(' + s + ')"/>';
+  }
+
+  function svg(inner) {
+    return '<svg viewBox="0 0 60 40" preserveAspectRatio="none" aria-hidden="true">' + inner + '</svg>';
+  }
+
+  var FLAG = {
+    gb: svg(
+      '<rect width="60" height="40" fill="#012169"/>' +
+      '<path d="M0 0L60 40M60 0L0 40" stroke="#fff" stroke-width="9"/>' +
+      '<path d="M0 0L60 40M60 0L0 40" stroke="#C8102E" stroke-width="3.6"/>' +
+      '<path d="M30 0V40M0 20H60" stroke="#fff" stroke-width="13"/>' +
+      '<path d="M30 0V40M0 20H60" stroke="#C8102E" stroke-width="7.5"/>'),
+
+    cn: svg(
+      '<rect width="60" height="40" fill="#EE1C25"/>' +
+      '<g fill="#FFDE00">' +
+        star(11, 11, 7, 0) + star(22, 4.5, 2.4, 23) + star(27, 10, 2.4, 46) +
+        star(27, 17.5, 2.4, 70) + star(22, 23, 2.4, 93) +
+      '</g>'),
+
+    in: svg(
+      '<rect width="60" height="13.34" fill="#FF9933"/>' +
+      '<rect y="13.33" width="60" height="13.34" fill="#fff"/>' +
+      '<rect y="26.66" width="60" height="13.34" fill="#138808"/>' +
+      /* 24 spokes, drawn as one dashed circle rather than 24 elements */
+      '<g transform="translate(30 20)" stroke="#000080" fill="none">' +
+        '<circle r="2.7" stroke-width="5.4" stroke-dasharray="0.36 0.347"/>' +
+        '<circle r="5.6" stroke-width="0.7"/>' +
+        '<circle r="1.2" fill="#000080" stroke="none"/>' +
+      '</g>'),
+
+    es: svg(
+      '<rect width="60" height="40" fill="#AA151B"/>' +
+      '<rect y="10" width="60" height="20" fill="#F1BF00"/>' +
+      '<g transform="translate(17,20)">' +
+        '<rect x="-4.2" y="-5.6" width="8.4" height="11.2" rx="1.3" fill="#AD1519"/>' +
+        '<rect x="-2.7" y="-4" width="5.4" height="8" rx=".9" fill="#F1BF00"/>' +
+        '<rect x="-1.1" y="-7.6" width="2.2" height="2.4" rx=".5" fill="#C8B100"/>' +
+      '</g>'),
+
+    fr: svg(
+      '<rect width="20" height="40" fill="#002395"/>' +
+      '<rect x="20" width="20" height="40" fill="#fff"/>' +
+      '<rect x="40" width="20" height="40" fill="#ED2939"/>'),
+
+    sa: svg(
+      '<rect width="60" height="40" fill="#165D31"/>' +
+      /* the shahada, reduced to its rhythm — reads as Arabic script at 26px wide */
+      '<g stroke="#fff" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.4">' +
+        '<path d="M9 17c1.5-2.7 3-2.7 4.5 0M15.5 17h3M20.5 14.9c0 2.1 1 2.1 2.4 2.1h2.2' +
+          'M27.4 17c1.4-3 2.8-3 4.2 0M33.6 17h2.6M38 14.7c0 2.3 1.2 2.3 2.6 2.3h2.4' +
+          'M45 17c1.3-2.5 2.6-2.5 3.9 0"/>' +
+      '</g>' +
+      '<g fill="#fff">' +
+        '<circle cx="12.8" cy="13.7" r=".62"/><circle cx="21.6" cy="12.9" r=".62"/>' +
+        '<circle cx="29.4" cy="13.5" r=".62"/><circle cx="39.2" cy="12.9" r=".62"/>' +
+        '<circle cx="47" cy="13.6" r=".62"/>' +
+        /* blade tapering to a point on the left, hilt and pommel on the right */
+        '<path d="M43.6 24.9H16.4l-6 1.6 6 1.6h27.2z"/>' +
+        '<rect x="44.6" y="22.6" width="1.5" height="6.8" rx=".6"/>' +
+        '<rect x="46.6" y="25.3" width="3.4" height="1.5" rx=".7"/>' +
+      '</g>'),
+
+    pt: svg(
+      '<rect width="60" height="40" fill="#FF0000"/>' +
+      '<rect width="24" height="40" fill="#006600"/>' +
+      '<g transform="translate(24,20)" stroke="#FFE900" fill="none">' +
+        '<circle r="7.4" stroke-width="1.5"/>' +
+        '<ellipse rx="3.2" ry="7.4" stroke-width="1.1"/>' +
+        '<path stroke-width="1" d="M-7.4 0H7.4M-6.4-3.6H6.4M-6.4 3.6H6.4"/>' +
+        '<rect x="-2.7" y="-3.5" width="5.4" height="7" rx=".9" fill="#fff" stroke="#D52B1E" stroke-width="1"/>' +
+      '</g>'),
+
+    mt: svg(
+      '<rect width="60" height="40" fill="#CF142B"/>' +
+      '<rect width="30" height="40" fill="#fff"/>' +
+      '<rect x="3.5" y="3.5" width="13" height="13" fill="#fff" stroke="#CF142B" stroke-width="1"/>' +
+      '<path d="M8.6 6h2.8v2.6H14v2.8h-2.6V14H8.6v-2.6H6V8.6h2.6z" fill="#C4C4C4" stroke="#9a9a9a" stroke-width=".5"/>')
+  };
+
+  /* ══════════════════════════════════════════════════
+     Languages
+     The seven most spoken in the world, plus Maltese —
+     which is where the people who built this are.
+     `a` and `b` tint the sweep that plays on switching.
+     ══════════════════════════════════════════════════ */
+
+  var LANGS = [
+    { id: 'en', name: 'English',    flag: 'gb', a: '#00247D', b: '#CF142B' },
+    { id: 'zh', name: '中文',        flag: 'cn', a: '#EE1C25', b: '#FFDE00' },
+    { id: 'hi', name: 'हिन्दी',        flag: 'in', a: '#FF9933', b: '#138808' },
+    { id: 'es', name: 'Español',    flag: 'es', a: '#AA151B', b: '#F1BF00' },
+    { id: 'fr', name: 'Français',   flag: 'fr', a: '#002395', b: '#ED2939' },
+    { id: 'ar', name: 'العربية',      flag: 'sa', a: '#165D31', b: '#0d3d20' },
+    { id: 'pt', name: 'Português',  flag: 'pt', a: '#006600', b: '#FF0000' },
+    { id: 'mt', name: 'Malti',      flag: 'mt', a: '#CF142B', b: '#8f0d1d' }
+  ];
+
+  var LANG_BY_ID = {};
+  LANGS.forEach(function (l) { LANG_BY_ID[l.id] = l; });
+
+  /* ══════════════════════════════════════════════════
+     Strings
+     Values that are objects are plural forms, picked by
+     Intl.PluralRules; `other` is the fallback for every
+     category a language doesn't spell out.
+     ══════════════════════════════════════════════════ */
+
+  var I18N = {};
+
+  I18N.en = {
+    nav_signin: 'Sign in',
+    hero_eyebrow: 'Save data, transferred from one device to the next',
+    hero_h1: 'Your <em>save files</em>, available on every device.',
+    hero_lede: 'Create an account, add a folder for each platform you emulate, and upload your ROMs, disc images and save states. Everything is organised by system — NES, SNES, PS1, PS2, GBA and the rest — so when you move to a new phone, handheld or PC, you retrieve the exact file you need in seconds.',
+    hero_cta1: 'Create a free account',
+    hero_cta2: 'Sign in to an existing account',
+    s1_h: 'Create a folder',
+    s1_p: 'Name it and select a platform. The folder then recognises which extensions are ROMs and which are save data.',
+    s2_h: 'Upload your files',
+    s2_p: 'Drag in an entire library at once, or select files individually with <b>+ Add game</b>. Save files are matched to the correct game by filename.',
+    s3_h: 'Select a game, attach a state',
+    s3_p: 'Select any game and the file picker opens directly on its save slot. Attach as many states as you need.',
+    s4_h: 'Retrieve it anywhere',
+    s4_p: "Sign in on another device and download the file into your emulator's save directory.",
+    plats_h: 'Compatible platforms',
+    plats_p: 'Each platform carries its own list of ROM and save extensions, so uploaded files are sorted automatically.',
+    tab_signin: 'Sign in',
+    tab_create: 'Create account',
+    login_h: 'Welcome back',
+    login_p: 'Your folders are exactly where you left them.',
+    signup_h: 'Create an account',
+    signup_p: 'No email address and no confirmation link. Choose a username to begin.',
+    f_user: 'Username', f_pass: 'Password', f_pass2: 'Confirm password',
+    f_user_ph: 'e.g. retro_nick', f_pass_ph: 'At least 8 characters',
+    foot_built: 'SaveGameTransfer — built',
+    foot_files: 'Files remain in this browser.',
+    foot_files_app: 'All data is stored in this browser, on this device.',
+    set_title: 'Settings', set_close: 'Close', set_open: 'Settings',
+    set_motion_h: 'Motion',
+    set_motion_p: 'Fades, reveals and the rotating credit ring. Disable them for a completely static page.',
+    set_motion_label: 'Animations', set_on: 'On', set_off: 'Off',
+    set_lang_h: 'Language',
+    set_lang_p: 'Eight languages available, including the one spoken where this site was built.',
+    set_made_h: 'Made by',
+    credit_text: 'This site was developed by <b>shcherbakov.co</b>, a Maltese web design group.',
+    credit_arrow: 'home.shcherbakov.co →',
+    app_signout: 'Sign out',
+    app_folders_h: 'Your folders',
+    app_newfolder: 'New folder', app_back: 'All folders', app_addgame: 'Add game',
+    app_dlsaves: 'Download saves', app_delfolder: 'Delete folder',
+    app_drop: '<b>Drag files here</b> — ROMs, disc images, memory cards, save states.',
+    nothing_yet: 'No items yet.',
+    u_folder:   { one: '{n} folder',    other: '{n} folders' },
+    u_game:     { one: '{n} game',      other: '{n} games' },
+    u_file:     { one: '{n} file',      other: '{n} files' },
+    u_rom:      { one: '{n} ROM',       other: '{n} ROMs' },
+    u_save:     { one: '{n} save',      other: '{n} saves' },
+    u_savefile: { one: '{n} save file', other: '{n} save files' },
+    u_newgame:  { one: '{n} new game',  other: '{n} new games' },
+    stat_games: 'games', stat_files: 'files',
+    meter_used: '{size} used',
+    empty_f_h: 'No folders yet',
+    empty_f_p: 'Start with one folder per platform you emulate. Each folder knows its platform, so it can distinguish a ROM from a save state automatically.',
+    empty_f_btn: 'Create your first folder',
+    empty_g_h: 'No games in this folder yet',
+    empty_g_p: 'Drag files onto the area above, or add a game manually and attach its files afterwards.',
+    empty_g_btn: 'Add a game',
+    exts_rom: 'ROMs:', exts_save: 'Saves:',
+    exts_any: 'This folder accepts any extension — you will be asked to identify each file.',
+    g_norom: 'no ROM', g_nosave: 'no save yet', g_hint: 'select to attach a save state →',
+    t_addrom: 'Attach a ROM or disc image', t_addsave: 'Attach a save file',
+    t_showfiles: 'Show files', t_download: 'Download', t_remove: 'Remove',
+    files_none: 'No files attached yet.', btn_removegame: 'Remove game',
+    cancel: 'Cancel', del: 'Delete', close: 'Close',
+    nf_title: 'New folder',
+    nf_sub: 'Select a platform and the folder will sort uploaded files automatically.',
+    nf_name: 'Folder name', nf_name_ph: 'e.g. SNES — main collection',
+    nf_plat: 'Platform', nf_create: 'Create folder', any_file: 'any file',
+    ag_title: 'Add a game',
+    ag_sub: 'Name it now and attach files later — or select the files and take the name from them.',
+    ag_name: 'Game name', ag_name_ph: 'e.g. Chrono Trigger',
+    ag_note: 'Once it is listed, selecting the game opens the file picker directly on its save slot.',
+    ag_note2: ' For {plat} that is usually {exts}.',
+    ag_pick: 'Select files instead', ag_add: 'Add game',
+    ask_title: 'Identify this file',
+    ask_sub: '{file} · {size} — this extension is not one the platform recognises.',
+    ask_rom_b: 'Game / ROM / disc image', ask_rom_s: 'The game itself',
+    ask_save_b: 'Save file or save state', ask_save_s: 'Your progress',
+    ask_all: 'Apply this to the rest of the upload', ask_skip: 'Skip this file',
+    del_game_t: 'Remove "{name}"?',
+    del_game_p: '{files} will be deleted along with it. This cannot be undone.',
+    del_game_p0: 'It has no files attached.',
+    del_folder_t: 'Delete "{name}"?',
+    del_folder_p: '{games} and {files} ({size}) will be deleted. Download anything you want to keep first — this cannot be undone.',
+    err_user3: 'Username must be at least 3 characters.',
+    err_userchars: 'Letters, numbers, dots, dashes and underscores only.',
+    err_pass8: 'Password must be at least 8 characters.',
+    err_passmatch: 'The passwords do not match.',
+    err_taken: 'That username is already taken.',
+    err_create: 'Could not create the account: {msg}',
+    err_nouser: 'No account exists with that username.',
+    err_wrongpass: 'Incorrect password.',
+    err_signin: 'Could not sign in: {msg}',
+    err_fillboth: 'Complete both fields.',
+    toast_created: 'Account created — welcome, {name}',
+    toast_signed: 'Signed in as {name}',
+    toast_folder: 'Folder "{name}" created',
+    toast_game: '"{name}" added — select it to attach a save state',
+    toast_attached: '{files} attached',
+    toast_added: '{files} added',
+    toast_added_games: '{files} added, {games}',
+    toast_removedfile: 'File removed',
+    toast_removedgame: '"{name}" removed',
+    toast_folderdel: 'Folder deleted',
+    toast_nosaves: 'No save files in this folder yet.',
+    toast_dl: '{files} downloaded',
+    toast_needname: 'Enter a folder name first.',
+    toast_needgamename: 'Enter a game name.',
+    err_quota: 'Browser storage is full — this file is too large to store here. Try a smaller file, or remove some existing ones.',
+    err_other: 'Could not save that file: {msg}',
+    boot_err: 'This browser has blocked local storage, so accounts and files cannot be saved. Private browsing windows often do this.'
+  };
+
+  I18N.zh = {
+    nav_signin: '登录',
+    hero_eyebrow: '把存档从一台设备搬到下一台',
+    hero_h1: '别再把<em>存档文件</em>丢在错误的设备上。',
+    hero_lede: '注册一个账号，为你模拟的每一台主机建一个文件夹，把 ROM、光盘镜像和即时存档拖进去。所有文件都按系统分类整理——NES、SNES、PS1、PS2、GBA 等等——换新手机、掌机或电脑时，你可以直接取出需要的那一个文件，而不用去翻 2019 年的压缩包。',
+    hero_cta1: '免费注册',
+    hero_cta2: '我已经有账号了',
+    s1_h: '新建文件夹',
+    s1_p: '起个名字并选择平台。文件夹随后就知道哪些扩展名是 ROM，哪些是存档。',
+    s2_h: '把文件拖进来',
+    s2_p: '可以一次拖入一大堆，也可以点 <b>+ 添加游戏</b> 手动挑选。存档会按文件名自动匹配到对应的游戏。',
+    s3_h: '点一下游戏，添加存档',
+    s3_p: '点击任意游戏，文件选择器会直接打开到它的存档位。想加多少个即时存档都行。',
+    s4_h: '在别处取回',
+    s4_p: '在另一台设备上登录，把文件下载到模拟器的存档目录里。搞定。',
+    plats_h: '已支持的主机',
+    plats_p: '每一台主机都自带一份 ROM 与存档扩展名清单，拖入的文件会自动归位，不用你手动整理。',
+    tab_signin: '登录', tab_create: '注册账号',
+    login_h: '欢迎回来', login_p: '你的文件夹还在原处等着你。',
+    signup_h: '创建账号', signup_p: '不需要邮箱，也没有确认链接。取个名字就能开始。',
+    f_user: '用户名', f_pass: '密码', f_pass2: '确认密码',
+    f_user_ph: '例如 retro_nick', f_pass_ph: '至少 8 个字符',
+    foot_built: 'SaveGameTransfer — 构建于',
+    foot_files: '文件只保存在这个浏览器里。',
+    foot_files_app: '所有内容都存在这台设备的浏览器里。',
+    set_title: '设置', set_close: '关闭', set_open: '设置',
+    set_motion_h: '动效',
+    set_motion_p: '淡入、滚动显现，以及旋转的致谢光环。关掉它们即可得到完全静止的页面。',
+    set_motion_label: '动画', set_on: '开', set_off: '关',
+    set_lang_h: '语言',
+    set_lang_p: '八种可选，包括本站诞生地所使用的语言。',
+    set_made_h: '开发者',
+    credit_text: '本站由马耳他网页设计工作室 <b>shcherbakov.co</b> 开发。',
+    credit_arrow: 'home.shcherbakov.co →',
+    app_signout: '退出登录', app_folders_h: '你的文件夹',
+    app_newfolder: '新建文件夹', app_back: '所有文件夹', app_addgame: '添加游戏',
+    app_dlsaves: '下载存档', app_delfolder: '删除文件夹',
+    app_drop: '<b>把文件拖到这里</b>——ROM、光盘镜像、记忆卡、即时存档。',
+    nothing_yet: '这里还什么都没有。',
+    u_folder: { other: '{n} 个文件夹' }, u_game: { other: '{n} 个游戏' },
+    u_file: { other: '{n} 个文件' }, u_rom: { other: '{n} 个 ROM' },
+    u_save: { other: '{n} 个存档' }, u_savefile: { other: '{n} 个存档文件' },
+    u_newgame: { other: '{n} 个新游戏' },
+    stat_games: '游戏', stat_files: '文件',
+    meter_used: '已用 {size}',
+    empty_f_h: '还没有文件夹',
+    empty_f_p: '先为你模拟的每台主机建一个。文件夹知道自己的平台，能自己分辨 ROM 和即时存档。',
+    empty_f_btn: '创建第一个文件夹',
+    empty_g_h: '这里还没有游戏',
+    empty_g_p: '把文件拖到上面的方框里，或者手动添加一个游戏，之后再附加文件。',
+    empty_g_btn: '添加一个游戏',
+    exts_rom: 'ROM：', exts_save: '存档：',
+    exts_any: '这个文件夹接受任何扩展名——每个文件都会问你它是什么。',
+    g_norom: '无 ROM', g_nosave: '还没有存档', g_hint: '点击添加即时存档 →',
+    t_addrom: '附加 ROM 或光盘镜像', t_addsave: '附加存档文件',
+    t_showfiles: '显示文件', t_download: '下载', t_remove: '移除',
+    files_none: '还没有附加任何文件。', btn_removegame: '移除游戏',
+    cancel: '取消', del: '删除', close: '关闭',
+    nf_title: '新建文件夹', nf_sub: '选好平台，文件夹就会替你把拖入的文件分类。',
+    nf_name: '文件夹名称', nf_name_ph: '例如 SNES — 主收藏',
+    nf_plat: '平台', nf_create: '创建文件夹', any_file: '任意文件',
+    ag_title: '添加游戏',
+    ag_sub: '现在起个名字，随时再附加文件——或者直接选文件，让名字从文件里来。',
+    ag_name: '游戏名称', ag_name_ph: '例如 时空之轮',
+    ag_note: '加入列表后，点击这个游戏会直接打开文件选择器到它的存档位。',
+    ag_note2: '对于 {plat}，通常是 {exts}。',
+    ag_pick: '改为选择文件', ag_add: '添加游戏',
+    ask_title: '这是什么文件？',
+    ask_sub: '{file} · {size} —— 这个扩展名不在该平台的已知列表里。',
+    ask_rom_b: '游戏 / ROM / 光盘镜像', ask_rom_s: '游戏本体',
+    ask_save_b: '存档或即时存档', ask_save_s: '你的进度',
+    ask_all: '本次拖入的其余文件都这样处理', ask_skip: '跳过这个文件',
+    del_game_t: '移除“{name}”？',
+    del_game_p: '{files} 会一并删除。此操作无法撤销。',
+    del_game_p0: '它没有附加任何文件。',
+    del_folder_t: '删除“{name}”？',
+    del_folder_p: '{games} 和 {files}（{size}）将被删除。请先下载你还需要的内容——此操作无法撤销。',
+    err_user3: '用户名至少需要 3 个字符。',
+    err_userchars: '只能使用字母、数字、点、连字符和下划线。',
+    err_pass8: '密码至少需要 8 个字符。',
+    err_passmatch: '两次输入的密码不一致。',
+    err_taken: '该用户名已被占用。',
+    err_create: '无法创建账号：{msg}',
+    err_nouser: '没有使用该用户名的账号。',
+    err_wrongpass: '密码错误。',
+    err_signin: '无法登录：{msg}',
+    err_fillboth: '两个字段都要填写。',
+    toast_created: '账号已创建——欢迎，{name}',
+    toast_signed: '已以 {name} 登录',
+    toast_folder: '文件夹“{name}”已创建',
+    toast_game: '“{name}”已添加——点击它来附加即时存档',
+    toast_attached: '已附加 {files}',
+    toast_added: '已添加 {files}',
+    toast_added_games: '已添加 {files}，{games}',
+    toast_removedfile: '文件已移除',
+    toast_removedgame: '“{name}”已移除',
+    toast_folderdel: '文件夹已删除',
+    toast_nosaves: '这个文件夹里还没有存档文件。',
+    toast_dl: '已下载 {files}',
+    toast_needname: '请先给文件夹起个名字。',
+    toast_needgamename: '请给游戏起个名字。',
+    err_quota: '浏览器存储空间已满——这个文件太大，放不下。请换个更小的文件或清理一些空间。',
+    err_other: '无法保存该文件：{msg}',
+    boot_err: '这个浏览器阻止了本地存储，因此无法保存账号和文件。隐私浏览窗口经常会这样。'
+  };
+
+  I18N.hi = {
+    nav_signin: 'साइन इन',
+    hero_eyebrow: 'आपके सेव, एक डिवाइस से दूसरे तक',
+    hero_h1: 'अपनी <em>सेव फ़ाइलें</em> गलत डिवाइस पर खोना बंद करें।',
+    hero_lede: 'एक खाता बनाइए, हर उस कंसोल के लिए एक फ़ोल्डर बनाइए जिसे आप एमुलेट करते हैं, और अपनी ROM, डिस्क इमेज और सेव स्टेट उसमें डाल दीजिए। सब कुछ सिस्टम के हिसाब से छँटा रहता है — NES, SNES, PS1, PS2, GBA और बाकी सब — ताकि नया फ़ोन, हैंडहेल्ड या PC लेने पर आप ठीक वही फ़ाइल निकाल सकें जो चाहिए, 2019 की किसी ज़िप में खोदे बिना।',
+    hero_cta1: 'मुफ़्त खाता बनाएँ',
+    hero_cta2: 'मेरा खाता पहले से है',
+    s1_h: 'एक फ़ोल्डर बनाएँ',
+    s1_p: 'उसे नाम दीजिए और प्लेटफ़ॉर्म चुनिए। इसके बाद फ़ोल्डर जान जाता है कि कौन से एक्सटेंशन ROM हैं और कौन से सेव।',
+    s2_h: 'अपनी फ़ाइलें डालिए',
+    s2_p: 'पूरा ढेर एक साथ खींच दीजिए, या <b>+ गेम जोड़ें</b> दबाकर हाथ से चुनिए। सेव फ़ाइल के नाम से सही गेम के साथ जुड़ जाते हैं।',
+    s3_h: 'गेम पर टैप कीजिए, सेव जोड़िए',
+    s3_p: 'किसी भी गेम पर क्लिक कीजिए और आपका फ़ाइल पिकर सीधे उसके सेव स्लॉट पर खुलेगा। जितने चाहें उतने सेव स्टेट जोड़िए।',
+    s4_h: 'कहीं और से उतार लीजिए',
+    s4_p: 'दूसरे डिवाइस पर साइन इन कीजिए और फ़ाइल को अपने एमुलेटर की सेव डायरेक्टरी में डाउनलोड कर लीजिए। हो गया।',
+    plats_h: 'जिन कंसोल को यह पहचानता है',
+    plats_p: 'हर एक के साथ ROM और सेव एक्सटेंशन की अपनी सूची आती है, इसलिए डाली गई फ़ाइलें बिना आपकी छँटाई के सही जगह पहुँच जाती हैं।',
+    tab_signin: 'साइन इन', tab_create: 'खाता बनाएँ',
+    login_h: 'वापसी पर स्वागत है', login_p: 'आपके फ़ोल्डर वहीं इंतज़ार कर रहे हैं जहाँ आपने छोड़े थे।',
+    signup_h: 'खाता बनाएँ', signup_p: 'न ईमेल, न पुष्टि लिंक। बस एक नाम चुनिए और शुरू कीजिए।',
+    f_user: 'उपयोगकर्ता नाम', f_pass: 'पासवर्ड', f_pass2: 'पासवर्ड दोहराएँ',
+    f_user_ph: 'जैसे retro_nick', f_pass_ph: 'कम से कम 8 अक्षर',
+    foot_built: 'SaveGameTransfer — बना',
+    foot_files: 'फ़ाइलें इसी ब्राउज़र में रहती हैं।',
+    foot_files_app: 'सब कुछ इसी डिवाइस के इसी ब्राउज़र में रखा जाता है।',
+    set_title: 'सेटिंग्स', set_close: 'बंद करें', set_open: 'सेटिंग्स',
+    set_motion_h: 'मोशन',
+    set_motion_p: 'फ़ेड, रिवील और घूमता हुआ क्रेडिट रिंग। पूरी तरह स्थिर पेज के लिए इन्हें बंद कर दीजिए।',
+    set_motion_label: 'एनिमेशन', set_on: 'चालू', set_off: 'बंद',
+    set_lang_h: 'भाषा',
+    set_lang_p: 'चुनने के लिए आठ, उस भाषा सहित जो वहाँ बोली जाती है जहाँ यह साइट बनी।',
+    set_made_h: 'निर्माता',
+    credit_text: 'यह साइट <b>shcherbakov.co</b> ने बनाई है, जो एक माल्टीज़ वेब डिज़ाइन समूह है।',
+    credit_arrow: 'home.shcherbakov.co →',
+    app_signout: 'साइन आउट', app_folders_h: 'आपके फ़ोल्डर',
+    app_newfolder: 'नया फ़ोल्डर', app_back: 'सभी फ़ोल्डर', app_addgame: 'गेम जोड़ें',
+    app_dlsaves: 'सेव डाउनलोड करें', app_delfolder: 'फ़ोल्डर हटाएँ',
+    app_drop: '<b>फ़ाइलें यहाँ खींचिए</b> — ROM, डिस्क इमेज, मेमोरी कार्ड, सेव स्टेट।',
+    nothing_yet: 'यहाँ अभी कुछ नहीं है।',
+    u_folder: { one: '{n} फ़ोल्डर', other: '{n} फ़ोल्डर' },
+    u_game:   { one: '{n} गेम', other: '{n} गेम' },
+    u_file:   { one: '{n} फ़ाइल', other: '{n} फ़ाइलें' },
+    u_rom:    { one: '{n} ROM', other: '{n} ROM' },
+    u_save:   { one: '{n} सेव', other: '{n} सेव' },
+    u_savefile: { one: '{n} सेव फ़ाइल', other: '{n} सेव फ़ाइलें' },
+    u_newgame:  { one: '{n} नया गेम', other: '{n} नए गेम' },
+    stat_games: 'गेम', stat_files: 'फ़ाइलें',
+    meter_used: '{size} इस्तेमाल',
+    empty_f_h: 'अभी कोई फ़ोल्डर नहीं',
+    empty_f_p: 'जिस भी कंसोल को आप एमुलेट करते हैं, उसके लिए एक से शुरू कीजिए। फ़ोल्डर अपना प्लेटफ़ॉर्म जानता है, इसलिए वह ROM और सेव स्टेट में खुद फ़र्क कर लेता है।',
+    empty_f_btn: 'अपना पहला फ़ोल्डर बनाएँ',
+    empty_g_h: 'यहाँ अभी कोई गेम नहीं',
+    empty_g_p: 'ऊपर वाले बॉक्स पर फ़ाइलें खींचिए, या गेम हाथ से जोड़कर उसकी फ़ाइलें बाद में लगाइए।',
+    empty_g_btn: 'एक गेम जोड़ें',
+    exts_rom: 'ROM:', exts_save: 'सेव:',
+    exts_any: 'यह फ़ोल्डर कोई भी एक्सटेंशन लेता है — हर फ़ाइल के बारे में आपसे पूछा जाएगा।',
+    g_norom: 'कोई ROM नहीं', g_nosave: 'अभी कोई सेव नहीं', g_hint: 'सेव स्टेट जोड़ने के लिए क्लिक करें →',
+    t_addrom: 'ROM या डिस्क इमेज लगाएँ', t_addsave: 'सेव फ़ाइल लगाएँ',
+    t_showfiles: 'फ़ाइलें दिखाएँ', t_download: 'डाउनलोड', t_remove: 'हटाएँ',
+    files_none: 'अभी कुछ नहीं लगा है।', btn_removegame: 'गेम हटाएँ',
+    cancel: 'रद्द करें', del: 'हटाएँ', close: 'बंद करें',
+    nf_title: 'नया फ़ोल्डर',
+    nf_sub: 'प्लेटफ़ॉर्म चुनिए और फ़ोल्डर डाली गई फ़ाइलों को आपके लिए छाँट देगा।',
+    nf_name: 'फ़ोल्डर का नाम', nf_name_ph: 'जैसे SNES — मुख्य संग्रह',
+    nf_plat: 'प्लेटफ़ॉर्म', nf_create: 'फ़ोल्डर बनाएँ', any_file: 'कोई भी फ़ाइल',
+    ag_title: 'गेम जोड़ें',
+    ag_sub: 'अभी नाम दे दीजिए और फ़ाइलें जब चाहें लगाइए — या फ़ाइलें चुन लीजिए और नाम उन्हीं से आ जाएगा।',
+    ag_name: 'गेम का नाम', ag_name_ph: 'जैसे Chrono Trigger',
+    ag_note: 'सूची में आ जाने के बाद, गेम पर क्लिक करने से आपका फ़ाइल पिकर सीधे उसके सेव स्लॉट पर खुलता है।',
+    ag_note2: ' {plat} के लिए इसका मतलब आमतौर पर {exts} होता है।',
+    ag_pick: 'इसके बजाय फ़ाइलें चुनें', ag_add: 'गेम जोड़ें',
+    ask_title: 'यह फ़ाइल क्या है?',
+    ask_sub: '{file} · {size} — यह एक्सटेंशन इस प्लेटफ़ॉर्म की पहचानी सूची में नहीं है।',
+    ask_rom_b: 'गेम / ROM / डिस्क इमेज', ask_rom_s: 'गेम खुद',
+    ask_save_b: 'सेव फ़ाइल या सेव स्टेट', ask_save_s: 'आपकी प्रगति',
+    ask_all: 'इस ड्रॉप की बाकी फ़ाइलों के साथ भी ऐसा ही करें', ask_skip: 'यह फ़ाइल छोड़ें',
+    del_game_t: '"{name}" हटाएँ?',
+    del_game_p: 'इसके साथ {files} भी मिट जाएँगी। इसे वापस नहीं लाया जा सकता।',
+    del_game_p0: 'इससे कोई फ़ाइल नहीं जुड़ी है।',
+    del_folder_t: '"{name}" मिटाएँ?',
+    del_folder_p: '{games} और {files} ({size}) मिटा दिए जाएँगे। जो चाहिए वह पहले डाउनलोड कर लीजिए — इसे वापस नहीं लाया जा सकता।',
+    err_user3: 'उपयोगकर्ता नाम में कम से कम 3 अक्षर चाहिए।',
+    err_userchars: 'केवल अक्षर, अंक, बिंदु, डैश और अंडरस्कोर।',
+    err_pass8: 'पासवर्ड में कम से कम 8 अक्षर चाहिए।',
+    err_passmatch: 'दोनों पासवर्ड मेल नहीं खाते।',
+    err_taken: 'यह उपयोगकर्ता नाम पहले से लिया जा चुका है।',
+    err_create: 'खाता नहीं बन सका: {msg}',
+    err_nouser: 'इस नाम का कोई खाता नहीं है।',
+    err_wrongpass: 'गलत पासवर्ड।',
+    err_signin: 'साइन इन नहीं हो सका: {msg}',
+    err_fillboth: 'दोनों खाने भरिए।',
+    toast_created: 'खाता बन गया — स्वागत है, {name}',
+    toast_signed: '{name} के रूप में साइन इन',
+    toast_folder: 'फ़ोल्डर "{name}" बन गया',
+    toast_game: '"{name}" जोड़ा गया — सेव स्टेट लगाने के लिए उस पर क्लिक कीजिए',
+    toast_attached: '{files} लगाई गईं',
+    toast_added: '{files} जोड़ी गईं',
+    toast_added_games: '{files} जोड़ी गईं, {games}',
+    toast_removedfile: 'फ़ाइल हटा दी गई',
+    toast_removedgame: '"{name}" हटा दिया गया',
+    toast_folderdel: 'फ़ोल्डर मिटा दिया गया',
+    toast_nosaves: 'इस फ़ोल्डर में अभी कोई सेव फ़ाइल नहीं है।',
+    toast_dl: '{files} डाउनलोड हुईं',
+    toast_needname: 'पहले फ़ोल्डर को नाम दीजिए।',
+    toast_needgamename: 'गेम को नाम दीजिए।',
+    err_quota: 'ब्राउज़र का स्टोरेज भर गया — यह फ़ाइल यहाँ रखने के लिए बहुत बड़ी है। छोटी फ़ाइल आज़माइए या कुछ जगह खाली कीजिए।',
+    err_other: 'वह फ़ाइल सहेजी नहीं जा सकी: {msg}',
+    boot_err: 'इस ब्राउज़र ने लोकल स्टोरेज रोक दिया है, इसलिए खाते और फ़ाइलें नहीं रखी जा सकतीं। प्राइवेट ब्राउज़िंग विंडो अक्सर ऐसा करती हैं।'
+  };
+
+  I18N.es = {
+    nav_signin: 'Iniciar sesión',
+    hero_eyebrow: 'Tus partidas guardadas, de un dispositivo al siguiente',
+    hero_h1: 'Deja de perder tus <em>partidas guardadas</em> en el dispositivo equivocado.',
+    hero_lede: 'Crea una cuenta, crea una carpeta para cada consola que emules y suelta ahí tus ROMs, imágenes de disco y estados guardados. Todo queda ordenado por sistema — NES, SNES, PS1, PS2, GBA y el resto — para que al cambiar de móvil, portátil o PC saques exactamente el archivo que necesitas en lugar de rebuscar en un zip de 2019.',
+    hero_cta1: 'Crear una cuenta gratis',
+    hero_cta2: 'Ya tengo una',
+    s1_h: 'Crea una carpeta',
+    s1_p: 'Ponle nombre y elige la plataforma. A partir de ahí la carpeta sabe qué extensiones son ROMs y cuáles partidas guardadas.',
+    s2_h: 'Suelta tus archivos',
+    s2_p: 'Arrastra un montón de golpe, o pulsa <b>+ Añadir juego</b> y elígelos a mano. Las partidas se emparejan con el juego correcto por el nombre del archivo.',
+    s3_h: 'Toca un juego, añade un estado',
+    s3_p: 'Haz clic en cualquier juego y el selector de archivos se abre directamente en su ranura de guardado. Añade tantos estados como quieras.',
+    s4_h: 'Descárgalo en otro sitio',
+    s4_p: 'Inicia sesión en el otro dispositivo y descarga el archivo en la carpeta de guardado de tu emulador. Listo.',
+    plats_h: 'Consolas que conoce',
+    plats_p: 'Cada una trae su propia lista de extensiones de ROM y de guardado, así que los archivos que sueltes caen en su sitio sin que tengas que ordenarlos.',
+    tab_signin: 'Iniciar sesión', tab_create: 'Crear cuenta',
+    login_h: 'Bienvenido de nuevo', login_p: 'Tus carpetas te esperan donde las dejaste.',
+    signup_h: 'Crear una cuenta', signup_p: 'Sin correo, sin enlace de confirmación. Elige un nombre y listo.',
+    f_user: 'Nombre de usuario', f_pass: 'Contraseña', f_pass2: 'Confirmar contraseña',
+    f_user_ph: 'p. ej. retro_nick', f_pass_ph: 'Al menos 8 caracteres',
+    foot_built: 'SaveGameTransfer — creado el',
+    foot_files: 'Los archivos se quedan en este navegador.',
+    foot_files_app: 'Todo se guarda en este navegador, en este dispositivo.',
+    set_title: 'Ajustes', set_close: 'Cerrar', set_open: 'Ajustes',
+    set_motion_h: 'Movimiento',
+    set_motion_p: 'Fundidos, apariciones y el anillo giratorio del crédito. Desactívalos para una página completamente quieta.',
+    set_motion_label: 'Animaciones', set_on: 'Activadas', set_off: 'Desactivadas',
+    set_lang_h: 'Idioma',
+    set_lang_p: 'Ocho a elegir, incluido el que se habla donde se construyó este sitio.',
+    set_made_h: 'Hecho por',
+    credit_text: 'Este sitio fue desarrollado por <b>shcherbakov.co</b>, un estudio maltés de diseño web.',
+    credit_arrow: 'home.shcherbakov.co →',
+    app_signout: 'Cerrar sesión', app_folders_h: 'Tus carpetas',
+    app_newfolder: 'Nueva carpeta', app_back: 'Todas las carpetas', app_addgame: 'Añadir juego',
+    app_dlsaves: 'Descargar partidas', app_delfolder: 'Eliminar carpeta',
+    app_drop: '<b>Arrastra archivos aquí</b> — ROMs, imágenes de disco, memory cards, estados guardados.',
+    nothing_yet: 'Aquí todavía no hay nada.',
+    u_folder: { one: '{n} carpeta', other: '{n} carpetas' },
+    u_game:   { one: '{n} juego', other: '{n} juegos' },
+    u_file:   { one: '{n} archivo', other: '{n} archivos' },
+    u_rom:    { one: '{n} ROM', other: '{n} ROMs' },
+    u_save:   { one: '{n} partida', other: '{n} partidas' },
+    u_savefile: { one: '{n} archivo de guardado', other: '{n} archivos de guardado' },
+    u_newgame:  { one: '{n} juego nuevo', other: '{n} juegos nuevos' },
+    stat_games: 'juegos', stat_files: 'archivos',
+    meter_used: '{size} usados',
+    empty_f_h: 'Todavía no hay carpetas',
+    empty_f_p: 'Empieza con una por cada consola que emules. Una carpeta conoce su plataforma, así que distingue sola una ROM de un estado guardado.',
+    empty_f_btn: 'Crea tu primera carpeta',
+    empty_g_h: 'Aquí todavía no hay juegos',
+    empty_g_p: 'Arrastra archivos a la caja de arriba, o añade un juego a mano y adjunta sus archivos después.',
+    empty_g_btn: 'Añadir un juego',
+    exts_rom: 'ROMs:', exts_save: 'Guardados:',
+    exts_any: 'Esta carpeta acepta cualquier extensión — se te preguntará qué es cada archivo.',
+    g_norom: 'sin ROM', g_nosave: 'aún sin guardado', g_hint: 'haz clic para añadir un estado →',
+    t_addrom: 'Adjuntar una ROM o imagen de disco', t_addsave: 'Adjuntar un archivo de guardado',
+    t_showfiles: 'Mostrar archivos', t_download: 'Descargar', t_remove: 'Quitar',
+    files_none: 'Todavía no hay nada adjunto.', btn_removegame: 'Quitar juego',
+    cancel: 'Cancelar', del: 'Eliminar', close: 'Cerrar',
+    nf_title: 'Nueva carpeta',
+    nf_sub: 'Elige la plataforma y la carpeta ordenará por ti los archivos que sueltes.',
+    nf_name: 'Nombre de la carpeta', nf_name_ph: 'p. ej. SNES — colección principal',
+    nf_plat: 'Plataforma', nf_create: 'Crear carpeta', any_file: 'cualquier archivo',
+    ag_title: 'Añadir un juego',
+    ag_sub: 'Ponle nombre ahora y adjunta archivos cuando quieras — o elige los archivos y deja que el nombre salga de ellos.',
+    ag_name: 'Nombre del juego', ag_name_ph: 'p. ej. Chrono Trigger',
+    ag_note: 'Una vez en la lista, al hacer clic en el juego se abre el selector de archivos directamente en su ranura de guardado.',
+    ag_note2: ' Para {plat} eso suele significar {exts}.',
+    ag_pick: 'Mejor elegir archivos', ag_add: 'Añadir juego',
+    ask_title: '¿Qué es este archivo?',
+    ask_sub: '{file} · {size} — la extensión no es una de las que reconoce esta plataforma.',
+    ask_rom_b: 'Juego / ROM / imagen de disco', ask_rom_s: 'El juego en sí',
+    ask_save_b: 'Archivo o estado de guardado', ask_save_s: 'Tu progreso',
+    ask_all: 'Tratar igual el resto de esta tanda', ask_skip: 'Saltar este archivo',
+    del_game_t: '¿Quitar "{name}"?',
+    del_game_p: 'Se eliminarán {files} con él. Esto no se puede deshacer.',
+    del_game_p0: 'No tiene ningún archivo adjunto.',
+    del_folder_t: '¿Eliminar "{name}"?',
+    del_folder_p: 'Se eliminarán {games} y {files} ({size}). Descarga antes lo que aún quieras — esto no se puede deshacer.',
+    err_user3: 'El nombre de usuario necesita al menos 3 caracteres.',
+    err_userchars: 'Solo letras, números, puntos, guiones y guiones bajos.',
+    err_pass8: 'La contraseña necesita al menos 8 caracteres.',
+    err_passmatch: 'Las dos contraseñas no coinciden.',
+    err_taken: 'Ese nombre de usuario ya está ocupado.',
+    err_create: 'No se pudo crear la cuenta: {msg}',
+    err_nouser: 'No hay ninguna cuenta con ese nombre.',
+    err_wrongpass: 'Contraseña incorrecta.',
+    err_signin: 'No se pudo iniciar sesión: {msg}',
+    err_fillboth: 'Rellena los dos campos.',
+    toast_created: 'Cuenta creada — bienvenido, {name}',
+    toast_signed: 'Sesión iniciada como {name}',
+    toast_folder: 'Carpeta "{name}" creada',
+    toast_game: '"{name}" añadido — haz clic para adjuntar un estado guardado',
+    toast_attached: '{files} adjuntados',
+    toast_added: '{files} añadidos',
+    toast_added_games: '{files} añadidos, {games}',
+    toast_removedfile: 'Archivo eliminado',
+    toast_removedgame: '"{name}" eliminado',
+    toast_folderdel: 'Carpeta eliminada',
+    toast_nosaves: 'Todavía no hay archivos de guardado en esta carpeta.',
+    toast_dl: '{files} descargados',
+    toast_needname: 'Primero dale un nombre a la carpeta.',
+    toast_needgamename: 'Dale un nombre al juego.',
+    err_quota: 'Sin espacio en el navegador — el archivo es demasiado grande para guardarlo aquí. Prueba con uno más pequeño o libera espacio.',
+    err_other: 'No se pudo guardar ese archivo: {msg}',
+    boot_err: 'Este navegador ha bloqueado el almacenamiento local, así que no se pueden conservar cuentas ni archivos. Las ventanas de navegación privada suelen hacerlo.'
+  };
+
+  I18N.fr = {
+    nav_signin: 'Se connecter',
+    hero_eyebrow: "Vos sauvegardes, d'un appareil à l'autre",
+    hero_h1: 'Arrêtez de perdre vos <em>sauvegardes</em> sur le mauvais appareil.',
+    hero_lede: "Créez un compte, créez un dossier pour chaque console que vous émulez, et déposez-y vos ROMs, images disque et sauvegardes instantanées. Tout reste trié par système — NES, SNES, PS1, PS2, GBA et les autres — pour qu'en changeant de téléphone, de console portable ou de PC vous récupériez exactement le fichier voulu au lieu de fouiller une archive zip de 2019.",
+    hero_cta1: 'Créer un compte gratuit',
+    hero_cta2: "J'en ai déjà un",
+    s1_h: 'Créez un dossier',
+    s1_p: 'Nommez-le et choisissez la plateforme. Le dossier sait alors quelles extensions sont des ROMs et lesquelles sont des sauvegardes.',
+    s2_h: 'Déposez vos fichiers',
+    s2_p: 'Faites glisser tout un tas d\'un coup, ou cliquez sur <b>+ Ajouter un jeu</b> et choisissez-les à la main. Les sauvegardes sont associées au bon jeu par leur nom de fichier.',
+    s3_h: 'Touchez un jeu, ajoutez un état',
+    s3_p: "Cliquez sur n'importe quel jeu et votre sélecteur de fichiers s'ouvre directement sur son emplacement de sauvegarde. Ajoutez-en autant que vous voulez.",
+    s4_h: 'Récupérez-le ailleurs',
+    s4_p: "Connectez-vous sur l'autre appareil et téléchargez le fichier dans le dossier de sauvegarde de votre émulateur. C'est tout.",
+    plats_h: 'Les consoles qu’il connaît',
+    plats_p: 'Chacune arrive avec sa propre liste d’extensions de ROM et de sauvegarde : les fichiers déposés atterrissent au bon endroit sans que vous ayez à les trier.',
+    tab_signin: 'Se connecter', tab_create: 'Créer un compte',
+    login_h: 'Content de vous revoir', login_p: 'Vos dossiers vous attendent là où vous les avez laissés.',
+    signup_h: 'Créer un compte', signup_p: 'Pas d’e-mail, pas de lien de confirmation. Choisissez un nom et c’est parti.',
+    f_user: "Nom d'utilisateur", f_pass: 'Mot de passe', f_pass2: 'Confirmer le mot de passe',
+    f_user_ph: 'ex. retro_nick', f_pass_ph: 'Au moins 8 caractères',
+    foot_built: 'SaveGameTransfer — créé le',
+    foot_files: 'Les fichiers restent dans ce navigateur.',
+    foot_files_app: 'Tout est stocké dans ce navigateur, sur cet appareil.',
+    set_title: 'Paramètres', set_close: 'Fermer', set_open: 'Paramètres',
+    set_motion_h: 'Animation',
+    set_motion_p: 'Fondus, apparitions et l’anneau tournant du crédit. Désactivez-les pour une page totalement immobile.',
+    set_motion_label: 'Animations', set_on: 'Activées', set_off: 'Désactivées',
+    set_lang_h: 'Langue',
+    set_lang_p: 'Huit au choix, dont celle que l’on parle là où ce site a été construit.',
+    set_made_h: 'Réalisé par',
+    credit_text: 'Ce site a été développé par <b>shcherbakov.co</b>, un studio maltais de conception web.',
+    credit_arrow: 'home.shcherbakov.co →',
+    app_signout: 'Se déconnecter', app_folders_h: 'Vos dossiers',
+    app_newfolder: 'Nouveau dossier', app_back: 'Tous les dossiers', app_addgame: 'Ajouter un jeu',
+    app_dlsaves: 'Télécharger les sauvegardes', app_delfolder: 'Supprimer le dossier',
+    app_drop: '<b>Glissez vos fichiers ici</b> — ROMs, images disque, cartes mémoire, sauvegardes instantanées.',
+    nothing_yet: 'Rien ici pour l’instant.',
+    u_folder: { one: '{n} dossier', other: '{n} dossiers' },
+    u_game:   { one: '{n} jeu', other: '{n} jeux' },
+    u_file:   { one: '{n} fichier', other: '{n} fichiers' },
+    u_rom:    { one: '{n} ROM', other: '{n} ROMs' },
+    u_save:   { one: '{n} sauvegarde', other: '{n} sauvegardes' },
+    u_savefile: { one: '{n} fichier de sauvegarde', other: '{n} fichiers de sauvegarde' },
+    u_newgame:  { one: '{n} nouveau jeu', other: '{n} nouveaux jeux' },
+    stat_games: 'jeux', stat_files: 'fichiers',
+    meter_used: '{size} utilisés',
+    empty_f_h: 'Aucun dossier pour l’instant',
+    empty_f_p: 'Commencez par un dossier par console émulée. Un dossier connaît sa plateforme : il distingue tout seul une ROM d’une sauvegarde instantanée.',
+    empty_f_btn: 'Créez votre premier dossier',
+    empty_g_h: 'Aucun jeu ici pour l’instant',
+    empty_g_p: 'Glissez des fichiers sur la zone ci-dessus, ou ajoutez un jeu à la main et attachez ses fichiers ensuite.',
+    empty_g_btn: 'Ajouter un jeu',
+    exts_rom: 'ROMs :', exts_save: 'Sauvegardes :',
+    exts_any: 'Ce dossier accepte toutes les extensions — on vous demandera ce qu’est chaque fichier.',
+    g_norom: 'pas de ROM', g_nosave: 'pas encore de sauvegarde', g_hint: 'cliquez pour ajouter un état →',
+    t_addrom: 'Attacher une ROM ou une image disque', t_addsave: 'Attacher un fichier de sauvegarde',
+    t_showfiles: 'Afficher les fichiers', t_download: 'Télécharger', t_remove: 'Retirer',
+    files_none: 'Rien d’attaché pour l’instant.', btn_removegame: 'Retirer le jeu',
+    cancel: 'Annuler', del: 'Supprimer', close: 'Fermer',
+    nf_title: 'Nouveau dossier',
+    nf_sub: 'Choisissez la plateforme et le dossier triera les fichiers déposés à votre place.',
+    nf_name: 'Nom du dossier', nf_name_ph: 'ex. SNES — collection principale',
+    nf_plat: 'Plateforme', nf_create: 'Créer le dossier', any_file: 'tout fichier',
+    ag_title: 'Ajouter un jeu',
+    ag_sub: 'Nommez-le maintenant et attachez les fichiers quand vous voulez — ou choisissez les fichiers et laissez le nom en sortir.',
+    ag_name: 'Nom du jeu', ag_name_ph: 'ex. Chrono Trigger',
+    ag_note: 'Une fois dans la liste, cliquer sur le jeu ouvre votre sélecteur de fichiers directement sur son emplacement de sauvegarde.',
+    ag_note2: ' Pour {plat}, cela veut généralement dire {exts}.',
+    ag_pick: 'Choisir des fichiers plutôt', ag_add: 'Ajouter le jeu',
+    ask_title: 'Qu’est-ce que ce fichier ?',
+    ask_sub: '{file} · {size} — cette extension ne fait pas partie de celles que la plateforme reconnaît.',
+    ask_rom_b: 'Jeu / ROM / image disque', ask_rom_s: 'Le jeu lui-même',
+    ask_save_b: 'Fichier ou état de sauvegarde', ask_save_s: 'Votre progression',
+    ask_all: 'Traiter le reste de ce dépôt de la même façon', ask_skip: 'Passer ce fichier',
+    del_game_t: 'Retirer « {name} » ?',
+    del_game_p: '{files} seront supprimés avec lui. C’est irréversible.',
+    del_game_p0: 'Aucun fichier n’y est attaché.',
+    del_folder_t: 'Supprimer « {name} » ?',
+    del_folder_p: '{games} et {files} ({size}) seront supprimés. Téléchargez d’abord ce que vous voulez garder — c’est irréversible.',
+    err_user3: 'Le nom d’utilisateur doit faire au moins 3 caractères.',
+    err_userchars: 'Lettres, chiffres, points, tirets et tirets bas uniquement.',
+    err_pass8: 'Le mot de passe doit faire au moins 8 caractères.',
+    err_passmatch: 'Les deux mots de passe ne correspondent pas.',
+    err_taken: 'Ce nom d’utilisateur est déjà pris.',
+    err_create: 'Impossible de créer le compte : {msg}',
+    err_nouser: 'Aucun compte avec ce nom d’utilisateur.',
+    err_wrongpass: 'Mot de passe incorrect.',
+    err_signin: 'Connexion impossible : {msg}',
+    err_fillboth: 'Remplissez les deux champs.',
+    toast_created: 'Compte créé — bienvenue, {name}',
+    toast_signed: 'Connecté en tant que {name}',
+    toast_folder: 'Dossier « {name} » créé',
+    toast_game: '« {name} » ajouté — cliquez dessus pour attacher une sauvegarde',
+    toast_attached: '{files} attachés',
+    toast_added: '{files} ajoutés',
+    toast_added_games: '{files} ajoutés, {games}',
+    toast_removedfile: 'Fichier retiré',
+    toast_removedgame: '« {name} » retiré',
+    toast_folderdel: 'Dossier supprimé',
+    toast_nosaves: 'Aucun fichier de sauvegarde dans ce dossier pour l’instant.',
+    toast_dl: '{files} téléchargés',
+    toast_needname: 'Donnez d’abord un nom au dossier.',
+    toast_needgamename: 'Donnez un nom au jeu.',
+    err_quota: 'Plus d’espace dans le navigateur — le fichier est trop gros pour tenir ici. Essayez un fichier plus petit ou faites de la place.',
+    err_other: 'Impossible d’enregistrer ce fichier : {msg}',
+    boot_err: 'Ce navigateur a bloqué le stockage local : les comptes et les fichiers ne peuvent pas être conservés. Les fenêtres de navigation privée font souvent cela.'
+  };
+
+  I18N.ar = {
+    nav_signin: 'تسجيل الدخول',
+    hero_eyebrow: 'ملفات حفظك، من جهاز إلى الذي يليه',
+    hero_h1: 'كفى ضياعًا لـ<em>ملفات الحفظ</em> على الجهاز الخطأ.',
+    hero_lede: 'أنشئ حسابًا، وأنشئ مجلدًا لكل جهاز تحاكيه، ثم ألقِ فيه ملفات ROM وصور الأقراص وحالات الحفظ. يبقى كل شيء مرتبًا حسب النظام — NES وSNES وPS1 وPS2 وGBA وغيرها — فحين تنتقل إلى هاتف أو جهاز محمول أو حاسوب جديد تسحب الملف الذي تريده بالضبط بدلًا من النبش في أرشيف من عام 2019.',
+    hero_cta1: 'أنشئ حسابًا مجانيًا',
+    hero_cta2: 'لديّ حساب بالفعل',
+    s1_h: 'أنشئ مجلدًا',
+    s1_p: 'سمِّه واختر المنصة. عندها يعرف المجلد أي الامتدادات ملفات ROM وأيها ملفات حفظ.',
+    s2_h: 'ألقِ ملفاتك فيه',
+    s2_p: 'اسحب كومة كاملة دفعة واحدة، أو اضغط <b>+ إضافة لعبة</b> واخترها يدويًا. تُربط ملفات الحفظ باللعبة الصحيحة عبر اسم الملف.',
+    s3_h: 'انقر على لعبة وأضف حالة حفظ',
+    s3_p: 'انقر على أي لعبة فيُفتح منتقي الملفات مباشرة على خانة الحفظ الخاصة بها. أضف ما شئت من حالات الحفظ.',
+    s4_h: 'نزّله في مكان آخر',
+    s4_p: 'سجّل الدخول على الجهاز الآخر ونزّل الملف إلى مجلد الحفظ الخاص بمحاكيك. انتهى الأمر.',
+    plats_h: 'الأجهزة التي يعرفها',
+    plats_p: 'لكل جهاز قائمته الخاصة بامتدادات ROM والحفظ، فتصل الملفات المُلقاة إلى مكانها الصحيح دون أن ترتّبها بنفسك.',
+    tab_signin: 'تسجيل الدخول', tab_create: 'إنشاء حساب',
+    login_h: 'أهلًا بعودتك', login_p: 'مجلداتك تنتظرك حيث تركتها.',
+    signup_h: 'إنشاء حساب', signup_p: 'لا بريد إلكتروني ولا رابط تأكيد. اختر اسمًا وابدأ.',
+    f_user: 'اسم المستخدم', f_pass: 'كلمة المرور', f_pass2: 'تأكيد كلمة المرور',
+    f_user_ph: 'مثال: retro_nick', f_pass_ph: '‏8 أحرف على الأقل',
+    foot_built: 'SaveGameTransfer — بُني في',
+    foot_files: 'تبقى الملفات في هذا المتصفح.',
+    foot_files_app: 'كل شيء مخزَّن في هذا المتصفح على هذا الجهاز.',
+    set_title: 'الإعدادات', set_close: 'إغلاق', set_open: 'الإعدادات',
+    set_motion_h: 'الحركة',
+    set_motion_p: 'التلاشي والظهور وحلقة الاعتماد الدوّارة. أوقِفها للحصول على صفحة ساكنة تمامًا.',
+    set_motion_label: 'الرسوم المتحركة', set_on: 'مفعّلة', set_off: 'متوقفة',
+    set_lang_h: 'اللغة',
+    set_lang_p: 'ثماني لغات للاختيار، منها لغة المكان الذي بُني فيه هذا الموقع.',
+    set_made_h: 'من تطوير',
+    credit_text: 'طوّر هذا الموقع <b>shcherbakov.co</b>، وهو استوديو مالطي لتصميم المواقع.',
+    credit_arrow: '← home.shcherbakov.co',
+    app_signout: 'تسجيل الخروج', app_folders_h: 'مجلداتك',
+    app_newfolder: 'مجلد جديد', app_back: 'كل المجلدات', app_addgame: 'إضافة لعبة',
+    app_dlsaves: 'تنزيل ملفات الحفظ', app_delfolder: 'حذف المجلد',
+    app_drop: '<b>اسحب الملفات إلى هنا</b> — ملفات ROM وصور الأقراص وبطاقات الذاكرة وحالات الحفظ.',
+    nothing_yet: 'لا شيء هنا بعد.',
+    u_folder: { zero: 'لا مجلدات', one: 'مجلد واحد', two: 'مجلدان', few: '{n} مجلدات', many: '{n} مجلدًا', other: '{n} مجلد' },
+    u_game:   { zero: 'لا ألعاب', one: 'لعبة واحدة', two: 'لعبتان', few: '{n} ألعاب', many: '{n} لعبة', other: '{n} لعبة' },
+    u_file:   { zero: 'لا ملفات', one: 'ملف واحد', two: 'ملفان', few: '{n} ملفات', many: '{n} ملفًا', other: '{n} ملف' },
+    u_rom:    { zero: 'لا ملفات ROM', one: 'ملف ROM واحد', two: 'ملفا ROM', few: '{n} ملفات ROM', many: '{n} ملف ROM', other: '{n} ملف ROM' },
+    u_save:   { zero: 'لا ملفات حفظ', one: 'ملف حفظ واحد', two: 'ملفا حفظ', few: '{n} ملفات حفظ', many: '{n} ملف حفظ', other: '{n} ملف حفظ' },
+    u_savefile: { zero: 'لا ملفات حفظ', one: 'ملف حفظ واحد', two: 'ملفا حفظ', few: '{n} ملفات حفظ', many: '{n} ملف حفظ', other: '{n} ملف حفظ' },
+    u_newgame:  { zero: 'لا ألعاب جديدة', one: 'لعبة جديدة واحدة', two: 'لعبتان جديدتان', few: '{n} ألعاب جديدة', many: '{n} لعبة جديدة', other: '{n} لعبة جديدة' },
+    stat_games: 'ألعاب', stat_files: 'ملفات',
+    meter_used: 'مستخدَم {size}',
+    empty_f_h: 'لا مجلدات بعد',
+    empty_f_p: 'ابدأ بمجلد لكل جهاز تحاكيه. المجلد يعرف منصته، فيميّز وحده بين ملف ROM وحالة الحفظ.',
+    empty_f_btn: 'أنشئ مجلدك الأول',
+    empty_g_h: 'لا ألعاب هنا بعد',
+    empty_g_p: 'اسحب الملفات إلى الصندوق أعلاه، أو أضف لعبة يدويًا وأرفق ملفاتها لاحقًا.',
+    empty_g_btn: 'أضف لعبة',
+    exts_rom: 'ملفات ROM:', exts_save: 'ملفات الحفظ:',
+    exts_any: 'هذا المجلد يقبل أي امتداد — سيُسأل عن ماهية كل ملف.',
+    g_norom: 'بلا ROM', g_nosave: 'بلا حفظ بعد', g_hint: '← انقر لإضافة حالة حفظ',
+    t_addrom: 'إرفاق ملف ROM أو صورة قرص', t_addsave: 'إرفاق ملف حفظ',
+    t_showfiles: 'إظهار الملفات', t_download: 'تنزيل', t_remove: 'إزالة',
+    files_none: 'لم يُرفق شيء بعد.', btn_removegame: 'إزالة اللعبة',
+    cancel: 'إلغاء', del: 'حذف', close: 'إغلاق',
+    nf_title: 'مجلد جديد',
+    nf_sub: 'اختر المنصة وسيرتّب المجلد الملفات المُلقاة نيابة عنك.',
+    nf_name: 'اسم المجلد', nf_name_ph: 'مثال: SNES — المجموعة الرئيسية',
+    nf_plat: 'المنصة', nf_create: 'إنشاء المجلد', any_file: 'أي ملف',
+    ag_title: 'إضافة لعبة',
+    ag_sub: 'سمِّها الآن وأرفق الملفات متى شئت — أو اختر الملفات ودع الاسم يأتي منها.',
+    ag_name: 'اسم اللعبة', ag_name_ph: 'مثال: Chrono Trigger',
+    ag_note: 'بمجرد وجودها في القائمة، النقر على اللعبة يفتح منتقي الملفات مباشرة على خانة الحفظ الخاصة بها.',
+    ag_note2: ' بالنسبة لـ{plat} يعني ذلك عادةً {exts}.',
+    ag_pick: 'اختيار الملفات بدلًا من ذلك', ag_add: 'إضافة اللعبة',
+    ask_title: 'ما هذا الملف؟',
+    ask_sub: '{file} · {size} — هذا الامتداد ليس من الامتدادات التي تعرفها هذه المنصة.',
+    ask_rom_b: 'لعبة / ROM / صورة قرص', ask_rom_s: 'اللعبة نفسها',
+    ask_save_b: 'ملف حفظ أو حالة حفظ', ask_save_s: 'تقدّمك',
+    ask_all: 'عامِل بقية هذه الدفعة بالطريقة نفسها', ask_skip: 'تخطَّ هذا الملف',
+    del_game_t: 'إزالة "{name}"؟',
+    del_game_p: 'سيُحذف معها {files}. لا يمكن التراجع عن هذا.',
+    del_game_p0: 'لا ملفات مرفقة بها.',
+    del_folder_t: 'حذف "{name}"؟',
+    del_folder_p: 'سيُحذف {games} و{files} ({size}). نزّل ما تريد الاحتفاظ به أولًا — لا يمكن التراجع عن هذا.',
+    err_user3: 'اسم المستخدم يحتاج إلى 3 أحرف على الأقل.',
+    err_userchars: 'حروف وأرقام ونقاط وشرطات وشرطات سفلية فقط.',
+    err_pass8: 'كلمة المرور تحتاج إلى 8 أحرف على الأقل.',
+    err_passmatch: 'كلمتا المرور غير متطابقتين.',
+    err_taken: 'اسم المستخدم هذا محجوز.',
+    err_create: 'تعذّر إنشاء الحساب: {msg}',
+    err_nouser: 'لا يوجد حساب بهذا الاسم.',
+    err_wrongpass: 'كلمة مرور خاطئة.',
+    err_signin: 'تعذّر تسجيل الدخول: {msg}',
+    err_fillboth: 'املأ الحقلين.',
+    toast_created: 'أُنشئ الحساب — أهلًا بك يا {name}',
+    toast_signed: 'سجّلت الدخول باسم {name}',
+    toast_folder: 'أُنشئ المجلد "{name}"',
+    toast_game: 'أُضيفت "{name}" — انقر عليها لإرفاق حالة حفظ',
+    toast_attached: 'أُرفق {files}',
+    toast_added: 'أُضيف {files}',
+    toast_added_games: 'أُضيف {files}، و{games}',
+    toast_removedfile: 'أُزيل الملف',
+    toast_removedgame: 'أُزيلت "{name}"',
+    toast_folderdel: 'حُذف المجلد',
+    toast_nosaves: 'لا ملفات حفظ في هذا المجلد بعد.',
+    toast_dl: 'نُزّل {files}',
+    toast_needname: 'أعطِ المجلد اسمًا أولًا.',
+    toast_needgamename: 'أعطِ اللعبة اسمًا.',
+    err_quota: 'نفدت مساحة تخزين المتصفح — الملف أكبر من أن يُحفظ هنا. جرّب ملفًا أصغر أو أفرغ بعض المساحة.',
+    err_other: 'تعذّر حفظ ذلك الملف: {msg}',
+    boot_err: 'حجب هذا المتصفح التخزين المحلي، لذا لا يمكن الاحتفاظ بالحسابات والملفات. نوافذ التصفح الخاص كثيرًا ما تفعل ذلك.'
+  };
+
+  I18N.pt = {
+    nav_signin: 'Entrar',
+    hero_eyebrow: 'Os teus saves, de um aparelho para o seguinte',
+    hero_h1: 'Pára de perder os teus <em>ficheiros de save</em> no aparelho errado.',
+    hero_lede: 'Cria uma conta, cria uma pasta para cada consola que emulas e larga lá dentro as tuas ROMs, imagens de disco e save states. Fica tudo arrumado por sistema — NES, SNES, PS1, PS2, GBA e o resto — para que ao mudar de telemóvel, portátil ou PC tires exactamente o ficheiro de que precisas em vez de escavares um zip de 2019.',
+    hero_cta1: 'Criar uma conta grátis',
+    hero_cta2: 'Já tenho uma',
+    s1_h: 'Cria uma pasta',
+    s1_p: 'Dá-lhe um nome e escolhe a plataforma. A pasta passa então a saber que extensões são ROMs e quais são saves.',
+    s2_h: 'Larga lá os teus ficheiros',
+    s2_p: 'Arrasta uma pilha inteira de uma vez, ou carrega em <b>+ Adicionar jogo</b> e escolhe-os à mão. Os saves são associados ao jogo certo pelo nome do ficheiro.',
+    s3_h: 'Toca num jogo, adiciona um save',
+    s3_p: 'Clica em qualquer jogo e o teu selector de ficheiros abre logo na ranhura de save dele. Adiciona quantos save states quiseres.',
+    s4_h: 'Descarrega noutro sítio',
+    s4_p: 'Entra no outro aparelho e descarrega o ficheiro para a pasta de saves do teu emulador. Feito.',
+    plats_h: 'Consolas que conhece',
+    plats_p: 'Cada uma traz a sua própria lista de extensões de ROM e de save, por isso os ficheiros largados vão parar ao sítio certo sem seres tu a arrumá-los.',
+    tab_signin: 'Entrar', tab_create: 'Criar conta',
+    login_h: 'Bem-vindo de volta', login_p: 'As tuas pastas estão à espera onde as deixaste.',
+    signup_h: 'Criar uma conta', signup_p: 'Sem e-mail, sem link de confirmação. Escolhe um nome e avança.',
+    f_user: 'Nome de utilizador', f_pass: 'Palavra-passe', f_pass2: 'Confirmar palavra-passe',
+    f_user_ph: 'p. ex. retro_nick', f_pass_ph: 'Pelo menos 8 caracteres',
+    foot_built: 'SaveGameTransfer — criado a',
+    foot_files: 'Os ficheiros ficam neste navegador.',
+    foot_files_app: 'Fica tudo guardado neste navegador, neste aparelho.',
+    set_title: 'Definições', set_close: 'Fechar', set_open: 'Definições',
+    set_motion_h: 'Movimento',
+    set_motion_p: 'Fades, revelações e o anel giratório do crédito. Desliga-os para uma página completamente parada.',
+    set_motion_label: 'Animações', set_on: 'Ligadas', set_off: 'Desligadas',
+    set_lang_h: 'Idioma',
+    set_lang_p: 'Oito à escolha, incluindo o que se fala onde este site foi construído.',
+    set_made_h: 'Feito por',
+    credit_text: 'Este site foi desenvolvido pela <b>shcherbakov.co</b>, um grupo maltês de web design.',
+    credit_arrow: 'home.shcherbakov.co →',
+    app_signout: 'Sair', app_folders_h: 'As tuas pastas',
+    app_newfolder: 'Nova pasta', app_back: 'Todas as pastas', app_addgame: 'Adicionar jogo',
+    app_dlsaves: 'Descarregar saves', app_delfolder: 'Eliminar pasta',
+    app_drop: '<b>Arrasta ficheiros para aqui</b> — ROMs, imagens de disco, memory cards, save states.',
+    nothing_yet: 'Ainda não há nada aqui.',
+    u_folder: { one: '{n} pasta', other: '{n} pastas' },
+    u_game:   { one: '{n} jogo', other: '{n} jogos' },
+    u_file:   { one: '{n} ficheiro', other: '{n} ficheiros' },
+    u_rom:    { one: '{n} ROM', other: '{n} ROMs' },
+    u_save:   { one: '{n} save', other: '{n} saves' },
+    u_savefile: { one: '{n} ficheiro de save', other: '{n} ficheiros de save' },
+    u_newgame:  { one: '{n} jogo novo', other: '{n} jogos novos' },
+    stat_games: 'jogos', stat_files: 'ficheiros',
+    meter_used: '{size} usados',
+    empty_f_h: 'Ainda não há pastas',
+    empty_f_p: 'Começa com uma por cada consola que emulas. Uma pasta conhece a sua plataforma, por isso distingue sozinha uma ROM de um save state.',
+    empty_f_btn: 'Cria a tua primeira pasta',
+    empty_g_h: 'Ainda não há jogos aqui',
+    empty_g_p: 'Arrasta ficheiros para a caixa acima, ou adiciona um jogo à mão e anexa os ficheiros depois.',
+    empty_g_btn: 'Adicionar um jogo',
+    exts_rom: 'ROMs:', exts_save: 'Saves:',
+    exts_any: 'Esta pasta aceita qualquer extensão — vais ser perguntado o que é cada ficheiro.',
+    g_norom: 'sem ROM', g_nosave: 'ainda sem save', g_hint: 'clica para adicionar um save state →',
+    t_addrom: 'Anexar uma ROM ou imagem de disco', t_addsave: 'Anexar um ficheiro de save',
+    t_showfiles: 'Mostrar ficheiros', t_download: 'Descarregar', t_remove: 'Remover',
+    files_none: 'Ainda não há nada anexado.', btn_removegame: 'Remover jogo',
+    cancel: 'Cancelar', del: 'Eliminar', close: 'Fechar',
+    nf_title: 'Nova pasta',
+    nf_sub: 'Escolhe a plataforma e a pasta arruma por ti os ficheiros largados.',
+    nf_name: 'Nome da pasta', nf_name_ph: 'p. ex. SNES — colecção principal',
+    nf_plat: 'Plataforma', nf_create: 'Criar pasta', any_file: 'qualquer ficheiro',
+    ag_title: 'Adicionar um jogo',
+    ag_sub: 'Dá-lhe um nome agora e anexa ficheiros quando quiseres — ou escolhe os ficheiros e deixa o nome vir deles.',
+    ag_name: 'Nome do jogo', ag_name_ph: 'p. ex. Chrono Trigger',
+    ag_note: 'Assim que estiver na lista, clicar no jogo abre o selector de ficheiros logo na ranhura de save dele.',
+    ag_note2: ' Para {plat} isso costuma significar {exts}.',
+    ag_pick: 'Escolher ficheiros em vez disso', ag_add: 'Adicionar jogo',
+    ask_title: 'O que é este ficheiro?',
+    ask_sub: '{file} · {size} — a extensão não é das que esta plataforma reconhece.',
+    ask_rom_b: 'Jogo / ROM / imagem de disco', ask_rom_s: 'O jogo em si',
+    ask_save_b: 'Ficheiro de save ou save state', ask_save_s: 'O teu progresso',
+    ask_all: 'Tratar o resto desta leva da mesma maneira', ask_skip: 'Saltar este ficheiro',
+    del_game_t: 'Remover "{name}"?',
+    del_game_p: '{files} serão eliminados com ele. Isto não pode ser desfeito.',
+    del_game_p0: 'Não tem ficheiros anexados.',
+    del_folder_t: 'Eliminar "{name}"?',
+    del_folder_p: '{games} e {files} ({size}) serão eliminados. Descarrega primeiro o que ainda quiseres — isto não pode ser desfeito.',
+    err_user3: 'O nome de utilizador precisa de pelo menos 3 caracteres.',
+    err_userchars: 'Apenas letras, números, pontos, traços e underscores.',
+    err_pass8: 'A palavra-passe precisa de pelo menos 8 caracteres.',
+    err_passmatch: 'As duas palavras-passe não coincidem.',
+    err_taken: 'Esse nome de utilizador já está ocupado.',
+    err_create: 'Não foi possível criar a conta: {msg}',
+    err_nouser: 'Não há nenhuma conta com esse nome.',
+    err_wrongpass: 'Palavra-passe errada.',
+    err_signin: 'Não foi possível entrar: {msg}',
+    err_fillboth: 'Preenche os dois campos.',
+    toast_created: 'Conta criada — bem-vindo, {name}',
+    toast_signed: 'Sessão iniciada como {name}',
+    toast_folder: 'Pasta "{name}" criada',
+    toast_game: '"{name}" adicionado — clica para anexar um save state',
+    toast_attached: '{files} anexados',
+    toast_added: '{files} adicionados',
+    toast_added_games: '{files} adicionados, {games}',
+    toast_removedfile: 'Ficheiro removido',
+    toast_removedgame: '"{name}" removido',
+    toast_folderdel: 'Pasta eliminada',
+    toast_nosaves: 'Ainda não há ficheiros de save nesta pasta.',
+    toast_dl: '{files} descarregados',
+    toast_needname: 'Dá primeiro um nome à pasta.',
+    toast_needgamename: 'Dá um nome ao jogo.',
+    err_quota: 'Sem espaço no navegador — o ficheiro é grande demais para caber aqui. Tenta um mais pequeno ou liberta espaço.',
+    err_other: 'Não foi possível guardar esse ficheiro: {msg}',
+    boot_err: 'Este navegador bloqueou o armazenamento local, por isso não é possível guardar contas nem ficheiros. As janelas de navegação privada fazem isso muitas vezes.'
+  };
+
+  I18N.mt = {
+    nav_signin: 'Idħol',
+    hero_eyebrow: 'Is-saves tiegħek, minn apparat għall-ieħor',
+    hero_h1: "Tibqax titlef il-<em>files tas-save</em> fl-apparat l-ieħor.",
+    hero_lede: "Agħmel kont, oħloq folder għal kull console li temula, u itfa' fih ir-ROMs, id-disc images u s-save states tiegħek. Kollox jinżamm imqassam skont is-sistema — NES, SNES, PS1, PS2, GBA u l-bqija — biex meta taqleb għal mobile, handheld jew PC ġdid tiġbed eżatt il-file li għandek bżonn minflok tfittex ġo zip tal-2019.",
+    hero_cta1: "Iftaħ kont b'xejn",
+    hero_cta2: 'Diġà għandi wieħed',
+    s1_h: 'Oħloq folder',
+    s1_p: 'Agħtih isem u agħżel il-pjattaforma. Imbagħad il-folder ikun jaf liema estensjonijiet huma ROMs u liema huma saves.',
+    s2_h: "Itfa' l-files ġewwa",
+    s2_p: "Iġbed borża sħiħa f'daqqa, jew agħfas <b>+ Żid logħba</b> u agħżilhom bl-idejn. Is-saves jitqabblu mal-logħba t-tajba mill-isem tal-file.",
+    s3_h: 'Agħfas logħba, żid save',
+    s3_p: 'Agħfas kwalunkwe logħba u l-file picker jinfetaħ dritt fuq is-save slot tagħha. Żid kemm trid save states.',
+    s4_h: "Iġbdu x'imkien ieħor",
+    s4_p: "Idħol fl-apparat l-ieħor u niżżel il-file fid-direttorju tas-saves tal-emulatur tiegħek. Lest.",
+    plats_h: 'Consoles li jaf bihom',
+    plats_p: "Kull waħda għandha l-lista tagħha ta' estensjonijiet ta' ROM u ta' save, biex il-files li titfa' jinżlu fil-post it-tajjeb mingħajr ma tqassamhom int.",
+    tab_signin: 'Idħol', tab_create: 'Iftaħ kont',
+    login_h: 'Merħba lura', login_p: 'Il-folders tiegħek qegħdin jistennewk fejn ħallejthom.',
+    signup_h: 'Iftaħ kont', signup_p: "L-ebda email, l-ebda link ta' konferma. Agħżel isem u ibda.",
+    f_user: 'Isem tal-utent', f_pass: 'Password', f_pass2: 'Ikkonferma l-password',
+    f_user_ph: 'eż. retro_nick', f_pass_ph: 'Mill-inqas 8 karattri',
+    foot_built: 'SaveGameTransfer — mibni',
+    foot_files: "Il-files jibqgħu f'dan il-browser.",
+    foot_files_app: "Kollox jinżamm f'dan il-browser fuq dan l-apparat.",
+    set_title: 'Settings', set_close: 'Agħlaq', set_open: 'Settings',
+    set_motion_h: 'Moviment',
+    set_motion_p: "Fades, reveals u ċ-ċirku li jdur tal-kreditu. Itfihom għal paġna kompletament wieqfa.",
+    set_motion_label: 'Animazzjonijiet', set_on: 'Mixgħula', set_off: 'Mitfija',
+    set_lang_h: 'Lingwa',
+    set_lang_p: "Tmienja x'tagħżel minnhom, inkluża dik mitkellma fejn inbena dan is-sit.",
+    set_made_h: 'Magħmul minn',
+    credit_text: "Dan is-sit ġie żviluppat minn <b>shcherbakov.co</b>, grupp Malti ta' web design.",
+    credit_arrow: 'home.shcherbakov.co →',
+    app_signout: 'Oħroġ', app_folders_h: 'Il-folders tiegħek',
+    app_newfolder: 'Folder ġdid', app_back: 'Il-folders kollha', app_addgame: 'Żid logħba',
+    app_dlsaves: 'Niżżel is-saves', app_delfolder: 'Ħassar il-folder',
+    app_drop: '<b>Iġbed il-files hawn</b> — ROMs, disc images, memory cards, save states.',
+    nothing_yet: "Xejn hawn s'issa.",
+    u_folder: { one: '{n} folder', other: '{n} folders' },
+    u_game:   { one: '{n} logħba', other: '{n} logħbiet' },
+    u_file:   { one: '{n} file', other: '{n} files' },
+    u_rom:    { one: '{n} ROM', other: '{n} ROMs' },
+    u_save:   { one: '{n} save', other: '{n} saves' },
+    u_savefile: { one: '{n} file ta\' save', other: '{n} files ta\' save' },
+    u_newgame:  { one: '{n} logħba ġdida', other: '{n} logħbiet ġodda' },
+    stat_games: 'logħbiet', stat_files: 'files',
+    meter_used: '{size} użati',
+    empty_f_h: "L-ebda folder s'issa",
+    empty_f_p: "Ibda b'wieħed għal kull console li temula. Folder jaf il-pjattaforma tiegħu, allura jagħraf ROM minn save state waħdu.",
+    empty_f_btn: 'Oħloq l-ewwel folder tiegħek',
+    empty_g_h: "L-ebda logħba hawn s'issa",
+    empty_g_p: "Iġbed il-files fuq il-kaxxa ta' fuq, jew żid logħba bl-idejn u waħħal il-files wara.",
+    empty_g_btn: 'Żid logħba',
+    exts_rom: 'ROMs:', exts_save: 'Saves:',
+    exts_any: "Dan il-folder jaċċetta kwalunkwe estensjoni — tiġi mistoqsi x'inhu kull file.",
+    g_norom: 'l-ebda ROM', g_nosave: "l-ebda save s'issa", g_hint: 'agħfas biex iżżid save state →',
+    t_addrom: 'Waħħal ROM jew disc image', t_addsave: "Waħħal file ta' save",
+    t_showfiles: 'Uri l-files', t_download: 'Niżżel', t_remove: 'Neħħi',
+    files_none: "Xejn imwaħħal s'issa.", btn_removegame: 'Neħħi l-logħba',
+    cancel: 'Ikkanċella', del: 'Ħassar', close: 'Agħlaq',
+    nf_title: 'Folder ġdid',
+    nf_sub: "Agħżel il-pjattaforma u l-folder iqassam il-files li titfa' għalik.",
+    nf_name: 'Isem tal-folder', nf_name_ph: 'eż. SNES — il-kollezzjoni prinċipali',
+    nf_plat: 'Pjattaforma', nf_create: 'Oħloq folder', any_file: 'kwalunkwe file',
+    ag_title: 'Żid logħba',
+    ag_sub: "Agħtiha isem issa u waħħal il-files meta trid — jew agħżel il-files u ħalli l-isem joħroġ minnhom.",
+    ag_name: 'Isem tal-logħba', ag_name_ph: 'eż. Chrono Trigger',
+    ag_note: 'Ladarba tkun fil-lista, meta tagħfas il-logħba jinfetaħ il-file picker dritt fuq is-save slot tagħha.',
+    ag_note2: ' Għal {plat} dan normalment ifisser {exts}.',
+    ag_pick: 'Agħżel il-files minflok', ag_add: 'Żid logħba',
+    ask_title: "X'inhu dan il-file?",
+    ask_sub: '{file} · {size} — l-estensjoni mhijiex waħda li din il-pjattaforma tagħraf.',
+    ask_rom_b: 'Logħba / ROM / disc image', ask_rom_s: 'Il-logħba nnifisha',
+    ask_save_b: "File ta' save jew save state", ask_save_s: 'Il-progress tiegħek',
+    ask_all: "Ittratta l-bqija ta' dan id-drop bl-istess mod", ask_skip: 'Aqbeż dan il-file',
+    del_game_t: 'Tneħħi "{name}"?',
+    del_game_p: "{files} jitħassru magħha. Dan ma jistax jitreġġa' lura.",
+    del_game_p0: "M'għandha l-ebda file imwaħħal.",
+    del_folder_t: 'Tħassar "{name}"?',
+    del_folder_p: "{games} u {files} ({size}) jitħassru. Niżżel dak li għadek trid l-ewwel — dan ma jistax jitreġġa' lura.",
+    err_user3: 'L-isem tal-utent irid ikollu mill-inqas 3 karattri.',
+    err_userchars: 'Ittri, numri, tikek, sing u underscores biss.',
+    err_pass8: "Il-password trid tkun ta' mill-inqas 8 karattri.",
+    err_passmatch: 'Iż-żewġ passwords ma jaqblux.',
+    err_taken: 'Dak l-isem diġà meħud.',
+    err_create: 'Ma stajtx noħloq il-kont: {msg}',
+    err_nouser: "L-ebda kont b'dak l-isem.",
+    err_wrongpass: 'Password ħażina.',
+    err_signin: 'Ma stajtx nidħol: {msg}',
+    err_fillboth: 'Imla ż-żewġ kaxxi.',
+    toast_created: 'Kont maħluq — merħba, {name}',
+    toast_signed: 'Dħalt bħala {name}',
+    toast_folder: 'Il-folder "{name}" inħoloq',
+    toast_game: '"{name}" miżjuda — agħfasha biex twaħħal save state',
+    toast_attached: '{files} imwaħħla',
+    toast_added: '{files} miżjuda',
+    toast_added_games: '{files} miżjuda, {games}',
+    toast_removedfile: 'File imneħħi',
+    toast_removedgame: '"{name}" imneħħija',
+    toast_folderdel: 'Folder imħassar',
+    toast_nosaves: "L-ebda file ta' save f'dan il-folder s'issa.",
+    toast_dl: '{files} imniżżla',
+    toast_needname: 'L-ewwel agħti isem lill-folder.',
+    toast_needgamename: 'Agħti isem lil-logħba.',
+    err_quota: "Spiċċa l-ispazju tal-browser — il-file huwa kbir wisq biex jinżamm hawn. Ipprova file iżgħar jew neħħi xi ħaġa.",
+    err_other: 'Ma stajtx naħżen dak il-file: {msg}',
+    boot_err: "Dan il-browser imblokka l-ħażna lokali, allura l-kontijiet u l-files ma jistgħux jinżammu. It-twieqi ta' private browsing spiss jagħmlu hekk."
+  };
+
+  /* ── the lookup itself ────────────────────────────── */
+
+  var LANG = document.documentElement.getAttribute('lang') || 'en';
+  if (!LANG_BY_ID[LANG]) LANG = 'en';
+
+  var pluralRules = null;
+  function rules() {
+    if (!pluralRules) {
+      try { pluralRules = new Intl.PluralRules(LANG); }
+      catch (e) { pluralRules = { select: function (n) { return n === 1 ? 'one' : 'other'; } }; }
+    }
+    return pluralRules;
+  }
+
+  /* t('u_file', {n: 3}) → "3 files".  Missing keys fall back to English,
+     missing plural categories fall back to `other`. */
+  function t(key, vars) {
+    var v = (I18N[LANG] || {})[key];
+    if (v == null) v = I18N.en[key];
+    if (v == null) return key;
+
+    if (typeof v === 'object') {
+      var n = vars && vars.n != null ? Number(vars.n) : 0;
+      var cat = rules().select(n);
+      v = v[cat] != null ? v[cat] : (v.other != null ? v.other : v.one);
+    }
+    return String(v).replace(/\{(\w+)\}/g, function (m, k) {
+      return vars && vars[k] != null ? vars[k] : m;
+    });
+  }
+
+  /* ══════════════════════════════════════════════════
+     Small helpers
+     ══════════════════════════════════════════════════ */
+
+  var $ = function (sel, root) { return (root || document).querySelector(sel); };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* U+2068 FSI … U+2069 PDI: invisible characters that fence a technical run
+     off from the surrounding paragraph direction. Without them "3.9 KB" comes
+     out as "KB 3.9" on the Arabic page, and "<1%" as "1%>". They survive
+     textContent, esc() and attributes, which CSS `unicode-bidi` does not. */
+  function iso(s) { return '⁨' + s + '⁩'; }
+
+  function bytes(n) {
+    var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0;
+    if (!n) return iso('0 B');
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return iso((n < 10 && i > 0 ? n.toFixed(1) : Math.round(n)) + ' ' + u[i]);
+  }
+
+  function ext(name) {
+    var i = String(name).lastIndexOf('.');
+    return i < 1 ? '' : String(name).slice(i).toLowerCase();
+  }
+
+  function baseName(name) {
+    var i = String(name).lastIndexOf('.');
+    return i < 1 ? String(name) : String(name).slice(0, i);
+  }
+
+  /* strips slot suffixes so "Chrono Trigger.state3" still finds "Chrono Trigger" */
+  function normalize(name) {
+    return baseName(name)
+      .toLowerCase()
+      .replace(/\s*\((?:usa|europe|japan|u|e|j|en|world|rev \w+)\)/g, '')
+      .replace(/\s*\[[^\]]*\]/g, '')
+      .replace(/[\s._\-]*(?:state|slot|save)?[\s._\-]*\d{1,2}$/, '')
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  function uid() {
+    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+  }
+
+  function toast(msg, kind) {
+    var host = $('#toasts');
+    var el = document.createElement('div');
+    el.className = 'toast ' + (kind || '');
+    el.innerHTML = (kind === 'bad' ? ICON.warn : kind === 'ok' ? ICON.check : '') + '<span>' + esc(msg) + '</span>';
+    host.appendChild(el);
+    setTimeout(function () {
+      el.style.transition = 'opacity .3s, transform .3s';
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(8px)';
+      setTimeout(function () { el.remove(); }, 320);
+    }, kind === 'bad' ? 5200 : 3000);
+  }
+
+  /* ══════════════════════════════════════════════════
+     Scroll reveal
+     One observer for the whole page; elements are
+     unobserved once seen, so nothing animates twice.
+     ══════════════════════════════════════════════════ */
+
+  var revealObs = null;
+
+  function observeReveals(root) {
+    var els = (root || document).querySelectorAll('[data-reveal]:not(.seen)');
+    if (!window.IntersectionObserver) {
+      Array.prototype.forEach.call(els, function (e) { e.classList.add('seen'); });
+      return;
+    }
+    if (!revealObs) {
+      revealObs = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (!en.isIntersecting) return;
+          en.target.classList.add('seen');
+          revealObs.unobserve(en.target);
+        });
+      }, { rootMargin: '0px 0px -7% 0px', threshold: 0.05 });
+    }
+    Array.prototype.forEach.call(els, function (e) { revealObs.observe(e); });
+  }
+
+  /* ══════════════════════════════════════════════════
+     Applying a language
+     ══════════════════════════════════════════════════ */
+
+  function motionOn() {
+    return document.documentElement.getAttribute('data-motion') === 'on';
+  }
+
+  function applyI18n(root) {
+    root = root || document;
+    function each(attr, fn) {
+      Array.prototype.forEach.call(root.querySelectorAll('[' + attr + ']'), function (el) {
+        fn(el, t(el.getAttribute(attr)));
+      });
+    }
+    each('data-i18n',       function (el, s) { el.textContent = s; });
+    each('data-i18n-html',  function (el, s) { el.innerHTML = s; });
+    each('data-i18n-ph',    function (el, s) { el.placeholder = s; });
+    each('data-i18n-aria',  function (el, s) { el.setAttribute('aria-label', s); });
+    each('data-i18n-title', function (el, s) { el.title = s; });
+  }
+
+  function renderLangGrid() {
+    var host = $('#langGrid');
+    if (!host) return;
+    host.innerHTML = LANGS.map(function (l) {
+      return '<button class="lang-opt" type="button" data-lang="' + l.id + '" lang="' + l.id + '"' +
+        ' aria-pressed="' + (l.id === LANG) + '">' +
+        '<span class="flag">' + FLAG[l.flag] + '</span>' +
+        '<span style="min-width:0">' +
+          '<span class="lname">' + esc(l.name) + '</span>' +
+          '<span class="lsub">' + l.id.toUpperCase() + '</span>' +
+        '</span>' +
+      '</button>';
+    }).join('');
+
+    Array.prototype.forEach.call(host.querySelectorAll('[data-lang]'), function (b) {
+      b.addEventListener('click', function () { setLang(b.dataset.lang); });
+    });
+
+    var cur = LANG_BY_ID[LANG];
+    var gf = $('#gearFlag');
+    if (gf && cur) gf.innerHTML = FLAG[cur.flag];
+  }
+
+  /* The band rides across the viewport; the swap happens underneath it, at
+     the point where it covers the middle of the screen. */
+  function sweep(lang, swap) {
+    if (!motionOn()) { swap(); return; }
+
+    var el = document.createElement('div');
+    el.className = 'sweep';
+    el.style.setProperty('--sw-a', lang.a);
+    el.style.setProperty('--sw-b', lang.b);
+    el.innerHTML =
+      '<div class="sweep-rider"><div class="sweep-badge">' +
+        '<span class="flag">' + FLAG[lang.flag] + '</span>' +
+        '<span>' + esc(lang.name) + '</span>' +
+      '</div></div>';
+
+    document.body.appendChild(el);
+    document.body.classList.add('swapping');
+
+    setTimeout(swap, 430);
+    setTimeout(function () { document.body.classList.remove('swapping'); }, 720);
+    setTimeout(function () { el.remove(); }, 1060);
+  }
+
+  function setLang(id) {
+    var l = LANG_BY_ID[id];
+    if (!l) return;
+    if (id === LANG) { closeSettings(); return; }
+
+    closeSettings();
+    sweep(l, function () {
+      LANG = id;
+      pluralRules = null;
+      try { localStorage.setItem('sgt-lang', id); } catch (e) {}
+
+      var html = document.documentElement;
+      html.setAttribute('lang', id);
+      html.setAttribute('dir', id === 'ar' ? 'rtl' : 'ltr');
+
+      applyI18n(document);
+      renderLangGrid();
+
+      /* anything drawn by JS has to be rebuilt in the new language */
+      if (state.user) {
+        if (state.folder) renderFolder(); else renderFolders();
+        updateMeter();
+      }
+    });
+  }
+
+  /* ══════════════════════════════════════════════════
+     Settings panel
+     ══════════════════════════════════════════════════ */
+
+  var setFocusReturn = null;
+
+  function settingsOpen() {
+    var w = $('#setWrap');
+    return !!w && w.classList.contains('open');
+  }
+
+  function openSettings() {
+    var w = $('#setWrap');
+    setFocusReturn = document.activeElement;
+    w.classList.add('open');
+    w.setAttribute('aria-hidden', 'false');
+    $('#gearBtn').setAttribute('aria-expanded', 'true');
+    setTimeout(function () { var b = $('#setClose'); if (b) b.focus(); }, 80);
+  }
+
+  function closeSettings() {
+    var w = $('#setWrap');
+    if (!w || !w.classList.contains('open')) return;
+    w.classList.remove('open');
+    w.setAttribute('aria-hidden', 'true');
+    $('#gearBtn').setAttribute('aria-expanded', 'false');
+    if (setFocusReturn && setFocusReturn.focus) { try { setFocusReturn.focus(); } catch (e) {} }
+  }
+
+  function syncMotion() {
+    var on = motionOn();
+    var btn = $('#motionToggle');
+    var lbl = $('#motionState');
+    btn.setAttribute('aria-pressed', String(on));
+    lbl.setAttribute('data-i18n', on ? 'set_on' : 'set_off');
+    lbl.textContent = t(on ? 'set_on' : 'set_off');
+  }
+
+  function wireSettings() {
+    renderLangGrid();
+    applyI18n(document);
+    syncMotion();
+
+    var gear = $('#gearBtn');
+    gear.addEventListener('click', function () {
+      settingsOpen() ? closeSettings() : openSettings();
+    });
+    $('#setBack').addEventListener('click', closeSettings);
+    $('#setClose').addEventListener('click', closeSettings);
+
+    $('#motionToggle').addEventListener('click', function () {
+      var off = !motionOn();
+      document.documentElement.setAttribute('data-motion', off ? 'on' : 'off');
+      try { localStorage.setItem('sgt-motion', off ? 'on' : 'off'); } catch (e) {}
+      syncMotion();
+      /* anything still waiting to be revealed should just appear */
+      if (!off) {
+        Array.prototype.forEach.call(document.querySelectorAll('[data-reveal]'), function (e) {
+          e.classList.add('seen');
+        });
+      }
+    });
+
+    $('.set-panel').addEventListener('keydown', function (e) {
+      if (e.key === 'Tab') trapFocus(e, $('.set-panel'));
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && settingsOpen()) { closeSettings(); }
+    });
+  }
+
+  /* ══════════════════════════════════════════════════
+     Storage — IndexedDB, because a PS2 ISO will never
+     fit in localStorage
+     ══════════════════════════════════════════════════ */
+
+  var DB_NAME = 'savegametransfer';
+  var DB_VER = 1;
+  var db = null;
+
+  function openDB() {
+    return new Promise(function (res, rej) {
+      var req = indexedDB.open(DB_NAME, DB_VER);
+      req.onupgradeneeded = function (e) {
+        var d = e.target.result;
+        if (!d.objectStoreNames.contains('users')) {
+          d.createObjectStore('users', { keyPath: 'name' });
+        }
+        if (!d.objectStoreNames.contains('folders')) {
+          var f = d.createObjectStore('folders', { keyPath: 'id' });
+          f.createIndex('user', 'user');
+        }
+        if (!d.objectStoreNames.contains('games')) {
+          var g = d.createObjectStore('games', { keyPath: 'id' });
+          g.createIndex('folder', 'folder');
+        }
+        if (!d.objectStoreNames.contains('files')) {
+          var fi = d.createObjectStore('files', { keyPath: 'id' });
+          fi.createIndex('game', 'game');
+          fi.createIndex('folder', 'folder');
+        }
+      };
+      req.onsuccess = function () { res(req.result); };
+      req.onerror = function () { rej(req.error); };
+    });
+  }
+
+  function tx(stores, mode) {
+    return db.transaction(stores, mode || 'readonly');
+  }
+
+  function wrap(req) {
+    return new Promise(function (res, rej) {
+      req.onsuccess = function () { res(req.result); };
+      req.onerror = function () { rej(req.error); };
+    });
+  }
+
+  function put(store, val) { return wrap(tx([store], 'readwrite').objectStore(store).put(val)); }
+  function get(store, key) { return wrap(tx([store]).objectStore(store).get(key)); }
+  function del(store, key) { return wrap(tx([store], 'readwrite').objectStore(store).delete(key)); }
+  function byIndex(store, index, key) {
+    return wrap(tx([store]).objectStore(store).index(index).getAll(key));
+  }
+
+  /* ══════════════════════════════════════════════════
+     Accounts
+     PBKDF2 where WebCrypto is available. This is a
+     local prototype — it keeps passwords out of plain
+     sight, it is not a substitute for a real server.
+     ══════════════════════════════════════════════════ */
+
+  var SESSION_KEY = 'sgt-session';
+  var subtle = (window.crypto && window.crypto.subtle) || null;
+
+  function randomSalt() {
+    var a = new Uint8Array(16);
+    (window.crypto || {}).getRandomValues
+      ? window.crypto.getRandomValues(a)
+      : a.forEach(function (_, i) { a[i] = Math.floor(Math.random() * 256); });
+    return Array.prototype.map.call(a, function (b) {
+      return b.toString(16).padStart(2, '0');
+    }).join('');
+  }
+
+  function hashPassword(pass, salt) {
+    if (!subtle) {
+      /* last-resort fallback for non-secure contexts */
+      var h = 5381, s = salt + '::' + pass;
+      for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+      return Promise.resolve('weak:' + h.toString(16));
+    }
+    var enc = new TextEncoder();
+    return subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveBits'])
+      .then(function (key) {
+        return subtle.deriveBits(
+          { name: 'PBKDF2', salt: enc.encode(salt), iterations: 150000, hash: 'SHA-256' },
+          key, 256
+        );
+      })
+      .then(function (bits) {
+        return Array.prototype.map.call(new Uint8Array(bits), function (b) {
+          return b.toString(16).padStart(2, '0');
+        }).join('');
+      });
+  }
+
+  var state = {
+    user: null,
+    folders: [],
+    folder: null,      // currently open folder
+    games: [],
+    files: [],         // files for the open folder
+    openGames: {}      // gameId -> expanded?
+  };
+
+  /* ══════════════════════════════════════════════════
+     Landing page
+     ══════════════════════════════════════════════════ */
+
+  function renderLandingPlatforms() {
+    var host = $('#landingPlats');
+    host.innerHTML = PLATFORMS.filter(function (p) { return p.id !== 'other'; }).map(function (p, i) {
+      var exts = p.rom.slice(0, 2).concat(p.save.slice(0, 1)).join(' ');
+      /* the stagger resets every row-ish so the far end of a wide grid
+         isn't still waiting a second and a half later */
+      return '<div class="plat-chip" data-reveal style="--d:' + ((i % 6) * 55) + 'ms">' +
+        '<span class="plat-dot" style="color:' + p.color + '"></span>' +
+        '<span><b>' + esc(p.name) + '</b><small>' + esc(exts) + '</small></span>' +
+        '</div>';
+    }).join('');
+    observeReveals(host);
+  }
+
+  function setAuthTab(which) {
+    var login = which === 'login';
+    $('#tabLogin').setAttribute('aria-selected', String(login));
+    $('#tabSignup').setAttribute('aria-selected', String(!login));
+    $('#loginPane').classList.toggle('hidden', !login);
+    $('#signupPane').classList.toggle('hidden', login);
+    $('#loginErr').classList.add('hidden');
+    $('#signupErr').classList.add('hidden');
+  }
+
+  function showErr(id, msg) {
+    var el = $(id);
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+
+  function wireLanding() {
+    renderLandingPlatforms();
+
+    $('#tabLogin').addEventListener('click', function () { setAuthTab('login'); });
+    $('#tabSignup').addEventListener('click', function () { setAuthTab('signup'); });
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-goto-auth]'), function (b) {
+      b.addEventListener('click', function () {
+        setAuthTab(b.dataset.mode === 'signup' ? 'signup' : 'login');
+        $('#authSection').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(function () {
+          var f = $(b.dataset.mode === 'signup' ? '#signupUser' : '#loginUser');
+          if (f) f.focus({ preventScroll: true });
+        }, 380);
+      });
+    });
+
+    $('#signupPane').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var name = $('#signupUser').value.trim();
+      var pass = $('#signupPass').value;
+      var pass2 = $('#signupPass2').value;
+
+      if (name.length < 3) return showErr('#signupErr', t('err_user3'));
+      if (!/^[a-zA-Z0-9_.-]+$/.test(name)) return showErr('#signupErr', t('err_userchars'));
+      if (pass.length < 8) return showErr('#signupErr', t('err_pass8'));
+      if (pass !== pass2) return showErr('#signupErr', t('err_passmatch'));
+
+      get('users', name.toLowerCase()).then(function (existing) {
+        if (existing) { showErr('#signupErr', t('err_taken')); return; }
+        var salt = randomSalt();
+        return hashPassword(pass, salt).then(function (hash) {
+          return put('users', { name: name.toLowerCase(), display: name, salt: salt, hash: hash, created: Date.now() });
+        }).then(function () {
+          return signIn(name.toLowerCase());
+        }).then(function () {
+          toast(t('toast_created', { name: name }), 'ok');
+        });
+      }).catch(function (e) {
+        showErr('#signupErr', t('err_create', { msg: e.message }));
+      });
+    });
+
+    $('#loginPane').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var name = $('#loginUser').value.trim().toLowerCase();
+      var pass = $('#loginPass').value;
+      if (!name || !pass) return showErr('#loginErr', t('err_fillboth'));
+
+      get('users', name).then(function (u) {
+        if (!u) { showErr('#loginErr', t('err_nouser')); return; }
+        return hashPassword(pass, u.salt).then(function (hash) {
+          if (hash !== u.hash) { showErr('#loginErr', t('err_wrongpass')); return; }
+          return signIn(name).then(function () {
+            toast(t('toast_signed', { name: u.display }), 'ok');
+          });
+        });
+      }).catch(function (e) {
+        showErr('#loginErr', t('err_signin', { msg: e.message }));
+      });
+    });
+
+    observeReveals(document);
+  }
+
+  /* ══════════════════════════════════════════════════
+     Session
+     ══════════════════════════════════════════════════ */
+
+  function signIn(name) {
+    return get('users', name).then(function (u) {
+      if (!u) throw new Error('account missing');
+      state.user = u;
+      try { localStorage.setItem(SESSION_KEY, name); } catch (e) {}
+      $('#landing').classList.add('hidden');
+      $('#app').classList.remove('hidden');
+      $('#uname').textContent = u.display;
+      $('#avatar').textContent = u.display.charAt(0).toUpperCase();
+      window.scrollTo(0, 0);
+      updateMeter();
+      return loadFolders();
+    });
+  }
+
+  function signOut() {
+    try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+    state.user = null;
+    state.folder = null;
+    $('#app').classList.add('hidden');
+    $('#landing').classList.remove('hidden');
+    $('#loginPass').value = '';
+    $('#signupPass').value = '';
+    $('#signupPass2').value = '';
+    window.scrollTo(0, 0);
+  }
+
+  function updateMeter() {
+    if (!navigator.storage || !navigator.storage.estimate) return;
+    navigator.storage.estimate().then(function (est) {
+      if (!est || !est.quota) return;
+      var pct = Math.min(100, (est.usage / est.quota) * 100);
+      $('#meter').hidden = false;
+      $('#meterUsed').textContent = t('meter_used', { size: bytes(est.usage) });
+      $('#meterPct').textContent = iso((pct < 1 ? '<1' : Math.round(pct)) + '%');
+      $('#meterFill').style.width = Math.max(1.5, pct) + '%';
+    }).catch(function () {});
+  }
+
+  /* ══════════════════════════════════════════════════
+     Folder list
+     ══════════════════════════════════════════════════ */
+
+  function loadFolders() {
+    return byIndex('folders', 'user', state.user.name).then(function (folders) {
+      folders.sort(function (a, b) { return b.created - a.created; });
+      state.folders = folders;
+      /* counts per folder, for the card footers */
+      return Promise.all(folders.map(function (f) {
+        return Promise.all([
+          byIndex('games', 'folder', f.id),
+          byIndex('files', 'folder', f.id)
+        ]).then(function (r) {
+          f._games = r[0].length;
+          f._files = r[1].length;
+          f._size = r[1].reduce(function (s, x) { return s + (x.size || 0); }, 0);
+        });
+      }));
+    }).then(function () {
+      renderFolders();
+    });
+  }
+
+  function renderFolders() {
+    showView('folders');
+    var host = $('#folderHost');
+    var n = state.folders.length;
+
+    $('#foldersSub').textContent = n === 0
+      ? t('nothing_yet')
+      : t('u_folder', { n: n }) + ' · ' +
+        t('u_game', { n: state.folders.reduce(function (s, f) { return s + f._games; }, 0) }) + ' · ' +
+        bytes(state.folders.reduce(function (s, f) { return s + f._size; }, 0));
+
+    if (n === 0) {
+      host.innerHTML =
+        '<div class="empty pop-in">' + ICON.box +
+        '<h3>' + esc(t('empty_f_h')) + '</h3>' +
+        '<p>' + esc(t('empty_f_p')) + '</p>' +
+        '<button class="btn btn-primary" data-new-folder>' + ICON.plus + ' ' + esc(t('empty_f_btn')) + '</button>' +
+        '</div>';
+      $('[data-new-folder]', host).addEventListener('click', openNewFolderModal);
+      return;
+    }
+
+    host.innerHTML = '<div class="folder-grid">' + state.folders.map(function (f, i) {
+      var p = PLAT_BY_ID[f.platform] || PLAT_BY_ID.other;
+      return '<button class="folder-card pop-in" data-id="' + esc(f.id) + '"' +
+        ' style="--pc:' + p.color + ';--d:' + Math.min(i, 11) * 42 + '">' +
+        '<span class="folder-top">' +
+          '<span class="folder-ico">' + ICON.folder + '</span>' +
+          '<span style="min-width:0">' +
+            '<span class="folder-name">' + esc(f.name) + '</span>' +
+            '<span class="folder-plat">' + esc(p.name) + '</span>' +
+          '</span>' +
+        '</span>' +
+        '<span class="folder-stats">' +
+          '<span><b>' + f._games + '</b> ' + esc(t('stat_games')) + '</span>' +
+          '<span><b>' + f._files + '</b> ' + esc(t('stat_files')) + '</span>' +
+          '<span style="margin-inline-start:auto">' + bytes(f._size) + '</span>' +
+        '</span>' +
+      '</button>';
+    }).join('') + '</div>';
+
+    Array.prototype.forEach.call(host.querySelectorAll('.folder-card'), function (card) {
+      card.addEventListener('click', function () { openFolder(card.dataset.id); });
+
+      /* dropping straight onto a card from the grid saves a click */
+      card.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        card.classList.add('drop-on');
+      });
+      card.addEventListener('dragleave', function () { card.classList.remove('drop-on'); });
+      card.addEventListener('drop', function (e) {
+        e.preventDefault();
+        card.classList.remove('drop-on');
+        var files = e.dataTransfer && e.dataTransfer.files;
+        if (!files || !files.length) return;
+        var id = card.dataset.id;
+        openFolder(id).then(function () { ingest(Array.prototype.slice.call(files)); });
+      });
+    });
+  }
+
+  function showView(which) {
+    $('#viewFolders').classList.toggle('hidden', which !== 'folders');
+    $('#viewFolder').classList.toggle('hidden', which !== 'folder');
+  }
+
+  /* ══════════════════════════════════════════════════
+     New folder
+     ══════════════════════════════════════════════════ */
+
+  function openNewFolderModal() {
+    var body = GENS.map(function (gen) {
+      return '<div class="plat-group"><h4>' + esc(gen) + '</h4><div class="plat-opts">' +
+        PLATFORMS.filter(function (p) { return p.gen === gen; }).map(function (p) {
+          return '<label class="plat-opt" style="--pc:' + p.color + '">' +
+            '<input type="radio" name="plat" value="' + p.id + '"' + (p.id === 'snes' ? ' checked' : '') + '>' +
+            '<span class="plat-opt-in">' +
+              '<span class="plat-dot" style="color:' + p.color + '"></span>' +
+              '<span style="min-width:0"><b>' + esc(p.name) + '</b><small>' +
+                esc(p.rom.length ? p.rom.slice(0, 3).join(' ') : t('any_file')) +
+              '</small></span>' +
+            '</span>' +
+          '</label>';
+        }).join('') +
+      '</div></div>';
+    }).join('');
+
+    var m = modal({
+      title: t('nf_title'),
+      sub: esc(t('nf_sub')),
+      body:
+        '<label class="field"><span>' + esc(t('nf_name')) + '</span>' +
+        '<input class="input" id="nfName" placeholder="' + esc(t('nf_name_ph')) + '" maxlength="60"></label>' +
+        '<div class="field"><span>' + esc(t('nf_plat')) + '</span></div>' + body,
+      actions: [
+        { label: t('cancel'), cls: 'btn-ghost', close: true },
+        { label: t('nf_create'), cls: 'btn-primary', act: function (root) {
+            var name = $('#nfName', root).value.trim();
+            var plat = $('input[name="plat"]:checked', root);
+            if (!name) { $('#nfName', root).focus(); toast(t('toast_needname'), 'bad'); return false; }
+            var rec = {
+              id: uid(),
+              user: state.user.name,
+              name: name,
+              platform: plat ? plat.value : 'other',
+              created: Date.now()
+            };
+            put('folders', rec).then(function () {
+              return loadFolders();
+            }).then(function () {
+              toast(t('toast_folder', { name: name }), 'ok');
+            });
+          } }
+      ]
+    });
+
+    var input = $('#nfName', m);
+    input.focus();
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        var btns = m.querySelectorAll('.modal-foot .btn');
+        btns[btns.length - 1].click();
+      }
+    });
+  }
+
+  /* ══════════════════════════════════════════════════
+     Folder detail
+     ══════════════════════════════════════════════════ */
+
+  function openFolder(id) {
+    var f = state.folders.filter(function (x) { return x.id === id; })[0];
+    if (!f) return Promise.resolve();
+    state.folder = f;
+    state.openGames = {};
+    return refreshFolder().then(function () {
+      showView('folder');
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    });
+  }
+
+  function refreshFolder() {
+    var f = state.folder;
+    if (!f) return Promise.resolve();
+    return Promise.all([
+      byIndex('games', 'folder', f.id),
+      byIndex('files', 'folder', f.id)
+    ]).then(function (r) {
+      state.games = r[0].sort(function (a, b) { return a.name.localeCompare(b.name); });
+      state.files = r[1];
+      renderFolder();
+      updateMeter();
+    });
+  }
+
+  function filesOf(gameId) {
+    return state.files.filter(function (x) { return x.game === gameId; });
+  }
+
+  function renderFolder() {
+    var f = state.folder;
+    var p = PLAT_BY_ID[f.platform] || PLAT_BY_ID.other;
+
+    $('#folderTitle').innerHTML = esc(f.name) +
+      ' <span class="badge" style="--pc:' + p.color + '">' + esc(p.name) + '</span>';
+
+    var total = state.files.reduce(function (s, x) { return s + (x.size || 0); }, 0);
+    $('#folderSub').textContent =
+      t('u_game', { n: state.games.length }) + ' · ' +
+      t('u_file', { n: state.files.length }) + ' · ' + bytes(total) +
+      (p.emus ? ' · ' + iso(p.emus) : '');
+
+    $('#viewFolder').style.setProperty('--pc', p.color);
+
+    /* <bdi> keeps each extension run intact next to a translated label */
+    $('#dropExts').innerHTML = p.rom.length
+      ? '<b>' + esc(t('exts_rom')) + '</b> <bdi>' + esc(p.rom.join(' ')) + '</bdi>' +
+        '<br><b>' + esc(t('exts_save')) + '</b> <bdi>' + esc(p.save.join(' ')) + '</bdi>'
+      : esc(t('exts_any'));
+
+    $('#downloadAllBtn').disabled = state.files.length === 0;
+
+    var host = $('#gameHost');
+
+    if (!state.games.length) {
+      host.innerHTML =
+        '<div class="empty pop-in">' + ICON.disc +
+        '<h3>' + esc(t('empty_g_h')) + '</h3>' +
+        '<p>' + esc(t('empty_g_p')) + '</p>' +
+        '<button class="btn btn-primary" data-add-game>' + ICON.plus + ' ' + esc(t('empty_g_btn')) + '</button>' +
+        '</div>';
+      $('[data-add-game]', host).addEventListener('click', openAddGameModal);
+      return;
+    }
+
+    host.innerHTML = '<div class="game-list">' + state.games.map(function (g, i) {
+      var fs = filesOf(g.id);
+      var roms = fs.filter(function (x) { return x.kind === 'rom'; });
+      var saves = fs.filter(function (x) { return x.kind === 'save'; });
+      var size = fs.reduce(function (s, x) { return s + (x.size || 0); }, 0);
+      var open = !!state.openGames[g.id];
+
+      return '<div class="game slide-in" data-id="' + esc(g.id) + '" data-open="' + (open ? 1 : 0) + '"' +
+             ' style="--d:' + Math.min(i, 14) * 32 + '">' +
+        '<div class="game-row" role="button" tabindex="0" ' +
+             'aria-label="' + esc(t('t_addsave')) + ' — ' + esc(g.name) + '">' +
+          '<span class="game-ico">' + esc(g.name.charAt(0).toUpperCase()) + '</span>' +
+          '<span class="game-meta">' +
+            '<span class="game-name">' + esc(g.name) + '</span>' +
+            '<span class="game-tags">' +
+              (roms.length ? '<span class="tag rom">' + esc(t('u_rom', { n: roms.length })) + '</span>'
+                           : '<span class="tag none">' + esc(t('g_norom')) + '</span>') +
+              (saves.length ? '<span class="tag save">' + esc(t('u_save', { n: saves.length })) + '</span>'
+                            : '<span class="tag none">' + esc(t('g_nosave')) + '</span>') +
+              (size ? '<span class="tag">' + bytes(size) + '</span>' : '') +
+            '</span>' +
+          '</span>' +
+          '<span class="game-hint">' + esc(t('g_hint')) + '</span>' +
+          '<span class="game-acts">' +
+            '<button class="icon-btn opt-hide" data-act="rom" title="' + esc(t('t_addrom')) + '" aria-label="' + esc(t('t_addrom')) + ' — ' + esc(g.name) + '">' + ICON.disc + '</button>' +
+            '<button class="icon-btn" data-act="save" title="' + esc(t('t_addsave')) + '" aria-label="' + esc(t('t_addsave')) + ' — ' + esc(g.name) + '">' + ICON.save + '</button>' +
+            '<button class="icon-btn" data-act="toggle" title="' + esc(t('t_showfiles')) + '" aria-label="' + esc(t('t_showfiles')) + ' — ' + esc(g.name) + '" aria-expanded="' + open + '"><span class="chev">' + ICON.chev + '</span></button>' +
+          '</span>' +
+        '</div>' +
+        (open ? renderFiles(g, fs) : '') +
+      '</div>';
+    }).join('') + '</div>';
+
+    Array.prototype.forEach.call(host.querySelectorAll('.game'), function (el) {
+      var id = el.dataset.id;
+      var row = $('.game-row', el);
+
+      row.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-act]');
+        if (btn) {
+          e.stopPropagation();
+          if (btn.dataset.act === 'toggle') {
+            state.openGames[id] = !state.openGames[id];
+            renderFolder();
+          } else {
+            pickFilesFor(id, btn.dataset.act);
+          }
+          return;
+        }
+        pickFilesFor(id, 'save');   // the plain "press the game" path
+      });
+
+      row.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickFilesFor(id, 'save'); }
+      });
+
+      Array.prototype.forEach.call(el.querySelectorAll('[data-file]'), function (b) {
+        b.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var fid = b.dataset.file, act = b.dataset.fact;
+          if (act === 'down') downloadFile(fid);
+          else if (act === 'del') removeFile(fid);
+        });
+      });
+
+      var delBtn = $('[data-del-game]', el);   // only rendered while the game is expanded
+      if (delBtn) {
+        delBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          deleteGame(id);
+        });
+      }
+    });
+  }
+
+  function renderFiles(g, fs) {
+    var rows = fs.length
+      ? fs.slice().sort(function (a, b) { return a.kind === b.kind ? a.name.localeCompare(b.name) : (a.kind === 'rom' ? -1 : 1); })
+          .map(function (x) {
+            return '<div class="file-row">' +
+              '<span class="file-kind ' + x.kind + '" title="' + esc(t(x.kind === 'rom' ? 'ask_rom_b' : 'ask_save_b')) + '"></span>' +
+              '<span class="file-name">' + esc(x.name) + '</span>' +
+              '<span class="file-size">' + bytes(x.size) + '</span>' +
+              '<button class="icon-btn" data-file="' + esc(x.id) + '" data-fact="down" title="' + esc(t('t_download')) + '" aria-label="' + esc(t('t_download')) + ' — ' + esc(x.name) + '">' + ICON.down + '</button>' +
+              '<button class="icon-btn" data-file="' + esc(x.id) + '" data-fact="del" title="' + esc(t('t_remove')) + '" aria-label="' + esc(t('t_remove')) + ' — ' + esc(x.name) + '">' + ICON.trash + '</button>' +
+            '</div>';
+          }).join('')
+      : '<div class="file-row"><span class="note" style="padding-inline-start:4px">' + esc(t('files_none')) + '</span></div>';
+
+    return '<div class="game-files">' + rows +
+      '<div class="file-row" style="border-top:1px solid var(--line);margin-top:4px;padding-top:10px">' +
+        '<button class="btn btn-ghost btn-sm" data-del-game>' + ICON.trash + ' ' + esc(t('btn_removegame')) + '</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  /* ══════════════════════════════════════════════════
+     Adding games and files
+     ══════════════════════════════════════════════════ */
+
+  function openAddGameModal() {
+    var p = PLAT_BY_ID[state.folder.platform] || PLAT_BY_ID.other;
+    var m = modal({
+      title: t('ag_title'),
+      sub: esc(t('ag_sub')),
+      body:
+        '<label class="field"><span>' + esc(t('ag_name')) + '</span>' +
+        '<input class="input" id="agName" placeholder="' + esc(t('ag_name_ph')) + '" maxlength="90"></label>' +
+        '<p class="note">' + esc(t('ag_note')) +
+        (p.save.length ? esc(t('ag_note2', { plat: p.name, exts: p.save.slice(0, 4).join(', ') })) : '') +
+        '</p>',
+      actions: [
+        { label: t('cancel'), cls: 'btn-ghost', close: true },
+        { label: t('ag_pick'), cls: 'btn-ghost', act: function () {
+            pickFiles().then(function (files) { if (files.length) ingest(files); });
+          } },
+        { label: t('ag_add'), cls: 'btn-primary', act: function (root) {
+            var name = $('#agName', root).value.trim();
+            if (!name) { $('#agName', root).focus(); toast(t('toast_needgamename'), 'bad'); return false; }
+            createGame(name).then(function (g) {
+              state.openGames[g.id] = true;
+              return refreshFolder();
+            }).then(function () {
+              toast(t('toast_game', { name: name }), 'ok');
+            });
+          } }
+      ]
+    });
+    var i = $('#agName', m);
+    i.focus();
+    i.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        var btns = m.querySelectorAll('.modal-foot .btn');
+        btns[btns.length - 1].click();
+      }
+    });
+  }
+
+  function createGame(name) {
+    var rec = { id: uid(), folder: state.folder.id, user: state.user.name, name: name, created: Date.now() };
+    return put('games', rec).then(function () { return rec; });
+  }
+
+  /* hidden <input type=file> reused for every picker */
+  function pickFiles(accept) {
+    return new Promise(function (res) {
+      var inp = $('#filePicker');
+      inp.value = '';
+      inp.accept = accept || '';
+      var done = false;
+      function onChange() {
+        if (done) return;
+        done = true;
+        inp.removeEventListener('change', onChange);
+        res(Array.prototype.slice.call(inp.files || []));
+      }
+      inp.addEventListener('change', onChange);
+      /* if the dialog is dismissed, `change` never fires — resolve empty on refocus */
+      window.addEventListener('focus', function onFocus() {
+        window.removeEventListener('focus', onFocus);
+        setTimeout(function () { if (!done) { done = true; res([]); } }, 500);
+      });
+      inp.click();
+    });
+  }
+
+  function pickFilesFor(gameId, kind) {
+    var p = PLAT_BY_ID[state.folder.platform] || PLAT_BY_ID.other;
+    pickFiles(acceptFor(p, kind)).then(function (files) {
+      if (!files.length) return;
+      return addFiles(files, gameId, kind).then(function () {
+        state.openGames[gameId] = true;
+        return refreshFolder();
+      }).then(function () {
+        toast(t('toast_attached', {
+          files: t(kind === 'rom' ? 'u_rom' : 'u_savefile', { n: files.length })
+        }), 'ok');
+      });
+    }).catch(reportStorageError);
+  }
+
+  function addFiles(files, gameId, kind) {
+    return files.reduce(function (chain, file) {
+      return chain.then(function () {
+        return put('files', {
+          id: uid(),
+          game: gameId,
+          folder: state.folder.id,
+          user: state.user.name,
+          kind: kind,
+          name: file.name,
+          size: file.size,
+          type: file.type || '',
+          blob: file,
+          added: Date.now()
+        });
+      });
+    }, Promise.resolve());
+  }
+
+  /* ── classify + route dropped files ─────────────── */
+
+  /* Emulators number their slots — .state3, .sav2, .ss1 — so a trailing
+     digit run is stripped before the list is checked. */
+  function extMatch(list, e) {
+    if (list.indexOf(e) !== -1) return true;
+    var stripped = e.replace(/\d+$/, '');
+    return stripped.length > 1 && list.indexOf(stripped) !== -1;
+  }
+
+  /* The picker's accept list gets the numbered variants too, otherwise the
+     OS dialog greys out the very save state you came to fetch. */
+  function acceptFor(p, kind) {
+    var list = kind === 'rom' ? p.rom : p.save;
+    if (!list.length) return '';
+    var out = list.slice();
+    list.forEach(function (e) {
+      if (/\d$/.test(e)) return;
+      for (var i = 0; i < 10; i++) out.push(e + i);
+    });
+    return out.join(',');
+  }
+
+  function classify(file) {
+    var p = PLAT_BY_ID[state.folder.platform] || PLAT_BY_ID.other;
+    var e = ext(file.name);
+    var isRom = extMatch(p.rom, e);
+    var isSave = extMatch(p.save, e);
+    if (isRom && !isSave) return 'rom';
+    if (isSave && !isRom) return 'save';
+    if (isRom && isSave) {
+      /* same extension both ways (PS1 .bin, GBA .bin) — size is the giveaway */
+      return file.size > 4 * 1024 * 1024 ? 'rom' : 'save';
+    }
+    return null;   // ask
+  }
+
+  function matchGame(file) {
+    var key = normalize(file.name);
+    if (!key) return null;
+    var hit = state.games.filter(function (g) { return normalize(g.name) === key; })[0];
+    if (hit) return hit;
+    /* looser: one name contained in the other, if it's not a trivially short key */
+    if (key.length >= 5) {
+      hit = state.games.filter(function (g) {
+        var gk = normalize(g.name);
+        return gk.length >= 5 && (gk.indexOf(key) === 0 || key.indexOf(gk) === 0);
+      })[0];
+    }
+    return hit || null;
+  }
+
+  /* Walks the dropped list, asking about anything it cannot place. */
+  function ingest(files) {
+    if (!state.folder) return Promise.resolve();
+    var queue = files.slice();
+    var sticky = null;      // "do this for the rest" answer
+    var added = 0, madeGames = 0;
+    var touched = {};
+
+    function step() {
+      if (!queue.length) {
+        /* expanding one game is helpful; expanding twenty is a wall of rows */
+        var ids = Object.keys(touched);
+        if (ids.length === 1) state.openGames[ids[0]] = true;
+        return refreshFolder().then(function () {
+          if (!added) return;
+          var f = t('u_file', { n: added });
+          toast(madeGames
+            ? t('toast_added_games', { files: f, games: t('u_newgame', { n: madeGames }) })
+            : t('toast_added', { files: f }), 'ok');
+        });
+      }
+
+      var file = queue.shift();
+      var kind = classify(file) || sticky;
+
+      var known = kind ? Promise.resolve(kind) : askKind(file).then(function (ans) {
+        if (!ans) return null;
+        if (ans.all) sticky = ans.kind;
+        return ans.kind;
+      });
+
+      return known.then(function (k) {
+        if (!k) return step();            // skipped
+        var g = matchGame(file);
+        var gp = g ? Promise.resolve(g) : createGame(prettyName(file.name)).then(function (ng) {
+          madeGames++;
+          state.games.push(ng);
+          return ng;
+        });
+        return gp.then(function (game) {
+          return addFiles([file], game.id, k).then(function () {
+            added++;
+            touched[game.id] = true;
+            return step();
+          });
+        });
+      });
+    }
+
+    return step().catch(reportStorageError);
+  }
+
+  function prettyName(filename) {
+    return baseName(filename)
+      .replace(/[._]+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim() || filename;
+  }
+
+  function askKind(file) {
+    return new Promise(function (res) {
+      var m = modal({
+        title: t('ask_title'),
+        sub: esc(t('ask_sub', { file: file.name, size: bytes(file.size) })),
+        body:
+          '<div class="kind-opts">' +
+            '<button class="kind-opt" data-kind="rom">' +
+              '<span class="kico" style="background:rgba(139,124,255,.13);color:var(--violet)">' + ICON.disc + '</span>' +
+              '<span><b>' + esc(t('ask_rom_b')) + '</b><small>' + esc(t('ask_rom_s')) + '</small></span>' +
+            '</button>' +
+            '<button class="kind-opt" data-kind="save">' +
+              '<span class="kico" style="background:rgba(88,230,200,.13);color:var(--acc)">' + ICON.save + '</span>' +
+              '<span><b>' + esc(t('ask_save_b')) + '</b><small>' + esc(t('ask_save_s')) + '</small></span>' +
+            '</button>' +
+          '</div>' +
+          '<label class="check"><input type="checkbox" id="askAll"> ' + esc(t('ask_all')) + '</label>',
+        actions: [{ label: t('ask_skip'), cls: 'btn-ghost', close: true }],
+        onClose: function () { res(null); }
+      });
+
+      Array.prototype.forEach.call(m.querySelectorAll('[data-kind]'), function (b) {
+        b.addEventListener('click', function () {
+          var all = $('#askAll', m).checked;
+          closeModal(m, true);
+          res({ kind: b.dataset.kind, all: all });
+        });
+      });
+    });
+  }
+
+  function reportStorageError(err) {
+    console.error(err);
+    var quota = err && (err.name === 'QuotaExceededError' || /quota/i.test(err.message || ''));
+    toast(quota
+      ? t('err_quota')
+      : t('err_other', { msg: (err && err.message) || '?' }), 'bad');
+    refreshFolder();
+  }
+
+  /* ══════════════════════════════════════════════════
+     Downloads and deletion
+     ══════════════════════════════════════════════════ */
+
+  function downloadBlob(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+
+  function downloadFile(id) {
+    get('files', id).then(function (f) {
+      if (!f) return;
+      downloadBlob(f.blob, f.name);
+    });
+  }
+
+  function downloadSaves() {
+    var saves = state.files.filter(function (x) { return x.kind === 'save'; });
+    if (!saves.length) { toast(t('toast_nosaves'), 'bad'); return; }
+    /* browsers throttle rapid downloads, so they go out one at a time */
+    saves.reduce(function (chain, f, i) {
+      return chain.then(function () {
+        return get('files', f.id).then(function (full) {
+          if (full) downloadBlob(full.blob, full.name);
+          return new Promise(function (r) { setTimeout(r, 350); });
+        });
+      });
+    }, Promise.resolve()).then(function () {
+      toast(t('toast_dl', { files: t('u_savefile', { n: saves.length }) }), 'ok');
+    });
+  }
+
+  function removeFile(id) {
+    del('files', id).then(refreshFolder).then(function () { toast(t('toast_removedfile')); });
+  }
+
+  function deleteGame(id) {
+    var g = state.games.filter(function (x) { return x.id === id; })[0];
+    if (!g) return;
+    var fs = filesOf(id);
+    confirmModal(
+      t('del_game_t', { name: g.name }),
+      fs.length ? t('del_game_p', { files: t('u_file', { n: fs.length }) })
+                : t('del_game_p0'),
+      function () {
+        Promise.all(fs.map(function (f) { return del('files', f.id); }))
+          .then(function () { return del('games', id); })
+          .then(refreshFolder)
+          .then(function () { toast(t('toast_removedgame', { name: g.name })); });
+      }
+    );
+  }
+
+  function deleteFolder() {
+    var f = state.folder;
+    confirmModal(
+      t('del_folder_t', { name: f.name }),
+      t('del_folder_p', {
+        games: t('u_game', { n: state.games.length }),
+        files: t('u_file', { n: state.files.length }),
+        size: bytes(state.files.reduce(function (s, x) { return s + x.size; }, 0))
+      }),
+      function () {
+        Promise.all(state.files.map(function (x) { return del('files', x.id); }))
+          .then(function () { return Promise.all(state.games.map(function (g) { return del('games', g.id); })); })
+          .then(function () { return del('folders', f.id); })
+          .then(function () {
+            state.folder = null;
+            return loadFolders();
+          })
+          .then(function () { toast(t('toast_folderdel')); updateMeter(); });
+      }
+    );
+  }
+
+  /* ══════════════════════════════════════════════════
+     Modals
+     ══════════════════════════════════════════════════ */
+
+  var lastFocus = null;
+
+  function modal(opts) {
+    lastFocus = document.activeElement;
+
+    var back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML =
+      '<div class="modal" role="dialog" aria-modal="true" aria-label="' + esc(opts.title) + '">' +
+        '<div class="modal-head">' +
+          '<div><h3>' + esc(opts.title) + '</h3>' +
+            (opts.sub ? '<p>' + opts.sub + '</p>' : '') +
+          '</div>' +
+          '<button class="icon-btn" data-close aria-label="' + esc(t('close')) + '">' + ICON.x + '</button>' +
+        '</div>' +
+        '<div class="modal-body">' + (opts.body || '') + '</div>' +
+        '<div class="modal-foot"></div>' +
+      '</div>';
+
+    var root = $('.modal', back);
+    var foot = $('.modal-foot', back);
+
+    (opts.actions || []).forEach(function (a) {
+      var b = document.createElement('button');
+      b.className = 'btn ' + (a.cls || '');
+      b.textContent = a.label;
+      b.addEventListener('click', function () {
+        var keep = a.act ? a.act(root) : undefined;
+        if (keep === false) return;
+        closeModal(back);
+      });
+      foot.appendChild(b);
+    });
+
+    back._onClose = opts.onClose || null;
+
+    $('[data-close]', back).addEventListener('click', function () { closeModal(back); });
+    back.addEventListener('mousedown', function (e) { if (e.target === back) closeModal(back); });
+    back.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.stopPropagation(); closeModal(back); }
+      if (e.key === 'Tab') trapFocus(e, root);
+    });
+
+    $('#modalHost').appendChild(back);
+    var first = root.querySelector('input, button:not([data-close])');
+    if (first) first.focus();
+    return back;
+  }
+
+  function closeModal(back, silent) {
+    if (!back || !back.parentNode) return;
+    var cb = back._onClose;
+    back._onClose = null;
+    back.remove();
+    if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (e) {} }
+    if (cb && !silent) cb();
+  }
+
+  function trapFocus(e, root) {
+    var f = root.querySelectorAll('a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+
+  function confirmModal(title, sub, onYes) {
+    modal({
+      title: title,
+      sub: esc(sub),
+      body: '',
+      actions: [
+        { label: t('cancel'), cls: 'btn-ghost', close: true },
+        { label: t('del'), cls: 'btn-danger', act: onYes }
+      ]
+    });
+  }
+
+  /* ══════════════════════════════════════════════════
+     Wiring
+     ══════════════════════════════════════════════════ */
+
+  function wireApp() {
+    $('#logoutBtn').addEventListener('click', signOut);
+    $('#homeLink').addEventListener('click', function (e) {
+      e.preventDefault();
+      state.folder = null;
+      loadFolders();
+    });
+    $('#backBtn').addEventListener('click', function () {
+      state.folder = null;
+      loadFolders();
+    });
+    $('#newFolderBtn').addEventListener('click', openNewFolderModal);
+    $('#addGameBtn').addEventListener('click', openAddGameModal);
+    $('#downloadAllBtn').addEventListener('click', downloadSaves);
+    $('#delFolderBtn').addEventListener('click', deleteFolder);
+
+    /* drag and drop over the whole folder view */
+    var zone = $('#dropzone');
+    var view = $('#viewFolder');
+    var depth = 0;
+
+    zone.addEventListener('click', function () {
+      pickFiles().then(function (files) { if (files.length) ingest(files); });
+    });
+
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      view.addEventListener(ev, function (e) {
+        if (!e.dataTransfer || Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') === -1) return;
+        e.preventDefault();
+        if (ev === 'dragenter') depth++;
+        zone.classList.add('drop-on');
+      });
+    });
+    view.addEventListener('dragleave', function () {
+      depth = Math.max(0, depth - 1);
+      if (!depth) zone.classList.remove('drop-on');
+    });
+    view.addEventListener('drop', function (e) {
+      e.preventDefault();
+      depth = 0;
+      zone.classList.remove('drop-on');
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) ingest(Array.prototype.slice.call(files));
+    });
+
+    /* the browser's own "open this file" behaviour would blow the page away */
+    window.addEventListener('dragover', function (e) { e.preventDefault(); });
+    window.addEventListener('drop', function (e) { e.preventDefault(); });
+  }
+
+  /* ══════════════════════════════════════════════════
+     Boot
+     ══════════════════════════════════════════════════ */
+
+  wireSettings();
+
+  openDB().then(function (d) {
+    db = d;
+    wireLanding();
+    wireApp();
+
+    var saved = null;
+    try { saved = localStorage.getItem(SESSION_KEY); } catch (e) {}
+    if (saved) {
+      return signIn(saved).catch(function () {
+        try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+      });
+    }
+  }).catch(function (err) {
+    console.error(err);
+    document.body.insertAdjacentHTML('afterbegin',
+      '<div class="wrap" style="padding:20px 0"><div class="err">' + esc(t('boot_err')) + '</div></div>');
+  });
+
+})();
+</script>
+</body>
+</html>
