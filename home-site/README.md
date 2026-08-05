@@ -14,12 +14,13 @@ Single-file, no build step, no external requests: open `index.html`.
   rotating `conic-gradient` (`@property --spin`) with a mask cut-out and a blurred
   bloom underneath. Echoed in the logo stroke, the eyebrow pip, and the work box.
 - **Logo** — inline SVG eight-point Maltese cross, chrome fill with a prism edge.
-- **Work box** — `.workbox`, holding three linked cards. Each card sets its own
+- **Work box** — `.workbox`, holding four linked cards. Each card sets its own
   `--tint` / `--tint-2`:
   | Site | Colours | Why |
   | --- | --- | --- |
   | saliba.shcherbakov.co | `#8a5a3b` → `#c9a227` | oak & brass, matching the woodworking site |
   | dayplanner.shcherbakov.co | `#3b5bdb` → `#22b8cf` | indigo/cyan, calendar & productivity |
+  | savegametransfer.shcherbakov.co | `#0891b2` → `#22d3ee` | cyan, ROM & save-file transfer for gamers |
   | And much more | full rainbow | the spectrum — links to the contact section |
 - **Settings bar** — the cog at bottom right. Light / Dark / Auto appearance, an
   animations on/off switch, and the credit line. Both settings persist in
@@ -47,3 +48,7 @@ theme only needs the token block — no per-component edits.
   tilt.
 - Contact address is `retrocriticsmalta@gmail.com` — change it in the contact section
   and footer if that's not the right inbox.
+- Copy is deliberately honest about AI: the lede, the fact strip (`strip1`) and the
+  first studio note (`note1H` / `note1P`) say we use AI as an assistive tool and
+  finish the work ourselves. Don't reintroduce "hand-coded / hand-written" claims —
+  keep both the `en` and `mt` dictionaries in step if you edit that copy.
