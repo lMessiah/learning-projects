@@ -1,0 +1,136 @@
+/* Game themes.
+ *
+ * Each theme is nothing but a block of CSS variable overrides on a root class,
+ * so the whole app (cards, board, tiles, modals) restyles with zero JS branching
+ * and a fourth theme is a copy-paste away.
+ *
+ * Applied by src/ui/theme.js as `theme-p3` | `theme-p4` | `theme-p5` on <html>.
+ */
+
+/* ---------- P3 — cool blues, dark navy, moonlight over water ---------- */
+
+.theme-p3 {
+  --bg: #050a18;
+  --bg-2: #0a1226;
+  --panel: #101a33;
+  --panel-2: #16233f;
+  --line: #27375c;
+
+  --accent: #3d8bff;
+  --accent-dark: #12336e;
+  --accent-glow: rgba(61, 139, 255, 0.45);
+
+  --ink: #eef4ff;
+  --ink-dim: #a3b4d4;
+  --ink-faint: #6a7 da0;
+  --ink-faint: #6a7da0;
+
+  --gold: #9fd8ff;
+  --ok: #4fd6b0;
+  --warn: #ffc46b;
+
+  --glow-a: rgba(61, 139, 255, 0.22);
+  --glow-b: rgba(120, 200, 255, 0.12);
+
+  /* Moonlight: a soft disc high on the right, over slow water banding. */
+  --motif:
+    radial-gradient(circle at 82% 12%, rgba(200, 226, 255, 0.13), transparent 12%),
+    repeating-linear-gradient(180deg, rgba(160, 200, 255, 0.028) 0 1px, transparent 1px 7px);
+  --skew: 0deg;
+}
+
+/* ---------- P4 — warm gold on black, TV static ---------- */
+
+.theme-p4 {
+  --bg: #080604;
+  --bg-2: #12100a;
+  --panel: #1a1710;
+  --panel-2: #241f14;
+  --line: #423823;
+
+  --accent: #f5c518;
+  --accent-dark: #8a6c00;
+  --accent-glow: rgba(245, 197, 24, 0.4);
+
+  --ink: #fffaf0;
+  --ink-dim: #cfc0a0;
+  --ink-faint: #8d8060;
+
+  --gold: #fff08a;
+  --ok: #8fd44a;
+  --warn: #ff9a3c;
+
+  --glow-a: rgba(245, 197, 24, 0.16);
+  --glow-b: rgba(255, 226, 120, 0.08);
+
+  /* TV static: fine horizontal scanlines plus a dense speckle. */
+  --motif:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 2px);
+  --skew: 0deg;
+}
+
+/* P4's primary buttons read better with dark text on that yellow. */
+.theme-p4 .btn--primary,
+.theme-p4 .pill--on {
+  color: #14100a;
+}
+
+.theme-p4 .card__level,
+.theme-p4 .tile__level {
+  color: #14100a;
+}
+
+/* ---------- P5 — red / black / white, sharp angles ---------- */
+
+.theme-p5 {
+  --bg: #0b0b0d;
+  --bg-2: #141418;
+  --panel: #1b1b21;
+  --panel-2: #23232b;
+  --line: #33333d;
+
+  --accent: #e01b32;
+  --accent-dark: #9c0f20;
+  --accent-glow: rgba(224, 27, 50, 0.45);
+
+  --ink: #ffffff;
+  --ink-dim: #a8a8b4;
+  --ink-faint: #6f6f7d;
+
+  --gold: #f0c243;
+  --ok: #3fd08a;
+  --warn: #f0a91e;
+
+  --glow-a: rgba(224, 27, 50, 0.2);
+  --glow-b: rgba(224, 27, 50, 0.1);
+
+  --motif: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.018) 0 2px, transparent 2px 90px);
+  --skew: -0.9deg;
+}
+
+/* P5 leans into the angles. */
+.theme-p5 .side,
+.theme-p5 .skill-bar,
+.theme-p5 .action-bar {
+  border-left-width: 5px;
+}
+
+.theme-p5 .menu__box:hover {
+  transform: translateY(-4px) skewX(-1.2deg);
+}
+
+/* ---------- Theme swatches (Settings) ---------- */
+
+.theme-swatch {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.theme-swatch span {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}

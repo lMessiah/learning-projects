@@ -1,0 +1,3093 @@
+{
+  "meta": {
+    "version": "0.1.0",
+    "notes": [
+      "Unofficial fan project. No official ATLUS artwork, sprites or logos are used or referenced.",
+      "DESIGN NOTE: stats, weaknesses and resistances are balance approximations inspired by the games, not exact ports.",
+      "DESIGN NOTE: skills are stored once in `skillLibrary` and referenced by personas via { skill, unlockLevel }. The data loader (src/data/cards.js) resolves each reference into a full skill object { name, type, power, spCost|hpCost, unlockLevel, description, effect }. This keeps the file small and means new cards never touch engine code.",
+      "DESIGN NOTE: alpha ailments are Burn and Shock only. Canonically these come from fire and electric skills, so they are applied via `ailment` + `ailmentChance` on those damage skills rather than via dedicated ailment-only skills. `type: \"ailment\"` remains a valid schema value for future cards.",
+      "DESIGN NOTE: `usesAction` is stored on every Item and Special. Per the rules, playing Items/Specials is separate from your one action, so it defaults to false; the two strongest Specials set it to true.",
+      "RULE: you may play at most ONE Item card and ONE Special card per turn (engine constants ITEMS_PER_TURN / SPECIALS_PER_TURN). The two limits are counted separately, so one of each in the same turn is legal.",
+      "RULE: prebuilt decks contain no Persona above level 25 (CONFIG.DECK_MAX_PERSONA_LEVEL). Everything stronger is fusion-only, and every fusionOnly Persona is the result of exactly one recipe.",
+      "RULE: a Persona card may only be played to the field if its printed level is at most the highest level among your field Personas + CONFIG.PLAY_LEVEL_GAP (default 10). High-tier cards wait in hand until your board grows into them."
+    ],
+    "damageTypes": [
+      "phys",
+      "fire",
+      "ice",
+      "elec",
+      "wind",
+      "light",
+      "dark",
+      "almighty"
+    ],
+    "arcana": [
+      "Fool",
+      "Magician",
+      "Priestess",
+      "Empress",
+      "Emperor",
+      "Hierophant",
+      "Lovers",
+      "Chariot",
+      "Justice",
+      "Hermit",
+      "Fortune",
+      "Strength",
+      "Hanged Man",
+      "Death",
+      "Temperance",
+      "Devil",
+      "Tower",
+      "Star",
+      "Moon",
+      "Sun",
+      "Judgement"
+    ]
+  },
+  "skillLibrary": {
+    "bash": {
+      "name": "Bash",
+      "type": "phys",
+      "power": 40,
+      "hpCost": 6,
+      "description": "Light physical damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "cleave": {
+      "name": "Cleave",
+      "type": "phys",
+      "power": 44,
+      "hpCost": 6,
+      "description": "Light physical damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "assault-dive": {
+      "name": "Assault Dive",
+      "type": "phys",
+      "power": 62,
+      "hpCost": 10,
+      "description": "Medium physical damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "heat-wave": {
+      "name": "Heat Wave",
+      "type": "phys",
+      "power": 74,
+      "hpCost": 14,
+      "description": "Heavy physical damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "gigantic-fist": {
+      "name": "Gigantic Fist",
+      "type": "phys",
+      "power": 96,
+      "hpCost": 18,
+      "description": "Heavy physical damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "riot-gun": {
+      "name": "Riot Gun",
+      "type": "phys",
+      "power": 120,
+      "hpCost": 24,
+      "description": "Severe physical damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "hassou-tobi": {
+      "name": "Hassou Tobi",
+      "type": "phys",
+      "power": 132,
+      "hpCost": 26,
+      "description": "Severe physical damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "agi": {
+      "name": "Agi",
+      "type": "fire",
+      "power": 38,
+      "spCost": 4,
+      "description": "Light Fire damage. May inflict Burn.",
+      "effect": {
+        "kind": "damage",
+        "ailment": "burn",
+        "ailmentChance": 0.25
+      }
+    },
+    "agilao": {
+      "name": "Agilao",
+      "type": "fire",
+      "power": 58,
+      "spCost": 8,
+      "description": "Medium Fire damage. May inflict Burn.",
+      "effect": {
+        "kind": "damage",
+        "ailment": "burn",
+        "ailmentChance": 0.25
+      }
+    },
+    "agidyne": {
+      "name": "Agidyne",
+      "type": "fire",
+      "power": 84,
+      "spCost": 12,
+      "description": "Heavy Fire damage. May inflict Burn.",
+      "effect": {
+        "kind": "damage",
+        "ailment": "burn",
+        "ailmentChance": 0.3
+      }
+    },
+    "ragnarok": {
+      "name": "Ragnarok",
+      "type": "fire",
+      "power": 110,
+      "spCost": 20,
+      "description": "Severe Fire damage. Often inflicts Burn.",
+      "effect": {
+        "kind": "damage",
+        "ailment": "burn",
+        "ailmentChance": 0.5
+      }
+    },
+    "bufu": {
+      "name": "Bufu",
+      "type": "ice",
+      "power": 38,
+      "spCost": 4,
+      "description": "Light Ice damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "bufula": {
+      "name": "Bufula",
+      "type": "ice",
+      "power": 58,
+      "spCost": 8,
+      "description": "Medium Ice damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "bufudyne": {
+      "name": "Bufudyne",
+      "type": "ice",
+      "power": 84,
+      "spCost": 12,
+      "description": "Heavy Ice damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "ice-breath": {
+      "name": "Ice Breath",
+      "type": "ice",
+      "power": 46,
+      "spCost": 6,
+      "description": "Light Ice damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "zio": {
+      "name": "Zio",
+      "type": "elec",
+      "power": 38,
+      "spCost": 4,
+      "description": "Light Elec damage. May inflict Shock.",
+      "effect": {
+        "kind": "damage",
+        "ailment": "shock",
+        "ailmentChance": 0.25
+      }
+    },
+    "zionga": {
+      "name": "Zionga",
+      "type": "elec",
+      "power": 58,
+      "spCost": 8,
+      "description": "Medium Elec damage. May inflict Shock.",
+      "effect": {
+        "kind": "damage",
+        "ailment": "shock",
+        "ailmentChance": 0.25
+      }
+    },
+    "ziodyne": {
+      "name": "Ziodyne",
+      "type": "elec",
+      "power": 84,
+      "spCost": 12,
+      "description": "Heavy Elec damage. May inflict Shock.",
+      "effect": {
+        "kind": "damage",
+        "ailment": "shock",
+        "ailmentChance": 0.3
+      }
+    },
+    "thunder-reign": {
+      "name": "Thunder Reign",
+      "type": "elec",
+      "power": 118,
+      "spCost": 22,
+      "description": "Severe Elec damage. Often inflicts Shock.",
+      "effect": {
+        "kind": "damage",
+        "ailment": "shock",
+        "ailmentChance": 0.5
+      }
+    },
+    "garu": {
+      "name": "Garu",
+      "type": "wind",
+      "power": 38,
+      "spCost": 4,
+      "description": "Light Wind damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "garula": {
+      "name": "Garula",
+      "type": "wind",
+      "power": 58,
+      "spCost": 8,
+      "description": "Medium Wind damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "garudyne": {
+      "name": "Garudyne",
+      "type": "wind",
+      "power": 84,
+      "spCost": 12,
+      "description": "Heavy Wind damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "kouha": {
+      "name": "Kouha",
+      "type": "light",
+      "power": 38,
+      "spCost": 4,
+      "description": "Light Light damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "kouga": {
+      "name": "Kouga",
+      "type": "light",
+      "power": 58,
+      "spCost": 8,
+      "description": "Medium Light damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "kougaon": {
+      "name": "Kougaon",
+      "type": "light",
+      "power": 84,
+      "spCost": 12,
+      "description": "Heavy Light damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "hama": {
+      "name": "Hama",
+      "type": "light",
+      "power": 0,
+      "spCost": 8,
+      "description": "Chance to instantly KO the enemy active Persona.",
+      "effect": {
+        "kind": "instakill",
+        "chance": 0.3
+      }
+    },
+    "hamaon": {
+      "name": "Hamaon",
+      "type": "light",
+      "power": 0,
+      "spCost": 14,
+      "description": "High chance to instantly KO the enemy active Persona.",
+      "effect": {
+        "kind": "instakill",
+        "chance": 0.4
+      }
+    },
+    "eiha": {
+      "name": "Eiha",
+      "type": "dark",
+      "power": 38,
+      "spCost": 4,
+      "description": "Light Dark damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "eiga": {
+      "name": "Eiga",
+      "type": "dark",
+      "power": 58,
+      "spCost": 8,
+      "description": "Medium Dark damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "eigaon": {
+      "name": "Eigaon",
+      "type": "dark",
+      "power": 84,
+      "spCost": 12,
+      "description": "Heavy Dark damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "mudo": {
+      "name": "Mudo",
+      "type": "dark",
+      "power": 0,
+      "spCost": 8,
+      "description": "Chance to instantly KO the enemy active Persona.",
+      "effect": {
+        "kind": "instakill",
+        "chance": 0.3
+      }
+    },
+    "mudoon": {
+      "name": "Mudoon",
+      "type": "dark",
+      "power": 0,
+      "spCost": 14,
+      "description": "High chance to instantly KO the enemy active Persona.",
+      "effect": {
+        "kind": "instakill",
+        "chance": 0.4
+      }
+    },
+    "megido": {
+      "name": "Megido",
+      "type": "almighty",
+      "power": 70,
+      "spCost": 16,
+      "description": "Medium Almighty damage. Cannot be resisted.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "megidola": {
+      "name": "Megidola",
+      "type": "almighty",
+      "power": 96,
+      "spCost": 22,
+      "description": "Heavy Almighty damage. Cannot be resisted.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "megidolaon": {
+      "name": "Megidolaon",
+      "type": "almighty",
+      "power": 130,
+      "spCost": 30,
+      "description": "Severe Almighty damage. Cannot be resisted.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "myriad-truths": {
+      "name": "Myriad Truths",
+      "type": "almighty",
+      "power": 140,
+      "spCost": 32,
+      "description": "Colossal Almighty damage. Cannot be resisted.",
+      "effect": {
+        "kind": "damage"
+      }
+    },
+    "dia": {
+      "name": "Dia",
+      "type": "heal",
+      "power": 30,
+      "spCost": 4,
+      "description": "Restore 30 HP to one of your Personas.",
+      "effect": {
+        "kind": "heal",
+        "amount": 30,
+        "target": "ownAny"
+      }
+    },
+    "diarama": {
+      "name": "Diarama",
+      "type": "heal",
+      "power": 60,
+      "spCost": 8,
+      "description": "Restore 60 HP to one of your Personas.",
+      "effect": {
+        "kind": "heal",
+        "amount": 60,
+        "target": "ownAny"
+      }
+    },
+    "diarahan": {
+      "name": "Diarahan",
+      "type": "heal",
+      "power": 9999,
+      "spCost": 24,
+      "description": "Fully restore HP of one of your Personas.",
+      "effect": {
+        "kind": "heal",
+        "amount": 9999,
+        "target": "ownAny"
+      }
+    },
+    "media": {
+      "name": "Media",
+      "type": "heal",
+      "power": 25,
+      "spCost": 10,
+      "description": "Restore 25 HP to all of your Personas.",
+      "effect": {
+        "kind": "heal",
+        "amount": 25,
+        "target": "ownAll"
+      }
+    },
+    "mediarama": {
+      "name": "Mediarama",
+      "type": "heal",
+      "power": 45,
+      "spCost": 16,
+      "description": "Restore 45 HP to all of your Personas.",
+      "effect": {
+        "kind": "heal",
+        "amount": 45,
+        "target": "ownAll"
+      }
+    },
+    "salvation": {
+      "name": "Salvation",
+      "type": "heal",
+      "power": 9999,
+      "spCost": 30,
+      "description": "Fully restore HP and cure ailments on all of your Personas.",
+      "effect": {
+        "kind": "heal",
+        "amount": 9999,
+        "target": "ownAll",
+        "cureAilments": true
+      }
+    },
+    "tarukaja": {
+      "name": "Tarukaja",
+      "type": "buff",
+      "power": 0,
+      "spCost": 5,
+      "description": "Raise your active Persona's attack for 3 turns.",
+      "effect": {
+        "kind": "buff",
+        "stat": "atk",
+        "direction": "up",
+        "target": "ownActive",
+        "duration": 3
+      }
+    },
+    "rakukaja": {
+      "name": "Rakukaja",
+      "type": "buff",
+      "power": 0,
+      "spCost": 5,
+      "description": "Raise your active Persona's defense for 3 turns.",
+      "effect": {
+        "kind": "buff",
+        "stat": "def",
+        "direction": "up",
+        "target": "ownActive",
+        "duration": 3
+      }
+    },
+    "tarunda": {
+      "name": "Tarunda",
+      "type": "debuff",
+      "power": 0,
+      "spCost": 5,
+      "description": "Lower the enemy active Persona's attack for 3 turns.",
+      "effect": {
+        "kind": "buff",
+        "stat": "atk",
+        "direction": "down",
+        "target": "enemyActive",
+        "duration": 3
+      }
+    },
+    "rakunda": {
+      "name": "Rakunda",
+      "type": "debuff",
+      "power": 0,
+      "spCost": 5,
+      "description": "Lower the enemy active Persona's defense for 3 turns.",
+      "effect": {
+        "kind": "buff",
+        "stat": "def",
+        "direction": "down",
+        "target": "enemyActive",
+        "duration": 3
+      }
+    }
+  },
+  "personas": [
+    {
+      "id": "pixie",
+      "name": "Pixie",
+      "type": "persona",
+      "arcana": "Lovers",
+      "level": 3,
+      "game": "common",
+      "flavor": "A tiny fairy whose healing spells outshine her fists.",
+      "strength": 4,
+      "magic": 8,
+      "endurance": 4,
+      "hp": 40,
+      "sp": 24,
+      "weaknesses": [
+        "dark"
+      ],
+      "resists": [
+        "elec"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "dia",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "zio",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "media",
+          "unlockLevel": 6
+        },
+        {
+          "skill": "rakukaja",
+          "unlockLevel": 9
+        },
+        {
+          "skill": "zionga",
+          "unlockLevel": 14
+        }
+      ]
+    },
+    {
+      "id": "jack-frost",
+      "name": "Jack Frost",
+      "type": "persona",
+      "arcana": "Magician",
+      "level": 6,
+      "game": "common",
+      "flavor": "Hee-ho! A cheerful snow spirit with a mean cold streak.",
+      "strength": 6,
+      "magic": 9,
+      "endurance": 6,
+      "hp": 46,
+      "sp": 26,
+      "weaknesses": [
+        "fire"
+      ],
+      "resists": [
+        "ice"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "bufu",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakunda",
+          "unlockLevel": 8
+        },
+        {
+          "skill": "ice-breath",
+          "unlockLevel": 10
+        },
+        {
+          "skill": "bufula",
+          "unlockLevel": 13
+        },
+        {
+          "skill": "bufudyne",
+          "unlockLevel": 24
+        }
+      ]
+    },
+    {
+      "id": "apsaras",
+      "name": "Apsaras",
+      "type": "persona",
+      "arcana": "Priestess",
+      "level": 5,
+      "game": "p3",
+      "flavor": "A celestial dancer of clouds and water.",
+      "strength": 4,
+      "magic": 8,
+      "endurance": 5,
+      "hp": 42,
+      "sp": 28,
+      "weaknesses": [
+        "elec"
+      ],
+      "resists": [
+        "ice"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "bufu",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "dia",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "media",
+          "unlockLevel": 9
+        },
+        {
+          "skill": "tarunda",
+          "unlockLevel": 12
+        },
+        {
+          "skill": "bufula",
+          "unlockLevel": 15
+        }
+      ]
+    },
+    {
+      "id": "orpheus",
+      "name": "Orpheus",
+      "type": "persona",
+      "arcana": "Fool",
+      "level": 4,
+      "game": "p3",
+      "flavor": "The Master of Strings. A first awakening, fragile but bold.",
+      "strength": 7,
+      "magic": 8,
+      "endurance": 6,
+      "hp": 48,
+      "sp": 24,
+      "weaknesses": [
+        "ice"
+      ],
+      "resists": [
+        "fire"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 3,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "agi",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "bash",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "dia",
+          "unlockLevel": 5
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 9
+        },
+        {
+          "skill": "agilao",
+          "unlockLevel": 12
+        }
+      ]
+    },
+    {
+      "id": "izanagi",
+      "name": "Izanagi",
+      "type": "persona",
+      "arcana": "Fool",
+      "level": 4,
+      "game": "p4",
+      "flavor": "A masked figure with a long blade and a longer silence.",
+      "strength": 9,
+      "magic": 7,
+      "endurance": 6,
+      "hp": 50,
+      "sp": 22,
+      "weaknesses": [
+        "dark"
+      ],
+      "resists": [
+        "elec"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 0,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "cleave",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "zio",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakukaja",
+          "unlockLevel": 8
+        },
+        {
+          "skill": "zionga",
+          "unlockLevel": 13
+        },
+        {
+          "skill": "ziodyne",
+          "unlockLevel": 22
+        }
+      ]
+    },
+    {
+      "id": "arsene",
+      "name": "Arsene",
+      "type": "persona",
+      "arcana": "Fool",
+      "level": 4,
+      "game": "p5",
+      "flavor": "The Pillager of Twilight. A gentleman thief in scarlet.",
+      "strength": 8,
+      "magic": 8,
+      "endurance": 5,
+      "hp": 46,
+      "sp": 24,
+      "weaknesses": [
+        "light"
+      ],
+      "resists": [
+        "dark"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 3,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "eiha",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "cleave",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarunda",
+          "unlockLevel": 8
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 12
+        },
+        {
+          "skill": "eigaon",
+          "unlockLevel": 20
+        }
+      ]
+    },
+    {
+      "id": "ara-mitama",
+      "name": "Ara Mitama",
+      "type": "persona",
+      "arcana": "Chariot",
+      "level": 4,
+      "game": "p4",
+      "flavor": "A rough soul. All courage, no subtlety.",
+      "strength": 10,
+      "magic": 4,
+      "endurance": 7,
+      "hp": 52,
+      "sp": 18,
+      "weaknesses": [
+        "ice"
+      ],
+      "resists": [
+        "phys"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 0,
+        "endurance": 1,
+        "hp": 4,
+        "sp": 1
+      },
+      "skills": [
+        {
+          "skill": "bash",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakunda",
+          "unlockLevel": 9
+        },
+        {
+          "skill": "assault-dive",
+          "unlockLevel": 12
+        },
+        {
+          "skill": "heat-wave",
+          "unlockLevel": 20
+        }
+      ]
+    },
+    {
+      "id": "angel",
+      "name": "Angel",
+      "type": "persona",
+      "arcana": "Justice",
+      "level": 6,
+      "game": "common",
+      "flavor": "Bound in leather, bearing judgement without expression.",
+      "strength": 5,
+      "magic": 9,
+      "endurance": 6,
+      "hp": 44,
+      "sp": 28,
+      "weaknesses": [
+        "dark"
+      ],
+      "resists": [
+        "light"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "hama",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "dia",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakukaja",
+          "unlockLevel": 8
+        },
+        {
+          "skill": "media",
+          "unlockLevel": 12
+        },
+        {
+          "skill": "hamaon",
+          "unlockLevel": 18
+        }
+      ]
+    },
+    {
+      "id": "jack-o-lantern",
+      "name": "Jack-o'-Lantern",
+      "type": "persona",
+      "arcana": "Magician",
+      "level": 9,
+      "game": "p5",
+      "flavor": "A pumpkin-headed prankster with a lantern full of fire.",
+      "strength": 7,
+      "magic": 11,
+      "endurance": 7,
+      "hp": 50,
+      "sp": 28,
+      "weaknesses": [
+        "ice"
+      ],
+      "resists": [
+        "fire"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "agi",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarunda",
+          "unlockLevel": 10
+        },
+        {
+          "skill": "agilao",
+          "unlockLevel": 15
+        },
+        {
+          "skill": "rakunda",
+          "unlockLevel": 18
+        },
+        {
+          "skill": "agidyne",
+          "unlockLevel": 26
+        }
+      ]
+    },
+    {
+      "id": "hua-po",
+      "name": "Hua Po",
+      "type": "persona",
+      "arcana": "Hermit",
+      "level": 10,
+      "game": "common",
+      "flavor": "A flower spirit born from a burning tree.",
+      "strength": 7,
+      "magic": 12,
+      "endurance": 7,
+      "hp": 48,
+      "sp": 30,
+      "weaknesses": [
+        "ice"
+      ],
+      "resists": [
+        "fire"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "agi",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "dia",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarunda",
+          "unlockLevel": 12
+        },
+        {
+          "skill": "agilao",
+          "unlockLevel": 16
+        },
+        {
+          "skill": "diarama",
+          "unlockLevel": 22
+        }
+      ]
+    },
+    {
+      "id": "omoikane",
+      "name": "Omoikane",
+      "type": "persona",
+      "arcana": "Hierophant",
+      "level": 11,
+      "game": "p3",
+      "flavor": "A deity of wisdom who thinks before it strikes.",
+      "strength": 6,
+      "magic": 14,
+      "endurance": 8,
+      "hp": 54,
+      "sp": 34,
+      "weaknesses": [
+        "dark"
+      ],
+      "resists": [
+        "elec"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "zio",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakunda",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "zionga",
+          "unlockLevel": 14
+        },
+        {
+          "skill": "media",
+          "unlockLevel": 16
+        },
+        {
+          "skill": "ziodyne",
+          "unlockLevel": 24
+        }
+      ]
+    },
+    {
+      "id": "nekomata",
+      "name": "Nekomata",
+      "type": "persona",
+      "arcana": "Magician",
+      "level": 12,
+      "game": "p5",
+      "flavor": "A two-tailed cat demon with very sharp opinions.",
+      "strength": 12,
+      "magic": 10,
+      "endurance": 8,
+      "hp": 58,
+      "sp": 30,
+      "weaknesses": [
+        "ice"
+      ],
+      "resists": [
+        "dark"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 3,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "agi",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakunda",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "cleave",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 14
+        },
+        {
+          "skill": "agilao",
+          "unlockLevel": 18
+        }
+      ]
+    },
+    {
+      "id": "incubus",
+      "name": "Incubus",
+      "type": "persona",
+      "arcana": "Devil",
+      "level": 12,
+      "game": "p5",
+      "flavor": "A nightmare that visits sleepers and leaves them drained.",
+      "strength": 10,
+      "magic": 12,
+      "endurance": 8,
+      "hp": 56,
+      "sp": 30,
+      "weaknesses": [
+        "light"
+      ],
+      "resists": [
+        "dark"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "eiha",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarunda",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "mudo",
+          "unlockLevel": 14
+        },
+        {
+          "skill": "eiga",
+          "unlockLevel": 18
+        },
+        {
+          "skill": "eigaon",
+          "unlockLevel": 28
+        }
+      ]
+    },
+    {
+      "id": "silky",
+      "name": "Silky",
+      "type": "persona",
+      "arcana": "Priestess",
+      "level": 13,
+      "game": "p3",
+      "flavor": "A housemaid spirit who tidies the battlefield.",
+      "strength": 8,
+      "magic": 13,
+      "endurance": 9,
+      "hp": 54,
+      "sp": 32,
+      "weaknesses": [
+        "fire"
+      ],
+      "resists": [
+        "ice"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "bufu",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "media",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarunda",
+          "unlockLevel": 15
+        },
+        {
+          "skill": "bufula",
+          "unlockLevel": 19
+        },
+        {
+          "skill": "diarama",
+          "unlockLevel": 23
+        }
+      ]
+    },
+    {
+      "id": "ippon-datara",
+      "name": "Ippon-Datara",
+      "type": "persona",
+      "arcana": "Hermit",
+      "level": 14,
+      "game": "p4",
+      "flavor": "A one-legged smith demon swinging a red-hot hammer.",
+      "strength": 16,
+      "magic": 5,
+      "endurance": 12,
+      "hp": 66,
+      "sp": 20,
+      "weaknesses": [
+        "elec"
+      ],
+      "resists": [
+        "phys"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 0,
+        "endurance": 1,
+        "hp": 4,
+        "sp": 1
+      },
+      "skills": [
+        {
+          "skill": "bash",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "assault-dive",
+          "unlockLevel": 16
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 19
+        },
+        {
+          "skill": "heat-wave",
+          "unlockLevel": 22
+        }
+      ]
+    },
+    {
+      "id": "yaksini",
+      "name": "Yaksini",
+      "type": "persona",
+      "arcana": "Empress",
+      "level": 15,
+      "game": "p4",
+      "flavor": "A fierce attendant wielding a cleaver and a grin.",
+      "strength": 14,
+      "magic": 10,
+      "endurance": 10,
+      "hp": 62,
+      "sp": 26,
+      "weaknesses": [
+        "light"
+      ],
+      "resists": [
+        "fire"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 0,
+        "endurance": 1,
+        "hp": 4,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "cleave",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "agi",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "agilao",
+          "unlockLevel": 17
+        },
+        {
+          "skill": "rakunda",
+          "unlockLevel": 20
+        }
+      ]
+    },
+    {
+      "id": "berith",
+      "name": "Berith",
+      "type": "persona",
+      "arcana": "Hierophant",
+      "level": 16,
+      "game": "p5",
+      "flavor": "A duke of hell astride a red horse.",
+      "strength": 15,
+      "magic": 12,
+      "endurance": 11,
+      "hp": 64,
+      "sp": 26,
+      "weaknesses": [
+        "ice"
+      ],
+      "resists": [
+        "fire"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 3,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "agilao",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakunda",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "cleave",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "heat-wave",
+          "unlockLevel": 20
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 23
+        }
+      ]
+    },
+    {
+      "id": "take-minakata",
+      "name": "Take-Minakata",
+      "type": "persona",
+      "arcana": "Chariot",
+      "level": 17,
+      "game": "p3",
+      "flavor": "A thunder god who lost a duel and never forgot it.",
+      "strength": 15,
+      "magic": 12,
+      "endurance": 11,
+      "hp": 66,
+      "sp": 28,
+      "weaknesses": [
+        "wind"
+      ],
+      "resists": [
+        "elec"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 3,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "zio",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "cleave",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "zionga",
+          "unlockLevel": 18
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 21
+        },
+        {
+          "skill": "ziodyne",
+          "unlockLevel": 28
+        }
+      ]
+    },
+    {
+      "id": "mothman",
+      "name": "Mothman",
+      "type": "persona",
+      "arcana": "Moon",
+      "level": 17,
+      "game": "p4",
+      "flavor": "Red eyes in the dark. An omen with wings.",
+      "strength": 12,
+      "magic": 15,
+      "endurance": 10,
+      "hp": 60,
+      "sp": 32,
+      "weaknesses": [
+        "fire"
+      ],
+      "resists": [
+        "elec",
+        "wind"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "zionga",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "garu",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarunda",
+          "unlockLevel": 20
+        },
+        {
+          "skill": "garula",
+          "unlockLevel": 23
+        },
+        {
+          "skill": "ziodyne",
+          "unlockLevel": 27
+        }
+      ]
+    },
+    {
+      "id": "sarasvati",
+      "name": "Sarasvati",
+      "type": "persona",
+      "arcana": "Priestess",
+      "level": 19,
+      "game": "p5",
+      "flavor": "Goddess of knowledge, music and flowing water.",
+      "strength": 8,
+      "magic": 18,
+      "endurance": 12,
+      "hp": 62,
+      "sp": 40,
+      "weaknesses": [
+        "elec"
+      ],
+      "resists": [
+        "ice",
+        "wind"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "bufula",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "media",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "dia",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "diarama",
+          "unlockLevel": 22
+        },
+        {
+          "skill": "rakukaja",
+          "unlockLevel": 24
+        },
+        {
+          "skill": "bufudyne",
+          "unlockLevel": 30
+        }
+      ]
+    },
+    {
+      "id": "unicorn",
+      "name": "Unicorn",
+      "type": "persona",
+      "arcana": "Strength",
+      "level": 21,
+      "game": "p3",
+      "flavor": "A pure white charger whose horn burns away corruption.",
+      "strength": 16,
+      "magic": 14,
+      "endurance": 14,
+      "hp": 70,
+      "sp": 32,
+      "weaknesses": [
+        "dark"
+      ],
+      "resists": [
+        "light"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 0,
+        "endurance": 1,
+        "hp": 4,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "kouha",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "media",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "hama",
+          "unlockLevel": 22
+        },
+        {
+          "skill": "assault-dive",
+          "unlockLevel": 24
+        },
+        {
+          "skill": "kouga",
+          "unlockLevel": 28
+        }
+      ]
+    },
+    {
+      "id": "anzu",
+      "name": "Anzu",
+      "type": "persona",
+      "arcana": "Star",
+      "level": 22,
+      "game": "p5",
+      "flavor": "A storm bird whose wings carry away whole seasons.",
+      "strength": 14,
+      "magic": 18,
+      "endurance": 12,
+      "hp": 66,
+      "sp": 36,
+      "weaknesses": [
+        "elec"
+      ],
+      "resists": [
+        "wind"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "garu",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "garula",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 24
+        },
+        {
+          "skill": "rakunda",
+          "unlockLevel": 26
+        },
+        {
+          "skill": "garudyne",
+          "unlockLevel": 30
+        }
+      ]
+    },
+    {
+      "id": "mithra",
+      "name": "Mithra",
+      "type": "persona",
+      "arcana": "Justice",
+      "level": 28,
+      "game": "common",
+      "flavor": "A god of contracts. Break one and find out.",
+      "strength": 18,
+      "magic": 22,
+      "endurance": 16,
+      "hp": 78,
+      "sp": 42,
+      "weaknesses": [
+        "dark"
+      ],
+      "resists": [
+        "light",
+        "fire"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 4,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "kouga",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "agilao",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "hamaon",
+          "unlockLevel": 30
+        },
+        {
+          "skill": "rakunda",
+          "unlockLevel": 32
+        },
+        {
+          "skill": "kougaon",
+          "unlockLevel": 36
+        }
+      ],
+      "fusionOnly": true
+    },
+    {
+      "id": "kikuri-hime",
+      "name": "Kikuri-Hime",
+      "type": "persona",
+      "arcana": "Priestess",
+      "level": 30,
+      "game": "p3",
+      "flavor": "A mediator goddess standing between the living and the dead.",
+      "strength": 12,
+      "magic": 24,
+      "endurance": 18,
+      "hp": 82,
+      "sp": 46,
+      "weaknesses": [
+        "elec"
+      ],
+      "resists": [
+        "ice",
+        "light"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 4,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "bufula",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "mediarama",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "diarama",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "bufudyne",
+          "unlockLevel": 33
+        },
+        {
+          "skill": "diarahan",
+          "unlockLevel": 40
+        }
+      ],
+      "fusionOnly": true
+    },
+    {
+      "id": "titania",
+      "name": "Titania",
+      "type": "persona",
+      "arcana": "Empress",
+      "level": 33,
+      "game": "common",
+      "flavor": "Queen of the fairies, crowned in light and wind.",
+      "strength": 18,
+      "magic": 26,
+      "endurance": 18,
+      "hp": 84,
+      "sp": 48,
+      "weaknesses": [
+        "dark"
+      ],
+      "resists": [
+        "wind",
+        "light"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 4,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "garula",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "mediarama",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "kouga",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "garudyne",
+          "unlockLevel": 36
+        },
+        {
+          "skill": "diarahan",
+          "unlockLevel": 40
+        }
+      ],
+      "fusionOnly": true
+    },
+    {
+      "id": "rangda",
+      "name": "Rangda",
+      "type": "persona",
+      "arcana": "Empress",
+      "level": 34,
+      "game": "p5",
+      "flavor": "The demon queen of Bali, eternal enemy of Barong.",
+      "strength": 22,
+      "magic": 26,
+      "endurance": 18,
+      "hp": 86,
+      "sp": 46,
+      "weaknesses": [
+        "light"
+      ],
+      "resists": [
+        "dark",
+        "elec"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 4,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "ziodyne",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "mudo",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarunda",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "eigaon",
+          "unlockLevel": 36
+        },
+        {
+          "skill": "mudoon",
+          "unlockLevel": 40
+        }
+      ],
+      "fusionOnly": true
+    },
+    {
+      "id": "girimehkala",
+      "name": "Girimehkala",
+      "type": "persona",
+      "arcana": "Moon",
+      "level": 36,
+      "game": "p4",
+      "flavor": "A one-eyed elephant whose gaze turns misfortune back on you.",
+      "strength": 28,
+      "magic": 16,
+      "endurance": 24,
+      "hp": 96,
+      "sp": 34,
+      "weaknesses": [
+        "light"
+      ],
+      "resists": [
+        "phys",
+        "dark"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 0,
+        "endurance": 1,
+        "hp": 5,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "heat-wave",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "eiga",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakunda",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "mudoon",
+          "unlockLevel": 38
+        },
+        {
+          "skill": "gigantic-fist",
+          "unlockLevel": 40
+        }
+      ],
+      "fusionOnly": true
+    },
+    {
+      "id": "vasuki",
+      "name": "Vasuki",
+      "type": "persona",
+      "arcana": "Hanged Man",
+      "level": 40,
+      "game": "common",
+      "flavor": "The serpent king coiled around the churning of the sea.",
+      "strength": 26,
+      "magic": 24,
+      "endurance": 22,
+      "hp": 94,
+      "sp": 44,
+      "weaknesses": [
+        "fire"
+      ],
+      "resists": [
+        "ice",
+        "phys"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 4,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "bufudyne",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "megido",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarunda",
+          "unlockLevel": 42
+        },
+        {
+          "skill": "megidola",
+          "unlockLevel": 46
+        }
+      ],
+      "fusionOnly": true
+    },
+    {
+      "id": "black-frost",
+      "name": "Black Frost",
+      "type": "persona",
+      "arcana": "Star",
+      "level": 38,
+      "game": "common",
+      "fusionOnly": true,
+      "flavor": "Hee-ho... A Jack Frost that went bad. Very bad.",
+      "strength": 22,
+      "magic": 28,
+      "endurance": 20,
+      "hp": 88,
+      "sp": 50,
+      "weaknesses": [
+        "light"
+      ],
+      "resists": [
+        "fire",
+        "ice"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 4,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "agidyne",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "bufudyne",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "mudoon",
+          "unlockLevel": 40
+        },
+        {
+          "skill": "megido",
+          "unlockLevel": 44
+        }
+      ]
+    },
+    {
+      "id": "surt",
+      "name": "Surt",
+      "type": "persona",
+      "arcana": "Magician",
+      "level": 46,
+      "game": "p3",
+      "fusionOnly": true,
+      "flavor": "The fire giant who will burn the world at its ending.",
+      "strength": 30,
+      "magic": 32,
+      "endurance": 24,
+      "hp": 100,
+      "sp": 52,
+      "weaknesses": [
+        "ice"
+      ],
+      "resists": [
+        "fire"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 4,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "agidyne",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "heat-wave",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "ragnarok",
+          "unlockLevel": 48
+        },
+        {
+          "skill": "megidola",
+          "unlockLevel": 52
+        }
+      ]
+    },
+    {
+      "id": "thanatos",
+      "name": "Thanatos",
+      "type": "persona",
+      "arcana": "Death",
+      "level": 50,
+      "game": "p3",
+      "fusionOnly": true,
+      "flavor": "Death itself, wrapped in coffins and silence.",
+      "strength": 34,
+      "magic": 30,
+      "endurance": 26,
+      "hp": 106,
+      "sp": 50,
+      "weaknesses": [
+        "light"
+      ],
+      "resists": [
+        "dark",
+        "phys"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 5,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "mudoon",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "eigaon",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "gigantic-fist",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "megidola",
+          "unlockLevel": 54
+        }
+      ]
+    },
+    {
+      "id": "odin",
+      "name": "Odin",
+      "type": "persona",
+      "arcana": "Emperor",
+      "level": 54,
+      "game": "p4",
+      "fusionOnly": true,
+      "flavor": "The All-Father, one eye traded for every answer.",
+      "strength": 32,
+      "magic": 36,
+      "endurance": 26,
+      "hp": 108,
+      "sp": 56,
+      "weaknesses": [
+        "ice"
+      ],
+      "resists": [
+        "elec",
+        "phys"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 5,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "ziodyne",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "megido",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "thunder-reign",
+          "unlockLevel": 58
+        }
+      ]
+    },
+    {
+      "id": "yoshitsune",
+      "name": "Yoshitsune",
+      "type": "persona",
+      "arcana": "Tower",
+      "level": 58,
+      "game": "p4",
+      "fusionOnly": true,
+      "flavor": "A tragic general who never lost a battle, only the peace.",
+      "strength": 40,
+      "magic": 24,
+      "endurance": 28,
+      "hp": 112,
+      "sp": 44,
+      "weaknesses": [
+        "dark"
+      ],
+      "resists": [
+        "phys",
+        "fire"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 0,
+        "endurance": 1,
+        "hp": 5,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "gigantic-fist",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "heat-wave",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakunda",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "hassou-tobi",
+          "unlockLevel": 60
+        }
+      ]
+    },
+    {
+      "id": "messiah",
+      "name": "Messiah",
+      "type": "persona",
+      "arcana": "Judgement",
+      "level": 60,
+      "game": "p3",
+      "fusionOnly": true,
+      "flavor": "A saviour built from grief and the will to carry it.",
+      "strength": 32,
+      "magic": 38,
+      "endurance": 30,
+      "hp": 118,
+      "sp": 60,
+      "weaknesses": [
+        "dark"
+      ],
+      "resists": [
+        "light",
+        "phys"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 5,
+        "sp": 4
+      },
+      "skills": [
+        {
+          "skill": "kougaon",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "diarahan",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "megidola",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "salvation",
+          "unlockLevel": 64
+        },
+        {
+          "skill": "megidolaon",
+          "unlockLevel": 66
+        }
+      ]
+    },
+    {
+      "id": "satanael",
+      "name": "Satanael",
+      "type": "persona",
+      "arcana": "Fool",
+      "level": 62,
+      "game": "p5",
+      "fusionOnly": true,
+      "flavor": "The rebel who fires a bullet through fate itself.",
+      "strength": 36,
+      "magic": 40,
+      "endurance": 30,
+      "hp": 120,
+      "sp": 60,
+      "weaknesses": [
+        "light"
+      ],
+      "resists": [
+        "dark",
+        "phys"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 5,
+        "sp": 4
+      },
+      "skills": [
+        {
+          "skill": "eigaon",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "mudoon",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "riot-gun",
+          "unlockLevel": 64
+        },
+        {
+          "skill": "megidolaon",
+          "unlockLevel": 66
+        }
+      ]
+    },
+    {
+      "id": "izanagi-no-okami",
+      "name": "Izanagi-no-Okami",
+      "type": "persona",
+      "arcana": "Fool",
+      "level": 64,
+      "game": "p4",
+      "fusionOnly": true,
+      "flavor": "The god who sees through every fog. Has no weakness.",
+      "strength": 38,
+      "magic": 38,
+      "endurance": 32,
+      "hp": 122,
+      "sp": 62,
+      "weaknesses": [],
+      "resists": [
+        "elec",
+        "phys"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 0,
+        "hp": 5,
+        "sp": 4
+      },
+      "skills": [
+        {
+          "skill": "ziodyne",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "megidola",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "rakukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "thunder-reign",
+          "unlockLevel": 66
+        },
+        {
+          "skill": "myriad-truths",
+          "unlockLevel": 68
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "medicine",
+      "name": "Medicine",
+      "type": "item",
+      "usesAction": false,
+      "description": "Restore 50 HP to one of your Personas.",
+      "effect": {
+        "kind": "heal",
+        "amount": 50,
+        "target": "ownAny"
+      }
+    },
+    {
+      "id": "bead",
+      "name": "Bead",
+      "type": "item",
+      "usesAction": false,
+      "description": "Fully restore HP of one of your Personas.",
+      "effect": {
+        "kind": "heal",
+        "amount": 9999,
+        "target": "ownAny"
+      }
+    },
+    {
+      "id": "bead-chain",
+      "name": "Bead Chain",
+      "type": "item",
+      "usesAction": false,
+      "description": "Restore 40 HP to all of your Personas.",
+      "effect": {
+        "kind": "heal",
+        "amount": 40,
+        "target": "ownAll"
+      }
+    },
+    {
+      "id": "snuff-soul",
+      "name": "Snuff Soul",
+      "type": "item",
+      "usesAction": false,
+      "description": "Restore 30 SP to one of your Personas.",
+      "effect": {
+        "kind": "restoreSp",
+        "amount": 30,
+        "target": "ownAny"
+      }
+    },
+    {
+      "id": "chewing-soul",
+      "name": "Chewing Soul",
+      "type": "item",
+      "usesAction": false,
+      "description": "Restore 60 SP to one of your Personas.",
+      "effect": {
+        "kind": "restoreSp",
+        "amount": 60,
+        "target": "ownAny"
+      }
+    },
+    {
+      "id": "soma",
+      "name": "Soma",
+      "type": "item",
+      "usesAction": false,
+      "description": "Fully restore HP and SP of one of your Personas and cure its ailments.",
+      "effect": {
+        "kind": "fullRestore",
+        "target": "ownAny",
+        "cureAilments": true
+      }
+    },
+    {
+      "id": "revival-bead",
+      "name": "Revival Bead",
+      "type": "item",
+      "usesAction": false,
+      "description": "Revive a knocked-out Persona on your bench at 50% HP. Does NOT reduce the opponent's KO tally.",
+      "effect": {
+        "kind": "revive",
+        "hpPercent": 0.5,
+        "target": "ownKO"
+      }
+    },
+    {
+      "id": "amrita-soda",
+      "name": "Amrita Soda",
+      "type": "item",
+      "usesAction": false,
+      "description": "Cure all status ailments on one of your Personas.",
+      "effect": {
+        "kind": "cureAilments",
+        "target": "ownAny"
+      }
+    },
+    {
+      "id": "sapping-device",
+      "name": "Sapping Device",
+      "type": "item",
+      "usesAction": false,
+      "description": "Lower the enemy active Persona's defense for 3 turns (Rakunda).",
+      "effect": {
+        "kind": "buff",
+        "stat": "def",
+        "direction": "down",
+        "target": "enemyActive",
+        "duration": 3
+      }
+    },
+    {
+      "id": "muscle-drink",
+      "name": "Muscle Drink",
+      "type": "item",
+      "usesAction": false,
+      "description": "Raise your active Persona's attack for 3 turns (Tarukaja).",
+      "effect": {
+        "kind": "buff",
+        "stat": "atk",
+        "direction": "up",
+        "target": "ownActive",
+        "duration": 3
+      }
+    }
+  ],
+  "specials": [
+    {
+      "id": "theurgy",
+      "name": "Theurgy",
+      "type": "special",
+      "usesAction": true,
+      "description": "Your active Persona unleashes its ultimate. Deals 120 power Almighty damage to the enemy active Persona. Uses up your action.",
+      "effect": {
+        "kind": "damage",
+        "damageType": "almighty",
+        "power": 120,
+        "target": "enemyActive",
+        "statSource": "best"
+      }
+    },
+    {
+      "id": "armageddon",
+      "name": "Armageddon",
+      "type": "special",
+      "usesAction": true,
+      "description": "A fusion spell that engulfs the whole enemy field. Deals 60 power Almighty damage to EVERY enemy Persona, active and benched. Uses up your action.",
+      "effect": {
+        "kind": "damage",
+        "damageType": "almighty",
+        "power": 60,
+        "target": "enemyAll",
+        "statSource": "magic"
+      }
+    },
+    {
+      "id": "ambush",
+      "name": "Ambush",
+      "type": "special",
+      "usesAction": false,
+      "description": "You caught them off guard. This turn, your attacks and offensive skills may target any single enemy Persona, including benched ones.",
+      "effect": {
+        "kind": "grant",
+        "grant": "targetBench",
+        "duration": "thisTurn"
+      }
+    },
+    {
+      "id": "sp-transfer",
+      "name": "SP Transfer",
+      "type": "special",
+      "usesAction": false,
+      "description": "Move up to 30 SP from one of your Personas to another.",
+      "effect": {
+        "kind": "transferSp",
+        "amount": 30
+      }
+    },
+    {
+      "id": "baton-pass",
+      "name": "Baton Pass",
+      "type": "special",
+      "usesAction": false,
+      "description": "Hand off the momentum. You may change your active Persona one extra time this turn.",
+      "effect": {
+        "kind": "grant",
+        "grant": "extraPersonaChange",
+        "amount": 1,
+        "duration": "thisTurn"
+      }
+    },
+    {
+      "id": "dekaja",
+      "name": "Dekaja",
+      "type": "special",
+      "usesAction": false,
+      "description": "Remove all buffs from the enemy active Persona.",
+      "effect": {
+        "kind": "dispel",
+        "remove": "buffs",
+        "target": "enemyActive"
+      }
+    },
+    {
+      "id": "dekunda",
+      "name": "Dekunda",
+      "type": "special",
+      "usesAction": false,
+      "description": "Remove all debuffs from your active Persona.",
+      "effect": {
+        "kind": "dispel",
+        "remove": "debuffs",
+        "target": "ownActive"
+      }
+    },
+    {
+      "id": "concentrate",
+      "name": "Concentrate",
+      "type": "special",
+      "usesAction": false,
+      "description": "The next magic skill your active Persona uses deals x2.5 damage.",
+      "effect": {
+        "kind": "charge",
+        "charge": "concentrate",
+        "multiplier": 2.5,
+        "appliesTo": "magic",
+        "target": "ownActive"
+      }
+    },
+    {
+      "id": "charge",
+      "name": "Charge",
+      "type": "special",
+      "usesAction": false,
+      "description": "The next physical skill your active Persona uses deals x2.5 damage.",
+      "effect": {
+        "kind": "charge",
+        "charge": "charge",
+        "multiplier": 2.5,
+        "appliesTo": "phys",
+        "target": "ownActive"
+      }
+    }
+  ],
+  "fusionRecipes": [
+    {
+      "id": "fuse-mithra",
+      "result": "mithra",
+      "arcana": [
+        "Justice",
+        "Hierophant"
+      ],
+      "minCombinedLevel": 24,
+      "description": "Justice + Hierophant (combined level 24+)"
+    },
+    {
+      "id": "fuse-kikuri-hime",
+      "result": "kikuri-hime",
+      "arcana": [
+        "Priestess",
+        "Hierophant"
+      ],
+      "minCombinedLevel": 26,
+      "description": "Priestess + Hierophant (combined level 26+)"
+    },
+    {
+      "id": "fuse-titania",
+      "result": "titania",
+      "arcana": [
+        "Lovers",
+        "Star"
+      ],
+      "minCombinedLevel": 28,
+      "description": "Lovers + Star (combined level 28+)"
+    },
+    {
+      "id": "fuse-rangda",
+      "result": "rangda",
+      "arcana": [
+        "Devil",
+        "Moon"
+      ],
+      "minCombinedLevel": 30,
+      "description": "Devil + Moon (combined level 30+)"
+    },
+    {
+      "id": "fuse-girimehkala",
+      "result": "girimehkala",
+      "arcana": [
+        "Moon",
+        "Hermit"
+      ],
+      "minCombinedLevel": 32,
+      "description": "Moon + Hermit (combined level 32+)"
+    },
+    {
+      "id": "fuse-black-frost",
+      "result": "black-frost",
+      "arcana": [
+        "Magician",
+        "Priestess"
+      ],
+      "minCombinedLevel": 32,
+      "description": "Magician + Priestess (combined level 32+)"
+    },
+    {
+      "id": "fuse-vasuki",
+      "result": "vasuki",
+      "arcana": [
+        "Chariot",
+        "Star"
+      ],
+      "minCombinedLevel": 34,
+      "description": "Chariot + Star (combined level 34+)"
+    },
+    {
+      "id": "fuse-surt",
+      "result": "surt",
+      "arcana": [
+        "Magician",
+        "Chariot"
+      ],
+      "minCombinedLevel": 34,
+      "description": "Magician + Chariot (combined level 34+)"
+    },
+    {
+      "id": "fuse-thanatos",
+      "result": "thanatos",
+      "arcana": [
+        "Moon",
+        "Devil"
+      ],
+      "minCombinedLevel": 38,
+      "description": "Moon + Devil (combined level 38+)"
+    },
+    {
+      "id": "fuse-odin",
+      "result": "odin",
+      "arcana": [
+        "Hierophant",
+        "Chariot"
+      ],
+      "minCombinedLevel": 40,
+      "description": "Hierophant + Chariot (combined level 40+)"
+    },
+    {
+      "id": "fuse-yoshitsune",
+      "result": "yoshitsune",
+      "arcana": [
+        "Chariot",
+        "Hermit"
+      ],
+      "minCombinedLevel": 44,
+      "description": "Chariot + Hermit (combined level 44+)"
+    },
+    {
+      "id": "fuse-messiah",
+      "result": "messiah",
+      "arcana": [
+        "Priestess",
+        "Justice"
+      ],
+      "minCombinedLevel": 46,
+      "description": "Priestess + Justice (combined level 46+)"
+    },
+    {
+      "id": "fuse-satanael",
+      "result": "satanael",
+      "arcana": [
+        "Fool",
+        "Devil"
+      ],
+      "minCombinedLevel": 46,
+      "description": "Fool + Devil (combined level 46+)"
+    },
+    {
+      "id": "fuse-izanagi-no-okami",
+      "result": "izanagi-no-okami",
+      "arcana": [
+        "Fool",
+        "Justice"
+      ],
+      "minCombinedLevel": 50,
+      "description": "Fool + Justice (combined level 50+)"
+    }
+  ],
+  "starterPool": [
+    "pixie",
+    "jack-frost",
+    "apsaras",
+    "orpheus",
+    "izanagi",
+    "arsene",
+    "ara-mitama",
+    "angel"
+  ],
+  "decks": [
+    {
+      "id": "p3",
+      "name": "Burning Bravery",
+      "game": "p3",
+      "tagline": "P3 Deck — steady healers, thunder and a coffin waiting to open.",
+      "cards": [
+        {
+          "id": "orpheus",
+          "count": 2
+        },
+        {
+          "id": "apsaras",
+          "count": 2
+        },
+        {
+          "id": "pixie",
+          "count": 2
+        },
+        {
+          "id": "ara-mitama",
+          "count": 2
+        },
+        {
+          "id": "jack-frost",
+          "count": 1
+        },
+        {
+          "id": "omoikane",
+          "count": 1
+        },
+        {
+          "id": "take-minakata",
+          "count": 1
+        },
+        {
+          "id": "silky",
+          "count": 1
+        },
+        {
+          "id": "unicorn",
+          "count": 1
+        },
+        {
+          "id": "sarasvati",
+          "count": 1
+        },
+        {
+          "id": "angel",
+          "count": 1
+        },
+        {
+          "id": "hua-po",
+          "count": 1
+        },
+        {
+          "id": "medicine",
+          "count": 2
+        },
+        {
+          "id": "bead",
+          "count": 1
+        },
+        {
+          "id": "bead-chain",
+          "count": 1
+        },
+        {
+          "id": "snuff-soul",
+          "count": 2
+        },
+        {
+          "id": "chewing-soul",
+          "count": 1
+        },
+        {
+          "id": "revival-bead",
+          "count": 1
+        },
+        {
+          "id": "theurgy",
+          "count": 1
+        },
+        {
+          "id": "armageddon",
+          "count": 1
+        },
+        {
+          "id": "sp-transfer",
+          "count": 1
+        },
+        {
+          "id": "dekaja",
+          "count": 1
+        },
+        {
+          "id": "concentrate",
+          "count": 1
+        },
+        {
+          "id": "baton-pass",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "p4",
+      "name": "Reach Out To The Truth",
+      "game": "p4",
+      "tagline": "P4 Deck — blunt physical pressure and a fog that hides nothing.",
+      "cards": [
+        {
+          "id": "izanagi",
+          "count": 2
+        },
+        {
+          "id": "jack-frost",
+          "count": 2
+        },
+        {
+          "id": "yaksini",
+          "count": 2
+        },
+        {
+          "id": "ippon-datara",
+          "count": 2
+        },
+        {
+          "id": "ara-mitama",
+          "count": 1
+        },
+        {
+          "id": "pixie",
+          "count": 1
+        },
+        {
+          "id": "mothman",
+          "count": 1
+        },
+        {
+          "id": "hua-po",
+          "count": 1
+        },
+        {
+          "id": "berith",
+          "count": 1
+        },
+        {
+          "id": "anzu",
+          "count": 1
+        },
+        {
+          "id": "angel",
+          "count": 1
+        },
+        {
+          "id": "nekomata",
+          "count": 1
+        },
+        {
+          "id": "medicine",
+          "count": 2
+        },
+        {
+          "id": "bead",
+          "count": 1
+        },
+        {
+          "id": "snuff-soul",
+          "count": 1
+        },
+        {
+          "id": "chewing-soul",
+          "count": 1
+        },
+        {
+          "id": "amrita-soda",
+          "count": 1
+        },
+        {
+          "id": "muscle-drink",
+          "count": 1
+        },
+        {
+          "id": "revival-bead",
+          "count": 1
+        },
+        {
+          "id": "theurgy",
+          "count": 1
+        },
+        {
+          "id": "armageddon",
+          "count": 1
+        },
+        {
+          "id": "ambush",
+          "count": 1
+        },
+        {
+          "id": "charge",
+          "count": 1
+        },
+        {
+          "id": "dekunda",
+          "count": 1
+        },
+        {
+          "id": "baton-pass",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "p5",
+      "name": "Take Your Heart",
+      "game": "p5",
+      "tagline": "P5 Deck — curses, ambushes and stolen momentum.",
+      "cards": [
+        {
+          "id": "arsene",
+          "count": 2
+        },
+        {
+          "id": "nekomata",
+          "count": 2
+        },
+        {
+          "id": "incubus",
+          "count": 2
+        },
+        {
+          "id": "jack-o-lantern",
+          "count": 2
+        },
+        {
+          "id": "pixie",
+          "count": 1
+        },
+        {
+          "id": "berith",
+          "count": 1
+        },
+        {
+          "id": "anzu",
+          "count": 1
+        },
+        {
+          "id": "mothman",
+          "count": 1
+        },
+        {
+          "id": "sarasvati",
+          "count": 1
+        },
+        {
+          "id": "silky",
+          "count": 1
+        },
+        {
+          "id": "unicorn",
+          "count": 1
+        },
+        {
+          "id": "omoikane",
+          "count": 1
+        },
+        {
+          "id": "medicine",
+          "count": 2
+        },
+        {
+          "id": "bead",
+          "count": 1
+        },
+        {
+          "id": "snuff-soul",
+          "count": 2
+        },
+        {
+          "id": "sapping-device",
+          "count": 1
+        },
+        {
+          "id": "soma",
+          "count": 1
+        },
+        {
+          "id": "amrita-soda",
+          "count": 1
+        },
+        {
+          "id": "theurgy",
+          "count": 1
+        },
+        {
+          "id": "ambush",
+          "count": 1
+        },
+        {
+          "id": "concentrate",
+          "count": 1
+        },
+        {
+          "id": "charge",
+          "count": 1
+        },
+        {
+          "id": "sp-transfer",
+          "count": 1
+        },
+        {
+          "id": "baton-pass",
+          "count": 1
+        }
+      ]
+    }
+  ]
+}
