@@ -31,6 +31,20 @@ export function resolveTheme({ deckId = null } = {}) {
   return DEFAULT_THEME;
 }
 
+/**
+ * Keep the browser chrome in step with the theme.
+ *
+ * On mobile this is the colour of the address bar and the task-switcher card,
+ * so leaving it fixed makes a themed page look like it belongs to some other
+ * site. The value is the theme's own background — the first swatch.
+ */
+function applyThemeColor(themeId) {
+  const theme = THEMES.find((t) => t.id === themeId);
+  if (!theme || typeof document === 'undefined') return;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', theme.swatch[0]);
+}
+
 /** Paint a theme onto the document. Safe to call repeatedly. */
 export function applyTheme(themeId) {
   const id = THEME_IDS.has(themeId) ? themeId : DEFAULT_THEME;
@@ -38,6 +52,7 @@ export function applyTheme(themeId) {
   for (const theme of THEMES) root.classList.remove(`theme-${theme.id}`);
   root.classList.add(`theme-${id}`);
   root.dataset.theme = id;
+  applyThemeColor(id);
   return id;
 }
 

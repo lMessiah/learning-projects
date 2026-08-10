@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { applyAction, getLegalActions, CONFIG } from '../src/engine/index.js';
+import { getCard, getSkillDefinition, SKILLS } from '../src/data/cards.js';
+import { ARCHETYPE_IDS, expandDeck } from '../src/data/archetypes.js';
 import { setupMatch, setField, setHand, activeOf, handUidOf, endTurn } from './helpers.js';
 
 function board() {
@@ -13,8 +15,9 @@ describe('SP economy', () => {
   it('deducts SP when a magic skill is used', () => {
     const state = board();
     const before = activeOf(state, 0).sp;
+    const cost = getSkillDefinition('agi').spCost;
     const after = applyAction(state, { type: 'USE_SKILL', player: 0, skillId: 'agi' });
-    expect(activeOf(after, 0).sp).toBe(before - 4); // Agi costs 4 SP
+    expect(activeOf(after, 0).sp).toBe(before - cost);
   });
 
   it('refuses a skill the Persona cannot afford, and hides it from the legal moves', () => {
@@ -39,15 +42,33 @@ describe('SP economy', () => {
     expect(getLegalActions(state, 0).some((a) => a.skillId === 'bash')).toBe(false);
   });
 
-  it('regenerates SP for every Persona at the start of its owner\'s turn', () => {
+  it('regenerates SP in the active slot only', () => {
     let state = board();
     for (const persona of state.players[0].field) persona.sp = 0;
     state = endTurn(state, 0);
     state = endTurn(state, 1);
 
-    for (const persona of state.players[0].field) {
-      expect(persona.sp).toBe(CONFIG.SP_REGEN_PER_TURN); // the bench regenerates too
-    }
+    const [active, ...bench] = [activeOf(state, 0), ...state.players[0].field.filter((p) => p.uid !== state.players[0].activeUid)];
+    expect(active.sp).toBe(CONFIG.SP_REGEN_PER_TURN);
+    // The bench neither gains nor loses: rotating a spent Persona out is a real
+    // cost, not a free refill.
+    for (const persona of bench) expect(persona.sp).toBe(0);
+  });
+
+  it('carries a benched Persona\'s SP untouched until it comes back in', () => {
+    let state = board();
+    const [first, second] = state.players[0].field;
+    first.sp = 20;
+    second.sp = 5;
+
+    state = endTurn(state, 0);
+    state = endTurn(state, 1); // one full round for player 0
+    expect(state.players[0].field[1].sp).toBe(5);
+
+    state = applyAction(state, { type: 'CHANGE_ACTIVE', player: 0, targetUid: second.uid });
+    state = endTurn(state, 0);
+    state = endTurn(state, 1);
+    expect(activeOf(state, 0).sp).toBe(5 + CONFIG.SP_REGEN_PER_TURN);
   });
 
   it('never regenerates SP past the maximum', () => {
@@ -60,7 +81,7 @@ describe('SP economy', () => {
 
   it('restores SP with Snuff Soul, clamped to the Persona\'s maximum', () => {
     let state = board();
-    // Sarasvati has a 40 SP pool, so the full 30 lands.
+    // Sarasvati has a 40 SP pool, so the full restore lands.
     setField(state, 0, [{ cardId: 'sarasvati', active: true, sp: 0 }]);
     setHand(state, 0, ['snuff-soul']);
     state = applyAction(state, {
@@ -69,11 +90,12 @@ describe('SP economy', () => {
       handUid: handUidOf(state, 0, 'snuff-soul'),
       targetUid: activeOf(state, 0).uid,
     });
-    expect(activeOf(state, 0).sp).toBe(30);
+    expect(activeOf(state, 0).sp).toBe(getCard('snuff-soul').effect.amount);
 
-    // Orpheus only has a 24 SP pool, so the same item clamps.
+    // A Persona with almost no pool left clamps to its maximum instead.
     let small = board();
     activeOf(small, 0).sp = 0;
+    activeOf(small, 0).maxSp = 10;
     setHand(small, 0, ['snuff-soul']);
     small = applyAction(small, {
       type: 'PLAY_ITEM',
@@ -82,6 +104,77 @@ describe('SP economy', () => {
       targetUid: activeOf(small, 0).uid,
     });
     expect(activeOf(small, 0).sp).toBe(activeOf(small, 0).maxSp);
+  });
+
+  it('brings a Persona played from hand in at FULL SP', () => {
+    let state = board();
+    setHand(state, 0, ['silky']);
+    state = applyAction(state, { type: 'PLAY_PERSONA', player: 0, handUid: handUidOf(state, 0, 'silky') });
+
+    const played = state.players[0].field.find((p) => p.cardId === 'silky');
+    expect(played.maxSp).toBe(getCard('silky').sp);
+    expect(played.sp).toBe(played.maxSp);
+    expect(played.hp).toBe(played.maxHp);
+  });
+
+  it('gives a revived Persona its SP back in full, whatever the HP percentage', () => {
+    let state = board();
+    const target = state.players[0].field.find((p) => p.uid !== state.players[0].activeUid);
+    target.ko = true;
+    target.hp = 0;
+    target.sp = 0;
+    setHand(state, 0, ['revival-bead']);
+    state = applyAction(state, {
+      type: 'PLAY_ITEM',
+      player: 0,
+      handUid: handUidOf(state, 0, 'revival-bead'),
+      targetUid: target.uid,
+    });
+
+    const revived = state.players[0].field.find((p) => p.uid === target.uid);
+    expect(revived.ko).toBe(false);
+    expect(revived.sp).toBe(revived.maxSp);
+    expect(revived.hp).toBe(Math.round(revived.maxHp * 0.5)); // HP still per the item
+  });
+
+  it('starts every Persona on the field at full SP, however it got there', () => {
+    // The starter, and anything the opening hand puts down, alike.
+    const state = board();
+    for (const persona of state.players[0].field) {
+      expect(persona.sp, `${persona.cardId} did not enter at full SP`).toBe(persona.maxSp);
+    }
+  });
+
+  it('keeps every damaging skill above the regen tap, so casting is a decision', () => {
+    // The economy only bites if the skills a Persona reaches for cost more than
+    // one turn of regen. Spirit Drain is deliberately exempt: it deals no damage
+    // and its whole job is to be SP-positive, which is why it costs an action.
+    for (const skill of Object.values(SKILLS)) {
+      if (skill.spCost == null || skill.spCost === 0) continue;
+      if (skill.effect.kind !== 'damage') continue;
+      expect(skill.spCost, `${skill.name} is cheaper than one turn of regen`).toBeGreaterThan(
+        CONFIG.SP_REGEN_PER_TURN
+      );
+    }
+  });
+
+  it('lets Spirit Drain come out ahead — that is the whole card', () => {
+    const drain = SKILLS['spirit-drain'];
+    expect(drain.effect.kind).toBe('drainSp');
+    expect(drain.effect.amount).toBeGreaterThan(drain.spCost);
+  });
+
+  it('caps SP-restore items at two per generated deck, between them', () => {
+    for (const flavour of ['p3', 'p4', 'p5']) {
+      for (const archetype of [null, ...ARCHETYPE_IDS]) {
+        for (const seed of [1, 2, 3, 17, 99]) {
+          const restores = expandDeck(flavour, { archetype, seed }).filter(
+            (id) => getCard(id).deckGroup === 'sp-restore'
+          );
+          expect(restores.length, `${flavour}/${archetype}/${seed}`).toBeLessThanOrEqual(2);
+        }
+      }
+    }
   });
 
   it('moves SP between your own Personas with SP Transfer, capped by the target\'s maximum', () => {

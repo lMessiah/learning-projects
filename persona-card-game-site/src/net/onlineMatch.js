@@ -45,14 +45,22 @@ function makeEmitter() {
  * @param options    { hostName, guestName, hostDeckId, guestDeckId, seed }
  */
 export function createHostSession(transport, options) {
-  const { hostName = 'Host', guestName = 'Guest', hostDeckId = 'p3', guestDeckId = 'p5', seed = 1 } = options;
+  const {
+    hostName = 'Host',
+    guestName = 'Guest',
+    hostDeckId = 'p3',
+    guestDeckId = 'p5',
+    hostArchetype = null,
+    guestArchetype = null,
+    seed = 1,
+  } = options;
 
   // The authoritative state. It never leaves this closure.
   let authoritative = createMatch({
     seed,
     players: [
-      { name: hostName, deckId: hostDeckId, controller: 'human' },
-      { name: guestName, deckId: guestDeckId, controller: 'remote' },
+      { name: hostName, deckId: hostDeckId, archetype: hostArchetype, controller: 'human' },
+      { name: guestName, deckId: guestDeckId, archetype: guestArchetype, controller: 'remote' },
     ],
   });
 
@@ -181,9 +189,14 @@ export function createGuestSession(transport, { name = 'Guest' } = {}) {
       if (transport.closed) throw new Error('Connection lost — you are no longer connected to the host.');
       if (action.player !== GUEST_SEAT) throw new Error('Illegal action: you may only act for your own side');
 
-      const legal = getLegalActions(view, GUEST_SEAT);
-      const matches = legal.some((candidate) => candidate.type === action.type);
-      if (!matches) throw new Error('Illegal action: not something you can do right now');
+      // Resigning is not a move in the game and is not gated on whose turn it
+      // is, so it skips the local courtesy check and goes straight to the host,
+      // who is the one that actually decides.
+      if (action.type !== 'RESIGN') {
+        const legal = getLegalActions(view, GUEST_SEAT);
+        const matches = legal.some((candidate) => candidate.type === action.type);
+        if (!matches) throw new Error('Illegal action: not something you can do right now');
+      }
 
       try {
         transport.send({ t: 'action', id: nextId++, action });

@@ -6,6 +6,8 @@
  * it has no idea the opponent is remote.
  */
 import { DECKS } from '../../data/cards.js';
+import { ARCHETYPES } from '../../data/archetypes.js';
+import { renderArchetypeRow, ARCHETYPE_NOTE } from '../archetypeRow.js';
 import { getProfileName } from '../profile.js';
 import { applyThemeFor } from '../theme.js';
 import { mountBoard } from './board.js';
@@ -13,6 +15,7 @@ import { createHostSession, createGuestSession, HOST_SEAT, GUEST_SEAT } from '..
 import { createHostConnection, createGuestConnection, webrtcSupported } from '../../net/webrtc.js';
 import { createRendezvousClient, normaliseCode, isValidCode, CODE_LENGTH } from '../../net/shortcode.js';
 import { getRendezvousUrl } from '../settings.js';
+import { mountRotatingTip } from '../tips.js';
 
 const DECK_SYMBOL = { p3: '🌙', p4: '🌫️', p5: '🎭' };
 
@@ -33,6 +36,7 @@ function button(label, className, onClick) {
 let teardown = null;
 
 function cleanup() {
+  stopTips();
   if (teardown) {
     teardown();
     teardown = null;
@@ -178,11 +182,27 @@ function shortCodeInput(label, onSubmit) {
   return wrap;
 }
 
-function statusPanel(message, detail) {
+/**
+ * Rotating tips run on the connection screens, on BOTH sides — the handshake
+ * is dead time on the host's screen as well as the guest's. One timer at a
+ * time; starting a new panel stops the old one, and so does leaving the route.
+ */
+let tipRotation = null;
+
+function stopTips() {
+  tipRotation?.stop();
+  tipRotation = null;
+}
+
+function statusPanel(message, detail, { tips = true } = {}) {
   const wrap = el('div', 'net-status');
   wrap.appendChild(el('div', 'net-status__spinner', '◐'));
   wrap.appendChild(el('div', 'net-status__text', message));
   if (detail) wrap.appendChild(el('div', 'net-status__detail', detail));
+  if (tips) {
+    stopTips();
+    tipRotation = mountRotatingTip(wrap, { seed: Date.now() });
+  }
   return wrap;
 }
 
@@ -243,14 +263,22 @@ function renderLobby(root, { onHost, onJoin, onExit }) {
  * ------------------------------------------------------------------ */
 
 function renderHostSetup(root, { onStart, onExit }) {
-  const choice = { hostDeckId: DECKS[0].id, guestDeckId: DECKS[1].id };
+  const choice = {
+    hostDeckId: DECKS[0].id,
+    guestDeckId: DECKS[1].id,
+    hostArchetype: ARCHETYPES[0].id,
+    guestArchetype: ARCHETYPES[1].id,
+  };
   root.innerHTML = '';
   root.appendChild(topbar('Hosting', onExit));
 
   const wrap = el('section', 'setup');
   wrap.appendChild(el('p', 'setup__note', 'As host you choose both decks, so your opponent knows what they are getting.'));
 
-  for (const [key, label] of [['hostDeckId', 'Your deck'], ['guestDeckId', "Your opponent's deck"]]) {
+  for (const [key, archetypeKey, label] of [
+    ['hostDeckId', 'hostArchetype', 'Your deck'],
+    ['guestDeckId', 'guestArchetype', "Your opponent's deck"],
+  ]) {
     wrap.appendChild(el('h2', 'setup__heading', label));
     const row = el('div', 'setup__row');
     const buttons = new Map();
@@ -260,7 +288,7 @@ function renderHostSetup(root, { onStart, onExit }) {
       node.dataset.deckId = deck.id;
       node.appendChild(el('span', 'setup-card__icon', DECK_SYMBOL[deck.id] || '🃏'));
       node.appendChild(el('span', 'setup-card__title', deck.name));
-      node.appendChild(el('span', 'setup-card__desc', deck.tagline));
+      node.appendChild(el('span', 'setup-card__desc', deck.playstyle || deck.tagline));
       node.addEventListener('click', () => {
         choice[key] = deck.id;
         for (const [id, btn] of buttons) btn.classList.toggle('setup-card--on', id === deck.id);
@@ -270,8 +298,17 @@ function renderHostSetup(root, { onStart, onExit }) {
     }
     buttons.get(choice[key]).classList.add('setup-card--on');
     wrap.appendChild(row);
+    wrap.appendChild(
+      renderArchetypeRow({
+        value: choice[archetypeKey],
+        onPick: (id) => {
+          choice[archetypeKey] = id;
+        },
+      })
+    );
   }
 
+  wrap.appendChild(el('p', 'setup__note', ARCHETYPE_NOTE));
   wrap.appendChild(button('Create invite code', 'btn btn--primary setup__start', () => onStart({ ...choice })));
   root.appendChild(wrap);
 }
@@ -424,6 +461,8 @@ function startOnlineMatch(root, { transport, role, choice, onExit }) {
         guestName: 'Opponent',
         hostDeckId: choice.hostDeckId,
         guestDeckId: choice.guestDeckId,
+        hostArchetype: choice.hostArchetype,
+        guestArchetype: choice.guestArchetype,
         seed: Math.floor(Date.now() % 2147483647) || 1,
       })
     : createGuestSession(transport, { name });
@@ -435,6 +474,7 @@ function startOnlineMatch(root, { transport, role, choice, onExit }) {
 
   const mount = () => {
     if (unmount) return;
+    stopTips(); // the waiting is over; nothing left to read tips on
     unmount = mountBoard(root, {
       controller: session,
       viewer: seat,

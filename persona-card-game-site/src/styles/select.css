@@ -1,0 +1,209 @@
+/* ============================================================
+ * Selection & highlight — ONE system for every selectable thing.
+ * ============================================================
+ *
+ * Every screen that lets you pick something (starter select, hand, board
+ * targeting, discard, Providence, Gallows, fusion, deck/difficulty/archetype
+ * setup, settings cards) draws its states from the four classes below. Nothing
+ * outside this file is allowed to invent its own selection look, which is the
+ * whole point: before it existed, `card--selected` and `card--targetable` were
+ * emitted by cardView.js and styled precisely nowhere, so half the pickers in
+ * the game showed no highlight at all.
+ *
+ * The four states:
+ *
+ *   hoverable      subtle themed glow      — "you can click this"
+ *   selected       strong themed ring      — "this one is chosen"
+ *   valid-target   pulsing ring            — "the game is waiting for one of these"
+ *   invalid        dimmed + desaturated    — "not right now"
+ *
+ * RING, NEVER BORDER. Every state paints with `box-shadow` (and at most a
+ * `border-color` swap, which cannot change a box's size). A border-WIDTH change
+ * would resize the element and shove the rest of the board around — the same
+ * zero-layout-shift contract the battle animations are held to.
+ *
+ * Loaded last (see main.js) so it wins over the component sheets without
+ * anyone having to write `!important`.
+ */
+
+/* ---------- Tokens ----------
+ *
+ * Defaults are P5's; themes.css overrides them per theme. `--sel-on` and
+ * `--sel-target` are deliberately different hues in every theme — "chosen" and
+ * "you may choose this" must never be the same colour, and on P4 the accent is
+ * already yellow, so its target colour swings to cyan.
+ */
+:root {
+  --sel-hint: color-mix(in srgb, var(--accent) 60%, transparent);
+  --sel-on: var(--accent);
+  --sel-target: #f0c243;
+  --sel-ring: 3px;
+}
+
+/* Derived glows, kept in one place so a theme only ever restates the two hues. */
+.card--selected,
+.card--targetable,
+.tile--targetable,
+.hand-tile--targetable,
+.setup-card--on,
+.setting-card--on,
+.btn--on {
+  --sel-on-glow: color-mix(in srgb, var(--sel-on) 45%, transparent);
+  --sel-target-glow: color-mix(in srgb, var(--sel-target) 50%, transparent);
+}
+
+/* ---------- 1. Hoverable — subtle glow ---------- */
+
+.card--clickable,
+.tile,
+.hand-tile:not(.hand-tile--disabled),
+.setup-card,
+.setting-card,
+.arcana-choice {
+  cursor: pointer;
+}
+
+.card--clickable:hover,
+.card--clickable:focus-visible,
+.tile:hover,
+.tile:focus-visible,
+.hand-tile:not(.hand-tile--disabled):hover,
+.hand-tile:not(.hand-tile--disabled):focus-visible,
+.setup-card:hover,
+.setup-card:focus-visible,
+.setting-card:hover,
+.setting-card:focus-visible,
+.fusion-recipe--ready:hover {
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55), 0 0 0 2px var(--sel-hint);
+}
+
+/* ---------- 2. Selected — strong themed ring ---------- */
+
+.card--selected,
+.tile--selected,
+.hand-tile--selected,
+.setup-card--on,
+.setting-card--on,
+.btn--on,
+.fusion-recipe--selected {
+  border-color: var(--sel-on);
+  box-shadow: 0 0 0 var(--sel-ring) var(--sel-on), 0 0 22px var(--sel-on-glow);
+}
+
+/* Selection outranks hover: hovering the thing you already picked must not
+ * downgrade the ring to the subtle one. */
+.card--selected:hover,
+.tile--selected:hover,
+.hand-tile--selected:hover,
+.setup-card--on:hover,
+.setting-card--on:hover {
+  box-shadow: 0 0 0 var(--sel-ring) var(--sel-on), 0 0 26px var(--sel-on-glow);
+}
+
+/* A selected card also gets a check so the state survives colour blindness and
+ * greyscale — the ring is the signal, this is the backup. */
+.card--selected::before,
+.hand-tile--selected::before {
+  content: '✓';
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  z-index: 3;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--sel-on);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+.hand-tile--selected { position: relative; }
+
+/* ---------- 3. Valid target — pulsing ring ---------- */
+
+.card--targetable,
+.tile--targetable,
+.hand-tile--targetable,
+.fusion-recipe--ready {
+  border-color: var(--sel-target);
+  box-shadow: 0 0 0 var(--sel-ring) var(--sel-target);
+  animation: select-pulse calc(1.1s / var(--anim-scale, 1)) ease-in-out infinite;
+}
+
+@keyframes select-pulse {
+  0%, 100% { box-shadow: 0 0 0 var(--sel-ring) var(--sel-target); }
+  50% { box-shadow: 0 0 0 var(--sel-ring) var(--sel-target), 0 0 22px var(--sel-target-glow); }
+}
+
+/* ---------- 4. Invalid — dimmed ---------- */
+
+.card--disabled,
+.card--dimmed,
+.tile--dimmed,
+.hand-tile--disabled,
+.setup-card:disabled,
+.setting-card:disabled,
+.fusion-recipe--blocked {
+  opacity: 0.42;
+  filter: grayscale(0.5);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Dimming a board tile must not stop you inspecting it — you may well be
+ * checking what a tile is precisely because you cannot target it. */
+.tile--dimmed { cursor: pointer; }
+
+.card--disabled:hover,
+.hand-tile--disabled:hover,
+.fusion-recipe--blocked:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* Marked-for-discard is "selected, but for the bin" — same ring language, read
+ * as a rejection rather than a choice. */
+.card--discarding {
+  opacity: 0.5;
+  filter: grayscale(0.75);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 var(--sel-ring) var(--accent);
+}
+
+.card--discarding::before {
+  content: '✕';
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  z-index: 3;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+/* ---------- Reduced motion / animations off ----------
+ *
+ * The pulse is the only animated state. With motion off it becomes a static
+ * ring rather than disappearing — losing the highlight would be worse than
+ * losing the movement.
+ */
+.board-screen--no-anim .card--targetable,
+.board-screen--no-anim .tile--targetable,
+.board-screen--no-anim .hand-tile--targetable,
+.board-screen--no-anim .fusion-recipe--ready {
+  animation: none;
+  box-shadow: 0 0 0 var(--sel-ring) var(--sel-target), 0 0 16px var(--sel-target-glow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card--targetable,
+  .tile--targetable,
+  .hand-tile--targetable,
+  .fusion-recipe--ready {
+    animation: none;
+    box-shadow: 0 0 0 var(--sel-ring) var(--sel-target), 0 0 16px var(--sel-target-glow);
+  }
+}

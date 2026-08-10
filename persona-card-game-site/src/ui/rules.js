@@ -5,7 +5,7 @@
  * retuning a constant updates the rules text instead of quietly contradicting
  * it. Rendered in Settings and from the in-match menu.
  */
-import { CONFIG } from '../engine/index.js';
+import { CONFIG, PASSIVE_LIST } from '../engine/index.js';
 import { FUSION_RECIPES } from '../data/cards.js';
 
 function el(tag, className, text) {
@@ -69,10 +69,10 @@ function renderHowToPlay() {
   wrap.appendChild(el('h3', 'rules__heading', 'Your turn, step by step'));
   wrap.appendChild(
     bullets([
-      [b(`Draw ${CONFIG.DRAW_PER_TURN}`), ' card, and every Persona you own regains ', b(`${CONFIG.SP_REGEN_PER_TURN} SP`), '.'],
-      ['Play as many ', b('Persona'), ' cards as you like (field cap ', b(String(CONFIG.FIELD_CAP)), '), plus at most ', b(`${CONFIG.ITEMS_PER_TURN} Item`), ' and ', b(`${CONFIG.SPECIALS_PER_TURN} Special`), '. None of that costs your action.'],
+      [b(`Draw ${CONFIG.DRAW_PER_TURN}`), ' card. Your ', b('active'), ' Persona regains ', b(`${CONFIG.SP_REGEN_PER_TURN} SP`), ' — the bench regains nothing, so a spent Persona stays spent until you fight with it again.'],
+      ['Play as many ', b('Persona'), ' cards as you like (field cap ', b(String(CONFIG.FIELD_CAP)), '), plus at most ', b(`${CONFIG.ITEMS_PER_TURN} Item`), ', ', b(`${CONFIG.SPECIALS_PER_TURN} Special`), ' and ', b(`${CONFIG.FUSIONS_PER_TURN} fusion`), '. None of that costs your action.'],
       ['Change your active Persona ', b(`${CONFIG.PERSONA_CHANGES_PER_TURN} time`), ' (more with Baton Pass).'],
-      ['Take your ', b('one action'), ': attack, use a skill, guard, fuse, or pass.'],
+      ['Take your ', b('one action'), ': attack, use a skill, call a Showtime, guard, feed a Persona to the Gallows, or pass.'],
       ['End the turn, discarding down to ', b(`${CONFIG.HAND_LIMIT} cards`), ' if you are over.'],
     ])
   );
@@ -80,12 +80,149 @@ function renderHowToPlay() {
   wrap.appendChild(el('h3', 'rules__heading', 'Winning fights'));
   wrap.appendChild(
     bullets([
-      ['Hit a ', b('weakness'), ` for ×${CONFIG.WEAK_MULT} damage. The target is knocked down and you get a `, b('One More'), ': an extra action and an extra Persona change, once per turn.'],
+      ['Hit a ', b('weakness'), ` for ×${CONFIG.WEAK_MULT} damage. If that knocks a `, b('standing'), ' Persona down you get a ', b('One More'), ': an extra action, an extra Persona change, and that action may hit ', b('any'), ' enemy Persona.'],
       [`A `, b('resist'), ` halves damage (×${CONFIG.RESIST_MULT}). `, b('Almighty'), ' can never be resisted or weak.'],
       [b('Guard'), ` halves incoming damage and prevents knockdown until your next turn.`],
       ['Buffs and debuffs shift damage by ', b(`×${CONFIG.BUFF_MULT}`), ` for ${CONFIG.BUFF_DURATION} turns. Concentrate and Charge multiply your next magic or physical skill by `, b(`×${CONFIG.CHARGE_MULT}`), '.'],
       [b('Burn'), ` deals ${CONFIG.BURN_DAMAGE} at the end of each of its owner's turns. `, b('Shock'), ' stops a Persona acting for a turn and raises the damage it takes by 50%.'],
     ])
+  );
+
+  wrap.appendChild(el('h3', 'rules__heading', 'Technicals'));
+  wrap.appendChild(
+    para([
+      'Hit a Persona that is already suffering an ailment with the right kind of follow-up and you land a ',
+      b('Technical'),
+      ` for ×${CONFIG.TECHNICAL_MULT} damage. Nothing about it is a dice roll: both halves are on the board where you can see them.`,
+    ])
+  );
+  wrap.appendChild(
+    bullets([
+      [b('Burn'), ' + a ', b('physical'), ' or ', b('wind'), ' skill — you fan the flames.'],
+      [
+        b('Shock'),
+        ' + a ',
+        b('physical'),
+        ' skill — the blow lands through the current, and it ',
+        b('knocks the target down'),
+        ' as well. A standing Persona knocked down that way pays a One More like any other knockdown.',
+      ],
+      [
+        'A Shock Technical ',
+        b('replaces'),
+        ' the ordinary +50% Shock damage rather than stacking on top of it — the two are the same idea.',
+      ],
+    ])
+  );
+  wrap.appendChild(
+    para([
+      'Ailments come from two places. Every ',
+      b('Fire'),
+      ' skill can inflict Burn and every ',
+      b('Electric'),
+      ' skill can inflict Shock — each one prints its own percentage on the card, and that percentage is the only randomness a skill carries. ',
+      b('Lesser Theurgy'),
+      ' is the exception: it inflicts Burn or Shock, your choice, with no roll at all. It is the one way to decide in advance that you are having a Technical.',
+    ])
+  );
+  wrap.appendChild(
+    para([
+      'Timing matters, and the two ailments differ. ',
+      b('Shock'),
+      ' lasts until the end of its victim\'s next turn, so a Shock Technical has to be cashed in the ',
+      b('same turn'),
+      ' you apply it — which Lesser Theurgy allows, because it costs no action. ',
+      b('Burn'),
+      ` lasts ${CONFIG.BURN_DURATION} turns, so it is still there on your next turn, ticking for ${CONFIG.BURN_DAMAGE} while you wait.`,
+    ])
+  );
+
+  wrap.appendChild(el('h3', 'rules__heading', 'Finishing them off'));
+  wrap.appendChild(
+    para([
+      'Nothing in this game has a random chance to knock a Persona out. The ',
+      b('Hama'),
+      ' and ',
+      b('Mudo'),
+      ' lines are ordinary Light and Dark damage skills that hit ',
+      b(`+${Math.round((CONFIG.EXECUTE_MULT - 1) * 100)}%`),
+      ' harder against a target already in trouble: Hama against one that is ',
+      b('knocked down'),
+      ', Mudo against one below ',
+      b(`${Math.round(CONFIG.EXECUTE_HP_THRESHOLD * 100)}% HP`),
+      '. Both conditions are readable before you commit the action.',
+    ])
+  );
+
+  wrap.appendChild(el('h3', 'rules__heading', 'Rewriting what a Persona is'));
+  wrap.appendChild(
+    para([
+      'Each deck holds one Special that ',
+      b('rewrites'),
+      " a Persona's weaknesses and resists: ",
+      b('Turn of the Moon'),
+      ' (P3, your active), ',
+      b("Jester's Trickery"),
+      ' (P4, any one of yours), and ',
+      b('Change of Heart'),
+      ' (P5, both actives at once). The new chart is drawn at random, keeps the ',
+      b('same number'),
+      ' of weaknesses and resists, and can never make a Persona both weak and resistant to the same thing — so it changes what something is without making it stronger or weaker.',
+    ])
+  );
+  wrap.appendChild(
+    para([
+      'Everything anyone had uncovered about that Persona is ',
+      b('forgotten'),
+      ' — including by the ',
+      b('Brutal'),
+      ' bot. Brutal cheats by reading the printed card, and a rewritten Persona is no longer described by its card, so it has to find the new weaknesses the same way you do. That is what the card is for: the database is finite and memorisable, and this is the answer to both memorising it and to being read like a book.',
+    ])
+  );
+
+  wrap.appendChild(el('h3', 'rules__heading', 'Twist of Fate'));
+  wrap.appendChild(
+    para([
+      'A rewrite scrambles a chart and hands you a new puzzle. ',
+      b('Twist of Fate'),
+      ' — one per deck, any flavour — makes a single precise edit instead: you ',
+      b('name an element'),
+      ", and it replaces ONE of the enemy active Persona's weaknesses. That is the answer to the worst position in the game, which is holding a hand full of fire against something that is weak to nothing you own.",
+    ])
+  );
+  wrap.appendChild(
+    bullets([
+      [
+        'You ',
+        b('cannot'),
+        ' name something the target ',
+        b('resists'),
+        '. A resist beats a weakness, so it would be a dead card — the resist is not stripped, the choice is simply not offered.',
+      ],
+      [
+        'Your ',
+        b('opponent'),
+        ' decides which weakness is given up, not you. They shed one you had already ',
+        b('uncovered'),
+        ' before one you had not — losing a secret is worth less to them than losing the thing you are already hitting them with.',
+      ],
+      ['The new weakness is ', b('revealed to both players'), ' the moment it lands, and what they gave up stops being known.'],
+      [b('Whims of Fate'), ' sees the new weakness immediately, so the two cards work together.'],
+    ])
+  );
+
+  wrap.appendChild(el('h3', 'rules__heading', 'Passives'));
+  wrap.appendChild(
+    para([
+      'Some Persona cards print a single ',
+      b('passive'),
+      '. Passives are always on — there is never a button for one, and they never cost your action. A fusion can pass a parent\'s passive to its result ',
+      b('instead of'),
+      ' a skill.',
+    ])
+  );
+  wrap.appendChild(
+    bullets(PASSIVE_LIST.map((passive) => [b(passive.name), ' — ', passive.description]))
   );
 
   wrap.appendChild(el('h3', 'rules__heading', 'Growing stronger'));
@@ -96,6 +233,125 @@ function renderHowToPlay() {
       ' — or ',
       b('+2'),
       ` if the Persona it beat outranked it by ${CONFIG.LEVEL_UP_GAP} or more. Levels raise stats, unlock the skills printed on the card, and raise the level of card you are allowed to play.`,
+    ])
+  );
+  wrap.appendChild(
+    para([
+      'Beating something far weaker teaches nothing: a knockout is worth ',
+      b('no levels at all'),
+      ` when the Persona you beat was ${CONFIG.COMEBACK_FARM_GAP} or more levels below yours. Fight upward.`,
+    ])
+  );
+
+  wrap.appendChild(el('h3', 'rules__heading', 'Fusion is free; the Gallows is not'));
+  wrap.appendChild(
+    para([
+      b('Fusion'),
+      ' costs you ',
+      b('no action'),
+      `: like an Item or a Special it is a free play, rationed at ${CONFIG.FUSIONS_PER_TURN} per turn. Fuse and attack in the same turn. It used to cost the action, and that was why it hardly ever happened — it lost the comparison against attacking almost every turn.`,
+    ])
+  );
+  wrap.appendChild(
+    para([
+      'Once a turn you may send one Persona from your field or hand to the ',
+      b('Gallows'),
+      ' to feed another Persona on your field. What you get back depends entirely on how the food compares with the eater — the panel shows you which tier a meal falls into before you confirm it.',
+    ])
+  );
+  wrap.appendChild(
+    bullets([
+      [
+        b('Feast'),
+        ' — food at or above the eater\'s own level: ',
+        b(`+${CONFIG.GALLOWS_FEAST_LEVELS} levels`),
+        '. Costs your action.',
+      ],
+      [
+        b('Meal'),
+        ' — food up to ',
+        b(`${CONFIG.COMEBACK_FARM_GAP} levels`),
+        ' beneath it: ',
+        b(`+${CONFIG.GALLOWS_LEVELS} level`),
+        '. Costs your action.',
+      ],
+      [
+        b('Junk'),
+        ' — anything further beneath it teaches nothing, but restores ',
+        b(`${Math.round(CONFIG.GALLOWS_JUNK_HEAL * 100)}% HP`),
+        ' and ',
+        b('costs no action'),
+        '. Clearing a card your board has long outgrown is housekeeping, not a play.',
+      ],
+    ])
+  );
+  wrap.appendChild(
+    para([
+      'Food that prints ',
+      b('Sacrificial Lamb'),
+      ` is worth +${CONFIG.GALLOWS_LAMB_BONUS} level on top of whichever tier it lands in, so a Lamb is always the best version of the meal it would otherwise have been. All three tiers share the one-per-turn limit: a free junk meal still closes the Gallows for the turn, so it is tempo rather than an engine.`,
+    ])
+  );
+  wrap.appendChild(
+    para([
+      'Like fusion material, a Persona you feed is ',
+      b('not'),
+      " a knockout — it never touches your opponent's tally. It is how a hand full of openers becomes something worth having in the late game.",
+    ])
+  );
+
+  wrap.appendChild(el('h3', 'rules__heading', 'Showtime'));
+  wrap.appendChild(
+    para([
+      'Certain pairs of Personas have a ',
+      b('Showtime'),
+      ': a duo attack that unlocks the moment ',
+      b('both'),
+      ' of them are on your field and on their feet. It costs your action, it does not matter which of the two is active, and each pair may only be called ',
+      b('once per match'),
+      '. A card that is half of a duo names its partner on its face.',
+    ])
+  );
+
+  wrap.appendChild(el('h3', 'rules__heading', 'Drains'));
+  wrap.appendChild(
+    bullets([
+      [
+        b('Life Drain'),
+        ' — takes ',
+        b('20% of the target\'s current HP'),
+        ' and gives the user exactly that much back. It scales with what is in front of you, so it is at its best against a big healthy wall — and because it takes a share of what is ',
+        b('left'),
+        ', it can never itself land a knockout.',
+      ],
+      [
+        b('Spirit Drain'),
+        ' — deals no damage at all and moves up to ',
+        b('6 SP'),
+        ' from the enemy active to yours, for a 1 SP cast. The SP is taken whether or not you have room for it.',
+      ],
+      [
+        'Both are ',
+        b('Almighty'),
+        ', so neither has any weakness, resist or Technical interaction. They are skills, not affinities — nothing in this game drains or repels an element.',
+      ],
+    ])
+  );
+
+  wrap.appendChild(el('h3', 'rules__heading', 'Falling behind'));
+  wrap.appendChild(
+    para([
+      'The game pushes back when you are losing, and only then. While more of your Personas have been knocked out than your opponent\'s:',
+    ])
+  );
+  wrap.appendChild(
+    bullets([
+      [b('Momentum Draw'), ' — your draws are weighted toward stronger cards, more heavily the further behind you are.'],
+      [
+        b('Underdog Draw'),
+        ` — behind by ${CONFIG.COMEBACK_UNDERDOG_DEFICIT} or more knockouts, you draw ${CONFIG.COMEBACK_UNDERDOG_DRAW} cards a turn instead of ${CONFIG.DRAW_PER_TURN}.`,
+      ],
+      [b('Bloodlust'), ' — Personas with that passive hit harder while their side is behind.'],
     ])
   );
 
@@ -143,7 +399,7 @@ function renderFaq() {
       );
       body.appendChild(
         para([
-          'There is no shop, no deck building and no between-match progression in the alpha: your 30-card deck plus your starting Persona is everything you get.',
+          'There is no shop, no deck building and no between-match progression in the beta: your 30-card deck plus your starting Persona is everything you get.',
         ])
       );
     })
@@ -193,7 +449,7 @@ function renderFaq() {
           [b('Shocked'), ' — it cannot act at all this turn. Swap it out or pass.'],
           [b('Knocked down'), ' — it stands up automatically at the start of your next turn.'],
           [b('Not enough SP'), ' (or HP, for physical skills). Physical skills can never kill their own user, so a skill costing more HP than you have is refused.'],
-          [b('No action left'), ' — you already attacked, guarded, fused or passed this turn.'],
+          [b('No action left'), ' — you already attacked, guarded, fed the Gallows or passed this turn. (Fusion is free, so it is still available.)'],
         ])
       );
     })
@@ -218,9 +474,9 @@ function renderFaq() {
         para([
           'Fusion sacrifices ',
           b('two of your Personas'),
-          ' — from your field, your hand, or one of each — to summon a stronger one at its printed level. It inherits one skill of your choice from each parent, and it costs your ',
-          b('action'),
-          ' for the turn.',
+          ' — from your field, your hand, or one of each — to summon a stronger one at its printed level. It inherits one skill of your choice from each parent, and it costs you ',
+          b('no action at all'),
+          `: like an Item or a Special it is a free play, rationed at ${CONFIG.FUSIONS_PER_TURN} per turn. Fuse and attack in the same turn.`,
         ])
       );
       body.appendChild(
@@ -232,6 +488,163 @@ function renderFaq() {
       );
       body.appendChild(
         para(['Sacrificed Personas do ', b('not'), ' count toward your opponent\'s knockout tally, and if you sacrifice your active Persona the result takes its place.'])
+      );
+    })
+  );
+
+  wrap.appendChild(
+    faq('How do I actually land a Technical?', (body) => {
+      body.appendChild(
+        para([
+          'Two halves, and you need both. First put an ',
+          b('ailment'),
+          ' on them, then hit them with the follow-up type: ',
+          b('Burn'),
+          ' pairs with physical or wind, ',
+          b('Shock'),
+          ' pairs with physical.',
+        ])
+      );
+      body.appendChild(
+        bullets([
+          ['Every ', b('Fire'), ' skill can inflict Burn and every ', b('Electric'), ' skill can inflict Shock. The chance is printed on each card — Agi and Zio land it 40% of the time, the heavy tier 50%, the severe tier 70%.'],
+          [b('Lesser Theurgy'), ' always lands, and lets you pick which. It costs no action, so you can play it and then immediately cash it in.'],
+          ['The catch is that most Personas cannot do both halves themselves. If your fire caster has no physical or wind skill, you need a ', b('Persona change'), ' between the two — or a second body that does.'],
+        ])
+      );
+      body.appendChild(
+        para([
+          'A ',
+          b('Shock'),
+          ' Technical also knocks the target down, which pays a One More like any other knockdown. That is the strongest thing in the system, and it is why Shock is worth setting up even though it expires faster.',
+        ])
+      );
+    })
+  );
+
+  wrap.appendChild(
+    faq('Their weaknesses changed. What happened?', (body) => {
+      body.appendChild(
+        para([
+          'Somebody played a ',
+          b('rewrite'),
+          ' Special — Turn of the Moon, Jester\'s Trickery or Change of Heart, one per deck. It replaces a Persona\'s weaknesses and resists with a new set of the same size, and wipes everything either player had uncovered about it.',
+        ])
+      );
+      body.appendChild(
+        para([
+          'A Persona this has happened to is marked ',
+          b('REWRITTEN'),
+          ' on its card and with a ',
+          b('↻'),
+          ' on the board. Its printed card is no longer true of it, so there is nothing to look up — you have to probe it again.',
+        ])
+      );
+      body.appendChild(
+        para([
+          'This is deliberately also the counter to the ',
+          b('Brutal'),
+          ' bot, which otherwise knows every weakness you have from turn one. Brutal reads the ',
+          b('card'),
+          ', and a rewritten Persona is not its card any more — so rewriting the Persona it has just built its whole plan around is a real, repeatable answer to the difficulty rather than a coin flip.',
+        ])
+      );
+    })
+  );
+
+  wrap.appendChild(
+    faq('Does fusion still cost my turn?', (body) => {
+      body.appendChild(
+        para([
+          'No. Fusion is a ',
+          b('free play'),
+          ` like an Item or a Special, rationed at ${CONFIG.FUSIONS_PER_TURN} per turn. You can fuse and still attack, and you can fuse after you have already attacked.`,
+        ])
+      );
+      body.appendChild(
+        para([
+          'It is also available when your active Persona cannot act — shocked, knocked down, wrapped in a Moonless Gown. Fusing is something ',
+          b('you'),
+          ' do, not something the Persona in the slot does.',
+        ])
+      );
+      body.appendChild(
+        para([
+          'The ',
+          b('Gallows'),
+          ' mostly does cost your action — but not always. See below.',
+        ])
+      );
+    })
+  );
+
+  wrap.appendChild(
+    faq('When does the Gallows cost me my action?', (body) => {
+      body.appendChild(
+        para([
+          'It depends entirely on what you feed it, and the panel tells you which of the three tiers a meal falls into before you confirm it:',
+        ])
+      );
+      body.appendChild(
+        bullets([
+          [
+            b('Feast'),
+            " — food at or above the eater's own level. ",
+            b(`+${CONFIG.GALLOWS_FEAST_LEVELS} levels`),
+            ', and it costs your action.',
+          ],
+          [
+            b('Meal'),
+            ' — food up to ',
+            b(`${CONFIG.COMEBACK_FARM_GAP} levels`),
+            ' beneath it. ',
+            b(`+${CONFIG.GALLOWS_LEVELS} level`),
+            ', and it costs your action.',
+          ],
+          [
+            b('Junk'),
+            ' — anything further beneath it. No levels, ',
+            b(`${Math.round(CONFIG.GALLOWS_JUNK_HEAL * 100)}% HP`),
+            ', and it costs ',
+            b('nothing'),
+            '. You can bin a card your board has outgrown and still attack in the same turn.',
+          ],
+        ])
+      );
+      body.appendChild(
+        para([
+          'All three share the ',
+          b(`${CONFIG.GALLOWS_PER_TURN} per turn`),
+          ' limit, so a free junk meal still closes the Gallows for the turn. It is tempo, not an engine.',
+        ])
+      );
+    })
+  );
+
+  wrap.appendChild(
+    faq('My deck cannot hit anything they are weak to. What now?', (body) => {
+      body.appendChild(
+        para([
+          'That is what ',
+          b('Twist of Fate'),
+          ' is for — one per deck, in every flavour. Name an element and it replaces one of the enemy active\'s weaknesses with that element, revealed to both of you.',
+        ])
+      );
+      body.appendChild(
+        para([
+          'Two rules make it a trade rather than a free win. You cannot name something they ',
+          b('resist'),
+          ' — that option is simply not offered. And ',
+          b('they'),
+          ' choose which weakness they give up for it: they will shed one you had already uncovered before one you had not, so you may well be trading a weakness you knew about for one you can actually hit.',
+        ])
+      );
+      body.appendChild(
+        para([
+          'Failing that, ',
+          b('Whims of Fate'),
+          ' fetches a Persona that answers what you can already see, and it reads the twisted chart too.',
+        ])
       );
     })
   );
@@ -258,11 +671,32 @@ function renderFaq() {
     faq('What is One More, and what is Baton Pass?', (body) => {
       body.appendChild(
         para([
-          'Strike a weakness and you earn a ',
+          'Knock a ',
+          b('standing'),
+          ' enemy Persona down by striking its weakness and you earn a ',
           b('One More'),
-          ': the target is knocked down, and you immediately get one extra action plus one extra Persona change (the ',
+          ': one extra action, one extra Persona change (the ',
           b('Baton Pass'),
-          `). It can only happen ${CONFIG.MAX_ONE_MORE_PER_TURN} time per turn, so weakness chains cannot loop forever.`,
+          '), and the right to aim that action at ',
+          b('any'),
+          ' enemy Persona — bench included. It is the one exception to active-only targeting.',
+        ])
+      );
+      body.appendChild(
+        bullets([
+          ['Hitting a Persona that is ', b('already down'), ' grants nothing. Neither does a guarded hit.'],
+          [
+            'A ',
+            b('killing blow'),
+            ' grants nothing either — the reward for that is the level-up your Persona gets.',
+          ],
+          [
+            `Baseline is ${CONFIG.MAX_ONE_MORE_PER_TURN} per turn. `,
+            'The ',
+            b('Trickster'),
+            ' passive lifts that cap, so knockdowns scored during a One More keep the chain alive.',
+          ],
+          ['Downed Personas — bench ones too — stand back up at the start of their owner\'s turn.'],
         ])
       );
     })

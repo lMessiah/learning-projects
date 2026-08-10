@@ -45,6 +45,11 @@ const skillLibrary = raw.skillLibrary;
 export const META = raw.meta;
 export const DAMAGE_TYPES = raw.meta.damageTypes;
 export const ARCANA = raw.meta.arcana;
+/** Passive ids a card is allowed to print. Implementations live in engine/passives.js. */
+export const PASSIVE_IDS = raw.meta.passives ?? [];
+/** Archetype tags every card must carry an `affinity` entry for. The archetype
+ *  definitions themselves live in archetypes.js, which imports this file. */
+export const ARCHETYPE_TAGS = raw.meta.archetypes ?? [];
 
 export const PERSONAS = raw.personas.map((p) => buildPersona(p, skillLibrary));
 export const ITEMS = raw.items.map((i) => ({ ...i, usesAction: Boolean(i.usesAction) }));
@@ -52,6 +57,8 @@ export const SPECIALS = raw.specials.map((s) => ({ ...s, usesAction: Boolean(s.u
 export const FUSION_RECIPES = raw.fusionRecipes;
 export const DECKS = raw.decks;
 export const STARTER_POOL = raw.starterPool;
+/** Duo attacks, unlocked by fielding both halves of a pair. */
+export const SHOWTIMES = raw.showtimes ?? [];
 
 /** Every card of every type, in one flat list. */
 export const ALL_CARDS = [...PERSONAS, ...ITEMS, ...SPECIALS];
@@ -75,6 +82,23 @@ deepFreeze(FUSION_RECIPES);
 deepFreeze(DECKS);
 deepFreeze(STARTER_POOL);
 deepFreeze(SKILLS);
+deepFreeze(SHOWTIMES);
+
+const SHOWTIME_BY_ID = new Map(SHOWTIMES.map((s) => [s.id, s]));
+
+export function getShowtime(id) {
+  return SHOWTIME_BY_ID.get(id) || null;
+}
+
+/** Every duo a given Persona card is half of. */
+export function showtimesFor(cardId) {
+  return SHOWTIMES.filter((s) => s.pair.includes(cardId));
+}
+
+/** The card ids this Persona can call on for a Showtime. */
+export function duoPartnersOf(cardId) {
+  return showtimesFor(cardId).map((s) => s.pair.find((id) => id !== cardId));
+}
 
 /** Look up any card (persona/item/special) by id. Throws on typos. */
 export function getCard(id) {
@@ -95,19 +119,50 @@ export function getDeck(id) {
   return deck;
 }
 
-/** Expand a deck's { id, count } entries into a flat list of card ids. */
-export function expandDeck(deckId) {
-  const deck = getDeck(deckId);
-  const out = [];
-  for (const entry of deck.cards) {
-    for (let i = 0; i < entry.count; i++) out.push(entry.id);
-  }
-  return out;
-}
+/**
+ * Decks are GENERATED from a flavour + archetype rather than hand-written, so
+ * the expansion lives in archetypes.js (which needs the seeded RNG). This file
+ * stays the pure data layer.
+ */
 
 /** The low-level Personas offered as opening starters. */
 export function getStarterPersonas() {
   return STARTER_POOL.map(getPersona);
+}
+
+/* ------------------------------------------------------------------ *
+ * Card quality
+ * ------------------------------------------------------------------ */
+
+/**
+ * How strong a card is, on a single 0..1 scale across the whole database.
+ *
+ * Momentum Draw needs to compare a Persona against an Item, so the two scales
+ * have to meet somewhere. A Persona scores itself — printed level plus how many
+ * skills it brings — normalised against the range of everything that can
+ * legally sit in a deck. Items and Specials carry a hand-assigned `quality`
+ * tag of 1..5 in cards.json, normalised the same way.
+ *
+ * Fusion-only Personas are excluded from the range: they never enter a deck, so
+ * letting them stretch the scale would squash every card that actually can be
+ * drawn down toward zero.
+ */
+const deckLegalPersonas = PERSONAS.filter((p) => !p.fusionOnly && p.level <= DECK_MAX_PERSONA_LEVEL);
+const personaRaw = (persona) => persona.level + persona.skills.length;
+const PERSONA_QUALITY_MIN = Math.min(...deckLegalPersonas.map(personaRaw));
+const PERSONA_QUALITY_MAX = Math.max(...deckLegalPersonas.map(personaRaw));
+const ITEM_QUALITY_MIN = 1;
+const ITEM_QUALITY_MAX = 5;
+
+const normalise = (value, min, max) => (max <= min ? 0.5 : Math.min(1, Math.max(0, (value - min) / (max - min))));
+
+/** @returns {number} 0..1 */
+export function cardQuality(cardId) {
+  const card = getCard(cardId);
+  if (card.type === 'persona') {
+    return normalise(personaRaw(card), PERSONA_QUALITY_MIN, PERSONA_QUALITY_MAX);
+  }
+  return normalise(card.quality ?? 3, ITEM_QUALITY_MIN, ITEM_QUALITY_MAX);
 }
 
 /** Skills a Persona has access to at a given level. */
@@ -116,7 +171,7 @@ export function skillsAtLevel(persona, level) {
 }
 
 /**
- * Data integrity check. Used by the gallery banner and by the Phase 2 tests so
+ * Data integrity check. Used by the gallery banner and by the engine tests so
  * a bad card edit fails loudly instead of producing a weird match.
  */
 export function validateDatabase() {
@@ -138,6 +193,9 @@ export function validateDatabase() {
         if (!DAMAGE_TYPES.includes(dt)) errors.push(`${persona.name}: unknown damage type "${dt}" in ${list}`);
         if (dt === 'almighty') errors.push(`${persona.name}: almighty cannot appear in ${list}`);
       }
+    }
+    if (persona.passive && !PASSIVE_IDS.includes(persona.passive)) {
+      errors.push(`${persona.name}: unknown passive "${persona.passive}"`);
     }
     const overlap = persona.weaknesses.filter((w) => persona.resists.includes(w));
     if (overlap.length) errors.push(`${persona.name}: ${overlap.join(', ')} is both a weakness and a resist`);
@@ -166,19 +224,56 @@ export function validateDatabase() {
     }
   }
 
-  for (const deck of DECKS) {
-    let total = 0;
-    for (const entry of deck.cards) {
-      if (!BY_ID.has(entry.id)) errors.push(`Deck ${deck.id}: unknown card "${entry.id}"`);
-      else if (BY_ID.get(entry.id).fusionOnly) errors.push(`Deck ${deck.id}: ${entry.id} is fusion-only and cannot be in a deck`);
-      // Keeps the power curve honest: no turn-3 level 46 draws.
-      else if ((BY_ID.get(entry.id).level ?? 0) > DECK_MAX_PERSONA_LEVEL) {
-        errors.push(`Deck ${deck.id}: ${entry.id} is level ${BY_ID.get(entry.id).level}, above the deck cap of ${DECK_MAX_PERSONA_LEVEL}`);
-      }
-      if (entry.count > 2) errors.push(`Deck ${deck.id}: ${entry.id} x${entry.count} exceeds the 2-copy limit`);
-      total += entry.count;
+  for (const card of ALL_CARDS) {
+    if (!card.affinity) {
+      errors.push(`${card.name}: has no archetype affinity block`);
+      continue;
     }
-    if (total !== 30) errors.push(`Deck ${deck.id}: has ${total} cards, expected 30`);
+    for (const archetype of ARCHETYPE_TAGS) {
+      const value = card.affinity[archetype];
+      if (!Number.isInteger(value) || value < 0 || value > 3) {
+        errors.push(`${card.name}: affinity.${archetype} must be an integer 0-3, got ${value}`);
+      }
+    }
+  }
+
+  // Decks are generated rather than listed, so their integrity is checked by
+  // `validateDecks()` in archetypes.js — which imports this file, so it cannot
+  // be called from here without a cycle. `validateAll()` runs both.
+
+  // A Skill Card may only ever name a real entry in the skill library, which is
+  // what makes "no passives, no Showtimes" structural rather than a convention.
+  for (const card of [...ITEMS, ...SPECIALS]) {
+    if (card.effect?.kind !== 'teachSkill') continue;
+    if (!SKILLS[card.effect.skillId]) {
+      errors.push(`${card.name}: teaches unknown skill "${card.effect.skillId}"`);
+    }
+    if (card.deckGroup !== 'skill-card') errors.push(`${card.name}: a Skill Card must carry deckGroup "skill-card"`);
+  }
+
+  const showtimeIds = new Set();
+  for (const showtime of SHOWTIMES) {
+    if (showtimeIds.has(showtime.id)) errors.push(`Duplicate showtime id: ${showtime.id}`);
+    showtimeIds.add(showtime.id);
+    if (showtime.pair?.length !== 2) {
+      errors.push(`Showtime ${showtime.id}: needs exactly 2 partners`);
+      continue;
+    }
+    if (showtime.pair[0] === showtime.pair[1]) errors.push(`Showtime ${showtime.id}: a Persona cannot duo with itself`);
+    for (const id of showtime.pair) {
+      if (!BY_ID.has(id) || getCard(id).type !== 'persona') {
+        errors.push(`Showtime ${showtime.id}: "${id}" is not a Persona`);
+      }
+    }
+  }
+  // `duoPartners` on a card is a mirror of the table above, so a card can never
+  // advertise a duo the engine does not know how to run.
+  for (const persona of PERSONAS) {
+    const expected = [...duoPartnersOf(persona.id)].sort();
+    const printed = [...(persona.duoPartners ?? [])].sort();
+    if (expected.join(',') !== printed.join(',')) {
+      errors.push(`${persona.name}: duoPartners [${printed}] does not match the showtime table [${expected}]`);
+    }
   }
 
   for (const id of STARTER_POOL) {

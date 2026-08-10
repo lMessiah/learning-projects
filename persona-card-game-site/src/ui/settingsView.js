@@ -6,6 +6,7 @@ import { getSettings, setSetting, resetSettings, ANIMATION_SPEEDS, DEFAULT_RENDE
 import { THEMES, applyThemeFor, setThemeOverride } from './theme.js';
 import { getProfileName, setProfileName, resetProfile } from './profile.js';
 import { renderRulesContent } from './rules.js';
+import { renderAttributionLink } from './attribution.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -190,7 +191,7 @@ export function renderSettings(root) {
   const sound = section('Sound');
   sound.appendChild(
     el('p', 'settings-section__hint',
-      'The alpha has no audio yet, so there is nothing to switch off. A toggle appears here as soon as there is a sound to attach it to.')
+      'The beta has no audio yet, so there is nothing to switch off. A toggle appears here as soon as there is a sound to attach it to.')
   );
   wrap.appendChild(sound);
 
@@ -222,6 +223,16 @@ export function renderSettings(root) {
       'Run the bundled one with: node server/rendezvous.js — zero dependencies, in memory, codes expire after 10 minutes.')
   );
   wrap.appendChild(online);
+
+  /* ---------- Credits ---------- */
+  const credits = section('Credits', 'Who built this, and what it is.');
+  credits.appendChild(renderAttributionLink());
+  credits.appendChild(
+    el('p', 'settings-section__hint',
+      'Unofficial fan project, not affiliated with or endorsed by ATLUS or SEGA. Every card is placeholder CSS art — ' +
+        'no official artwork, sprites or logos are used anywhere.')
+  );
+  wrap.appendChild(credits);
 
   /* ---------- Contact ---------- */
   const contact = section('Contact us!', 'Found a bug, or want to argue about the damage formula? We would like to hear it.');

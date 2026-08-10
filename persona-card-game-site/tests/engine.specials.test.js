@@ -1,5 +1,5 @@
 /**
- * Phase 5 — every Special card, end to end through the reducer, plus the
+ * Every Special card, end to end through the reducer, plus the
  * fusion behaviours the UI depends on.
  */
 import { describe, it, expect } from 'vitest';
@@ -9,10 +9,12 @@ import {
   personaSkills,
   buffOf,
   describeFusions,
+  computeDamage,
+  passiveDefinition,
   CONFIG,
 } from '../src/engine/index.js';
 import { SPECIALS, getCard, getPersona, getSkillDefinition } from '../src/data/cards.js';
-import { setupMatch, setField, setHand, activeOf, handUidOf } from './helpers.js';
+import { setupMatch, setField, setHand, activeOf, handUidOf, fakePersona } from './helpers.js';
 
 /** Player 0: Orpheus (fire/phys). Player 1: Jack Frost (weak fire) + a bench. */
 function board({ ownerCard = 'orpheus' } = {}) {
@@ -28,28 +30,134 @@ function board({ ownerCard = 'orpheus' } = {}) {
 const play = (state, cardId, extra = {}) =>
   applyAction(state, { type: 'PLAY_SPECIAL', player: 0, handUid: handUidOf(state, 0, cardId), ...extra });
 
+/** `board()` plus everything the strategic Specials need to bite on. */
+function loadedBoard() {
+  const state = board();
+  activeOf(state, 0).sp = 10;
+  activeOf(state, 0).buffs.push({ stat: 'atk', direction: 'down', turnsLeft: 3 });
+  activeOf(state, 1).buffs.push({ stat: 'def', direction: 'up', turnsLeft: 3 });
+  state.players[0].field[1].sp = 0;
+  // A knocked-out Persona for Velvet Summons to call back...
+  const fallen = state.players[0].field[1];
+  state.players[0].field.push({ ...fallen, uid: 'fallen', ko: true, hp: 0 });
+  // ...a bench body for the opponent so a forced switch has somewhere to go...
+  state.players[1].field.push({ ...state.players[1].field[1], uid: 'foe-bench' });
+  // ...a skill on the record for Wild Card to borrow...
+  state.players[1].lastSkillId = 'bufu';
+  // ...and a fully-scouted enemy active, which is what arms Phantom Strike.
+  const foe = getPersona(state.players[1].field[0].cardId);
+  state.players[1].field[0].revealedTypes = [...foe.weaknesses, ...foe.resists];
+  return state;
+}
+
 describe('every Special is playable', () => {
-  it('covers all nine Specials in the database', () => {
-    expect(SPECIALS.map((s) => s.id).sort()).toEqual([
-      'ambush', 'armageddon', 'baton-pass', 'charge', 'concentrate',
-      'dekaja', 'dekunda', 'sp-transfer', 'theurgy',
-    ]);
+  it('keeps pure damage to a handful and makes the rest strategic', () => {
+    const damage = SPECIALS.filter((s) => s.effect.kind === 'damage');
+    expect(damage.map((s) => s.id).sort()).toEqual(['armageddon', 'theurgy']);
+    expect(damage.length).toBeLessThanOrEqual(3);
+    expect(SPECIALS.length - damage.length).toBeGreaterThanOrEqual(7);
+  });
+
+  it('gives every Special a distinct effect kind or a distinct decision', () => {
+    for (const special of SPECIALS) {
+      expect(special.effect.kind).toBeTruthy();
+      expect(special.description.length).toBeGreaterThan(20);
+      expect(special.quality).toBeGreaterThanOrEqual(1);
+      expect(special.quality).toBeLessThanOrEqual(5);
+    }
   });
 
   it('offers each Special as a legal action when it has something to do', () => {
     for (const special of SPECIALS) {
-      const state = board();
-      // Give every effect something to bite on.
-      activeOf(state, 0).sp = 10;
-      activeOf(state, 0).buffs.push({ stat: 'atk', direction: 'down', turnsLeft: 3 });
-      activeOf(state, 1).buffs.push({ stat: 'def', direction: 'up', turnsLeft: 3 });
-      state.players[0].field[1].sp = 0;
+      const state = loadedBoard();
+      // Third Eye is the one card that wants the mark UNread — everything else
+      // on the loaded board wants it scouted (Phantom Strike requires it).
+      if (special.effect.kind === 'reveal') state.players[1].field[0].revealedTypes = [];
       setHand(state, 0, [special.id]);
 
       const legal = getLegalActions(state, 0).filter((a) => a.type === 'PLAY_SPECIAL');
       expect(legal.length, `${special.name} produced no legal play`).toBeGreaterThan(0);
-      expect(() => applyAction(state, legal[0])).not.toThrow();
+      expect(() => applyAction(state, legal[0]), `${special.name} threw`).not.toThrow();
     }
+  });
+});
+
+describe('damage Specials say what they do', () => {
+  /** A Persona with no affinity to almighty and enough HP to survive anything. */
+  function dummyBoard() {
+    const state = setupMatch();
+    setField(state, 0, [{ cardId: 'orpheus', active: true }]);
+    setField(state, 1, [{ cardId: 'orpheus', active: true, hp: 900, maxHp: 900 }]);
+    return state;
+  }
+
+  it('deals exactly the number printed on the card, for every damage Special', () => {
+    for (const special of SPECIALS.filter((s) => s.effect.kind === 'damage')) {
+      const stated = special.effect.amount;
+      expect(stated, `${special.name} states no amount`).toBeGreaterThan(0);
+      expect(special.description).toContain(String(stated));
+
+      const state = dummyBoard();
+      setHand(state, 0, [special.id]);
+      const before = activeOf(state, 1).hp;
+      const after = play(state, special.id);
+
+      expect(before - activeOf(after, 1).hp, `${special.name} does not deal what it says`).toBe(stated);
+    }
+  });
+
+  it('is unmoved by the attacker\'s stats', () => {
+    const damageFrom = (cardId) => {
+      const state = dummyBoard();
+      setField(state, 0, [{ cardId, active: true }]);
+      setHand(state, 0, ['theurgy']);
+      return 900 - activeOf(play(state, 'theurgy'), 1).hp;
+    };
+    // STR 16 / MAG 5 against STR 8 / MAG 18 — under the old stat-ratio formula
+    // these differed by a wide margin.
+    expect(damageFrom('ippon-datara')).toBe(damageFrom('sarasvati'));
+    expect(damageFrom('ippon-datara')).toBe(60);
+  });
+
+  it('is unmoved by buffs, Charge or Shock', () => {
+    const state = dummyBoard();
+    setHand(state, 0, ['theurgy']);
+    activeOf(state, 0).charges.push('concentrate');
+    activeOf(state, 0).buffs.push({ stat: 'atk', direction: 'up', turnsLeft: 3 });
+    activeOf(state, 1).ailments.push({ type: 'shock', turnsLeft: 1 });
+
+    const after = play(state, 'theurgy');
+    expect(900 - activeOf(after, 1).hp).toBe(60);
+    expect(activeOf(after, 0).charges).toEqual(['concentrate']); // not consumed either
+  });
+
+  it('is still halved by a guard', () => {
+    const hit = (guarding) => {
+      const state = dummyBoard();
+      setHand(state, 0, ['theurgy']);
+      activeOf(state, 1).guarding = guarding;
+      return 900 - activeOf(play(state, 'theurgy'), 1).hp;
+    };
+    expect(hit(true)).toBe(Math.round(hit(false) * CONFIG.GUARD_MULT));
+  });
+
+  it('is still doubled by a weakness and halved by a resist', () => {
+    // Almighty is never weak or resisted, so the affinity half of the rule is
+    // checked at the formula: flat 100 fire against Jack Frost (weak) and
+    // Orpheus (resists fire).
+    const flat = (defender) =>
+      computeDamage({
+        attacker: fakePersona('orpheus'),
+        defender: fakePersona(defender),
+        power: 100,
+        damageType: 'fire',
+        category: 'magic',
+        flat: true,
+      }).amount;
+
+    expect(flat('pixie')).toBe(100); // neutral
+    expect(flat('jack-frost')).toBe(100 * CONFIG.WEAK_MULT);
+    expect(flat('orpheus')).toBe(100 * CONFIG.RESIST_MULT);
   });
 });
 
@@ -67,17 +175,11 @@ describe('Theurgy', () => {
     expect(after.players[0].discard).toContain('theurgy');
   });
 
-  it('attacks with whichever of strength or magic is higher', () => {
-    const strong = board({ ownerCard: 'ippon-datara' }); // STR 16 / MAG 5
-    setHand(strong, 0, ['theurgy']);
-    const strongDamage = 400 - activeOf(play(strong, 'theurgy'), 1).hp;
-
-    const smart = board({ ownerCard: 'sarasvati' }); // STR 8 / MAG 18
-    setHand(smart, 0, ['theurgy']);
-    const smartDamage = 400 - activeOf(play(smart, 'theurgy'), 1).hp;
-
-    expect(strongDamage).toBeGreaterThan(0);
-    expect(smartDamage).toBeGreaterThan(strongDamage); // 18 magic beats 16 strength
+  it('still needs an active Persona to deliver it', () => {
+    const state = board();
+    state.players[0].activeUid = null;
+    setHand(state, 0, ['theurgy']);
+    expect(getLegalActions(state, 0).filter((a) => a.cardId === 'theurgy')).toHaveLength(0);
   });
 });
 
@@ -103,23 +205,23 @@ describe('Armageddon', () => {
     expect(after.players[0].field.map((p) => p.hp)).toEqual(before);
   });
 
-  it('spends Concentrate once and boosts EVERY target, not just the first', () => {
+  it('deals its printed number to each target, and ignores Concentrate', () => {
     const plain = board();
     setHand(plain, 0, ['armageddon']);
     const plainAfter = play(plain, 'armageddon');
     const plainHits = plain.players[1].field.map((p, i) => p.hp - plainAfter.players[1].field[i].hp);
+    expect(plainHits).toEqual([30, 30]);
 
+    // A flat Special is flat: a held Charge changes nothing and is not spent,
+    // so it is still there for the skill you actually wanted it for.
     const boosted = board();
     setHand(boosted, 0, ['armageddon']);
     activeOf(boosted, 0).charges.push('concentrate');
     const boostedAfter = play(boosted, 'armageddon');
     const boostedHits = boosted.players[1].field.map((p, i) => p.hp - boostedAfter.players[1].field[i].hp);
 
-    // Both targets take x2.5 — the regression was the second target getting
-    // nothing because the first had already consumed the charge.
-    expect(boostedHits[0] / plainHits[0]).toBeCloseTo(CONFIG.CHARGE_MULT, 1);
-    expect(boostedHits[1] / plainHits[1]).toBeCloseTo(CONFIG.CHARGE_MULT, 1);
-    expect(activeOf(boostedAfter, 0).charges).toHaveLength(0); // spent exactly once
+    expect(boostedHits).toEqual(plainHits);
+    expect(activeOf(boostedAfter, 0).charges).toEqual(['concentrate']);
   });
 });
 
@@ -155,10 +257,11 @@ describe('SP Transfer', () => {
     bench.sp = 0;
     setHand(state, 0, ['sp-transfer']);
 
-    const after = play(state, 'sp-transfer', { fromUid: active.uid, toUid: bench.uid, amount: 30 });
+    const moved = getCard('sp-transfer').effect.amount;
+    const after = play(state, 'sp-transfer', { fromUid: active.uid, toUid: bench.uid, amount: moved });
     const [a, b] = after.players[0].field;
 
-    expect(b.sp).toBe(Math.min(30, b.maxSp));
+    expect(b.sp).toBe(Math.min(moved, b.maxSp));
     expect(a.sp).toBe(40 - b.sp);
     expect(after.turnState.actionsRemaining).toBe(1); // free action
   });
@@ -309,9 +412,13 @@ describe('fusion, fully wired', () => {
     expect(fusion.sacrifices.every((s) => s.zone && s.uid)).toBe(true);
     expect(fusion.inheritOptions).toHaveLength(2);
     expect(fusion.inheritOptions.every((list) => list.length > 0)).toBe(true);
-    // Every offered skill id resolves to a real definition for the UI dropdowns.
+    // Every offered choice resolves for the UI dropdowns: skill ids to a skill
+    // definition, and the "passive:<id>" entries to a passive.
     for (const list of fusion.inheritOptions) {
-      for (const id of list) expect(getSkillDefinition(id)).toBeTruthy();
+      for (const id of list) {
+        if (id.startsWith('passive:')) expect(passiveDefinition(id.slice('passive:'.length))).toBeTruthy();
+        else expect(getSkillDefinition(id)).toBeTruthy();
+      }
     }
   });
 
@@ -350,17 +457,44 @@ describe('fusion, fully wired', () => {
     expect(getPersona('black-frost').skills.map((s) => s.id)).not.toContain('media');
   });
 
-  it('is illegal once your action for the turn is spent', () => {
+  it('is still available after your action for the turn is spent', () => {
     let state = fusionBoard();
     state = applyAction(state, { type: 'GUARD', player: 0 }); // spends the action
     expect(state.turnState.actionsRemaining).toBe(0);
 
-    expect(() => fuse(state)).toThrow(/no actions remaining/);
+    expect(getLegalActions(state, 0).some((a) => a.type === 'FUSE')).toBe(true);
+    expect(describeFusions(state, 0).find((e) => e.recipe.id === 'fuse-black-frost').satisfiable).toBe(true);
+    expect(() => fuse(state)).not.toThrow();
+  });
+
+  it('is illegal a second time in the same turn, and the panel says why', () => {
+    // The same action object, replayed: after the first fusion the parents are
+    // gone, so the second attempt has to be built from the original board.
+    const board = fusionBoard();
+    const again = {
+      type: 'FUSE',
+      player: 0,
+      recipeId: 'fuse-black-frost',
+      sacrifices: [
+        { zone: 'field', uid: board.players[0].field[0].uid },
+        { zone: 'field', uid: board.players[0].field[1].uid },
+      ],
+      inherit: ['bufu', 'media'],
+    };
+    const state = applyAction(board, again);
+
+    expect(() => applyAction(state, again)).toThrow(/only 1 fusion per turn/);
     expect(getLegalActions(state, 0).some((a) => a.type === 'FUSE')).toBe(false);
-    // ...and the panel says so rather than silently hiding the recipe.
-    const blackFrost = describeFusions(state, 0).find((e) => e.recipe.id === 'fuse-black-frost');
+
+    // ...and the panel says so rather than silently hiding the recipe. Shown on
+    // a board that still HAS the material, since "you have not got the pieces"
+    // is the more useful complaint when both are true.
+    const spent = fusionBoard();
+    spent.turnState.fusionsPerformed = 1;
+    const blackFrost = describeFusions(spent, 0).find((e) => e.recipe.id === 'fuse-black-frost');
+    expect(blackFrost.pairs.length).toBeGreaterThan(0);
     expect(blackFrost.satisfiable).toBe(false);
-    expect(blackFrost.reason).toMatch(/No action left/);
+    expect(blackFrost.reason).toMatch(/Already fused this turn/);
   });
 
   it('accepts material from field, from hand, or one of each', () => {

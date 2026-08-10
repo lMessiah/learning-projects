@@ -151,6 +151,8 @@ h3 {
   background: color-mix(in srgb, var(--accent) 82%, #fff);
 }
 
+/* The "currently chosen" button. The ring comes from select.css so it speaks
+ * the same language as a selected card. */
 .btn--on {
   background: var(--accent);
   border-color: var(--accent);
@@ -224,7 +226,7 @@ h3 {
   line-height: 1.5;
 }
 
-.menu__phase {
+.menu__status {
   position: absolute;
   top: 14px;
   right: 14px;
@@ -268,4 +270,83 @@ h3 {
   border-color: rgba(63, 208, 138, 0.4);
   color: #cdf5e2;
   background: rgba(63, 208, 138, 0.08);
+}
+
+/* ---------- Site attribution (Settings → Credits) ----------
+ *
+ * A silver plate inside a rainbow gradient outline. It used to be fixed to the
+ * corner of every screen, which cost the board a strip of height so the badge
+ * could not sit on top of the battle log; it is an ordinary inline element in
+ * the Settings credits section now and claims nothing.
+ *
+ * Only the gradient animates — no box of any kind moves.
+ */
+.attribution {
+  --attribution-thickness: 1.5px;
+  display: inline-block;
+  align-self: flex-start;
+  padding: var(--attribution-thickness);
+  border-radius: 999px;
+  text-decoration: none;
+  line-height: 1;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+  /* The rainbow itself: a spinning conic gradient showing only at the edges. */
+  background: conic-gradient(
+    from var(--attribution-angle, 0deg),
+    #ff5f73, #ffb03a, #f0e14a, #3fd08a, #4aa3df, #9b4fd1, #ff4fd8, #ff5f73
+  );
+  animation: attribution-spin 6s linear infinite;
+}
+
+.attribution:hover,
+.attribution:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.attribution__label {
+  display: block;
+  padding: 7px 16px;
+  border-radius: 999px;
+  /* The silver plate the outline surrounds. */
+  background: linear-gradient(150deg, #d9dde4, #f4f6fa 45%, #aeb4bf);
+  color: #1a1a20;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* `@property` lets the angle be interpolated at all; without it the custom
+ * property is an unanimatable token and the gradient simply sits still. */
+@property --attribution-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes attribution-spin {
+  to { --attribution-angle: 360deg; }
+}
+
+/* Animations off — either the Settings choice (which is read at render time in
+ * ui/attribution.js) or the OS preference: a static gradient outline that still
+ * reads as a rainbow. */
+.attribution--static,
+.attribution--static:hover {
+  animation: none;
+  background: linear-gradient(100deg, #ff5f73, #ffb03a, #f0e14a, #3fd08a, #4aa3df, #9b4fd1, #ff4fd8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attribution {
+    animation: none;
+    background: linear-gradient(100deg, #ff5f73, #ffb03a, #f0e14a, #3fd08a, #4aa3df, #9b4fd1, #ff4fd8);
+  }
+}
+
+/* Narrow screens: the label is a full sentence, so let it wrap rather than
+ * forcing the settings panel to scroll sideways. */
+@media (max-width: 520px) {
+  .attribution__label { white-space: normal; text-align: center; }
 }

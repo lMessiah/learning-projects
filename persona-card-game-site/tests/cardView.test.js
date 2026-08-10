@@ -51,3 +51,24 @@ describe('card renderer', () => {
     expect(renderCard(getCard('theurgy'), {}).textContent).toContain('Uses up your action');
   });
 });
+
+describe('the gallery', () => {
+  it('renders the whole reference view, pools and all', async () => {
+    const { renderGallery } = await import('../src/ui/gallery.js');
+    const root = document.createElement('div');
+    renderGallery(root);
+
+    // No validation errors, and the deck pools rendered for every flavour.
+    expect(root.querySelector('.notice--error')).toBe(null);
+    expect(root.querySelector('.notice--ok')).toBeTruthy();
+    expect(root.querySelectorAll('.ref-grid .ref-card').length).toBeGreaterThanOrEqual(3);
+    // The play styles panel is there too.
+    expect(root.textContent).toContain('Play styles');
+  });
+
+  it('prints the passive on the cards that have one', () => {
+    const node = renderCard(getCard('pixie'), { showAllHidden: true });
+    expect(node.querySelector('.card__passive-name').textContent).toBe('Trickster');
+    expect(renderCard(getCard('silky'), { showAllHidden: true }).querySelector('.card__passive')).toBe(null);
+  });
+});

@@ -14,7 +14,8 @@ import {
   CONFIG,
 } from '../src/engine/index.js';
 import { chooseBotAction } from '../src/engine/bot.js';
-import { getPersona, DECKS, expandDeck } from '../src/data/cards.js';
+import { getPersona, DECKS } from '../src/data/cards.js';
+import { ARCHETYPE_IDS, expandDeck } from '../src/data/archetypes.js';
 import { setupMatch, setField, setHand, activeOf, handUidOf } from './helpers.js';
 
 describe('play level gap', () => {
@@ -109,19 +110,18 @@ describe('play level gap', () => {
 });
 
 describe('deck curve', () => {
-  it('contains nothing above the deck level cap in any prebuilt deck', () => {
+  it('contains nothing above the deck level cap in any generated deck', () => {
     for (const deck of DECKS) {
-      const levels = expandDeck(deck.id)
-        .map((id) => getPersona.length && id)
-        .filter(Boolean);
-      for (const cardId of levels) {
-        let persona = null;
-        try {
-          persona = getPersona(cardId);
-        } catch {
-          continue; // Items and Specials have no level
+      for (const archetype of [null, ...ARCHETYPE_IDS]) {
+        for (const cardId of expandDeck(deck.id, { archetype })) {
+          let persona = null;
+          try {
+            persona = getPersona(cardId);
+          } catch {
+            continue; // Items and Specials have no level
+          }
+          expect(persona.level).toBeLessThanOrEqual(CONFIG.DECK_MAX_PERSONA_LEVEL);
         }
-        expect(persona.level).toBeLessThanOrEqual(CONFIG.DECK_MAX_PERSONA_LEVEL);
       }
     }
   });
@@ -173,8 +173,16 @@ describe('deck curve', () => {
 
       for (const player of state.players) {
         for (const persona of player.field) {
-          // The reported bug was a level 46 Persona on turn 3.
-          expect(persona.level).toBeLessThan(30);
+          const card = getPersona(persona.cardId);
+          // The reported bug was a level 46 Persona on turn 3, straight out of
+          // the deck. Anything above the deck cap this early has to be a fusion
+          // result — which cost its owner two bodies and an action.
+          if (persona.level > CONFIG.DECK_MAX_PERSONA_LEVEL) {
+            expect(card.fusionOnly, `${card.name} reached the board without being fused`).toBe(true);
+            expect(state.log.some((l) => l.kind === 'fusion')).toBe(true);
+          }
+          // And even an earned one stays inside the mid tier this early.
+          expect(persona.level).toBeLessThan(40);
         }
       }
     }

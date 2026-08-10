@@ -18,7 +18,7 @@
  *   chaos  - random, biased hard toward the highest-damage option; swingy
  */
 import { CONFIG, skillCategory } from './config.js';
-import { getCard, getPersona } from '../data/cards.js';
+import { getCard, getPersona, getShowtime, getSkillDefinition, cardQuality } from '../data/cards.js';
 import { nextInt, nextFloat } from './rng.js';
 import { getLegalActions } from './legal.js';
 import {
@@ -30,7 +30,18 @@ import {
   buffOf,
   hasAilment,
   findPersona,
+  mimicableSkill,
+  affinitiesOf,
 } from './state.js';
+import {
+  chainsOneMore,
+  preventsKnockdown,
+  enduresFatalBlow,
+  koDeficit,
+  fusionLevelBonus,
+  passiveOf,
+} from './passives.js';
+import { executeMultiplier, technicalFor } from './damage.js';
 
 export const DIFFICULTIES = Object.freeze([
   { id: 'easy', label: 'Easy', blurb: 'Plays at random. Never goes looking for your weaknesses.' },
@@ -41,6 +52,12 @@ export const DIFFICULTIES = Object.freeze([
 
 const HEAL_THRESHOLD = 0.3; // "heals when a Persona is under 30% HP"
 const MAX_ACTIONS_PER_TURN = 40; // safety net against a scoring loop
+
+/** Is there still a One More to be earned this turn? Trickster lifts the cap. */
+function oneMoreAvailable(state, attacker, turn) {
+  if (!turn) return false;
+  return chainsOneMore(attacker) || turn.oneMoresGranted < CONFIG.MAX_ONE_MORE_PER_TURN;
+}
 
 /* ------------------------------------------------------------------ *
  * Knowledge
@@ -54,11 +71,19 @@ const MAX_ACTIONS_PER_TURN = 40; // safety net against a scoring loop
 function perceivedAffinity(persona, damageType, difficulty) {
   if (difficulty === 'easy') return 'neutral';
   if (damageType === 'almighty') return 'neutral';
-  const card = getPersona(persona.cardId);
-  const knows = difficulty === 'brutal' || persona.revealedTypes.includes(damageType);
+
+  // Brutal's one sanctioned cheat is reading the CARD. A Persona whose chart
+  // has been rewritten is no longer described by its card, so that cheat buys
+  // nothing and Brutal has to uncover the new chart by hitting things — which
+  // is exactly what the rewrite Specials are sold on.
+  const knows = persona.rewritten
+    ? persona.revealedTypes.includes(damageType)
+    : difficulty === 'brutal' || persona.revealedTypes.includes(damageType);
   if (!knows) return 'neutral';
-  if (card.weaknesses.includes(damageType)) return 'weak';
-  if (card.resists.includes(damageType)) return 'resist';
+
+  const { weaknesses, resists } = affinitiesOf(persona);
+  if (weaknesses.includes(damageType)) return 'weak';
+  if (resists.includes(damageType)) return 'resist';
   return 'neutral';
 }
 
@@ -66,7 +91,7 @@ function perceivedAffinity(persona, damageType, difficulty) {
  * Damage the bot *expects*, using only what it knows. Mirrors damage.js but
  * substitutes perceived affinity for the real one.
  */
-function estimateDamage(attacker, defender, { power, damageType, category }, difficulty) {
+function estimateDamage(attacker, defender, { power, damageType, category, execute }, difficulty) {
   const cat = category || skillCategory(damageType);
   const atkStat = Math.max(1, cat === 'phys' ? attacker.strength : attacker.magic);
   const base = (power * atkStat) / (atkStat + Math.max(0, defender.endurance));
@@ -79,13 +104,24 @@ function estimateDamage(attacker, defender, { power, damageType, category }, dif
   const defBuff = buffOf(defender, 'def');
   const defenseMult = !defBuff ? 1 : defBuff.direction === 'up' ? 1 / CONFIG.BUFF_MULT : CONFIG.BUFF_MULT;
   const guardMult = defender.guarding ? CONFIG.GUARD_MULT : 1;
-  const shockMult = hasAilment(defender, 'shock') ? CONFIG.SHOCK_TAKEN_MULT : 1;
+  // Both of the deterministic riders. Technical replaces the plain Shock bonus,
+  // exactly as the real pipeline does, so the bot never overvalues the combo.
+  const technical = technicalFor(defender, damageType);
+  const technicalMult = technical ? CONFIG.TECHNICAL_MULT : 1;
+  const shockMult = !technical && hasAilment(defender, 'shock') ? CONFIG.SHOCK_TAKEN_MULT : 1;
+  const executeMult = executeMultiplier(defender, execute);
   const wantedCharge = cat === 'phys' ? 'charge' : 'concentrate';
   const chargeMult = attacker.charges.includes(wantedCharge) ? CONFIG.CHARGE_MULT : 1;
 
   return {
-    amount: Math.max(0, Math.round(base * affinityMult * attackMult * defenseMult * guardMult * shockMult * chargeMult)),
+    amount: Math.max(
+      0,
+      Math.round(
+        base * affinityMult * attackMult * defenseMult * guardMult * shockMult * technicalMult * executeMult * chargeMult
+      )
+    ),
     affinity,
+    technical,
   };
 }
 
@@ -111,37 +147,47 @@ function actionDamage(state, action, difficulty) {
     const target = targetOf();
     if (!target) return { amount: 0, affinity: 'neutral' };
 
-    if (skill.effect.kind === 'instakill') {
-      const affinity = perceivedAffinity(target, skill.type, difficulty);
-      let chance = skill.effect.chance;
-      if (affinity === 'weak') chance *= 2;
-      if (affinity === 'resist') chance *= 0.5;
-      if (target.guarding) chance *= 0.5;
-      // Value an instant kill as a fraction of the target's remaining HP.
-      return { amount: Math.min(1, chance) * target.hp, affinity, instakill: true };
-    }
     if (skill.effect.kind !== 'damage') return { amount: 0, affinity: 'neutral' };
-    return estimateDamage(attacker, target, { power: skill.power, damageType: skill.type, category: skillCategory(skill.type) }, difficulty);
+    return estimateDamage(
+      attacker,
+      target,
+      { power: skill.power, damageType: skill.type, category: skillCategory(skill.type), execute: skill.effect.execute },
+      difficulty
+    );
   }
 
-  if (action.type === 'PLAY_SPECIAL') {
-    const card = getCard(action.cardId ?? '');
-    if (card?.effect?.kind !== 'damage') return { amount: 0, affinity: 'neutral' };
-    const category = card.effect.statSource === 'magic' ? 'magic' : attacker.magic >= attacker.strength ? 'magic' : 'phys';
-    if (card.effect.target === 'enemyAll') {
-      const total = livingField(state, foeId).reduce(
-        (sum, target) =>
-          sum + estimateDamage(attacker, target, { power: card.effect.power, damageType: card.effect.damageType, category }, difficulty).amount,
-        0
-      );
+  // A Special and a Showtime are the same shape to the scorer: a card-level
+  // effect delivered by whoever is holding the active slot.
+  if (action.type === 'PLAY_SPECIAL' || action.type === 'SHOWTIME') {
+    const source = action.type === 'SHOWTIME' ? getShowtime(action.showtimeId) : getCard(action.cardId ?? '');
+    if (source?.effect?.kind !== 'damage') return { amount: 0, affinity: 'neutral' };
+    const { effect } = source;
+    const category = effect.statSource === 'magic' ? 'magic' : attacker.magic >= attacker.strength ? 'magic' : 'phys';
+    // A flat Special ignores the attacker entirely, so estimating it through the
+    // stat ratio would badly misprice it.
+    const estimate = (target) =>
+      effect.flat
+        ? estimateFlat(target, effect, difficulty)
+        : estimateDamage(attacker, target, { power: effect.power, damageType: effect.damageType, category }, difficulty);
+
+    if (effect.target === 'enemyAll') {
+      const total = livingField(state, foeId).reduce((sum, target) => sum + estimate(target).amount, 0);
       return { amount: total, affinity: 'neutral' };
     }
     const target = targetOf();
     if (!target) return { amount: 0, affinity: 'neutral' };
-    return estimateDamage(attacker, target, { power: card.effect.power, damageType: card.effect.damageType, category }, difficulty);
+    return estimate(target);
   }
 
   return { amount: 0, affinity: 'neutral' };
+}
+
+/** Flat Special damage: weakness, resist and guard, and nothing else. */
+function estimateFlat(defender, effect, difficulty) {
+  const affinity = perceivedAffinity(defender, effect.damageType, difficulty);
+  const affinityMult = affinity === 'weak' ? CONFIG.WEAK_MULT : affinity === 'resist' ? CONFIG.RESIST_MULT : 1;
+  const guardMult = defender.guarding ? CONFIG.GUARD_MULT : 1;
+  return { amount: Math.max(0, Math.round((effect.amount ?? effect.power ?? 0) * affinityMult * guardMult)), affinity };
 }
 
 /* ------------------------------------------------------------------ *
@@ -182,12 +228,13 @@ function scoreAction(state, action, difficulty) {
 
     case 'ATTACK':
     case 'USE_SKILL':
+    case 'SHOWTIME':
     case 'PLAY_SPECIAL': {
-      const { amount, affinity, instakill } = actionDamage(state, action, difficulty);
+      const { amount, affinity, technical } = actionDamage(state, action, difficulty);
 
       if (action.type === 'USE_SKILL') {
         const skill = personaSkills(state, active).find((s) => s.id === action.skillId);
-        if (skill && skill.effect.kind !== 'damage' && skill.effect.kind !== 'instakill') {
+        if (skill && skill.effect.kind !== 'damage') {
           return scoreSupportEffect(state, action, skill.effect, difficulty, skill);
         }
       }
@@ -200,16 +247,28 @@ function scoreAction(state, action, difficulty) {
       let score = amount;
 
       const target = (action.targetUid && findPersona(state, action.targetUid)) || enemyActive;
-      if (target && amount >= target.hp) score += 60; // finishing blow
+      // A finishing blow, unless Endure is still holding — in which case this
+      // is an ordinary hit that happens to leave them on 1 HP.
+      if (target && amount >= target.hp && !enduresFatalBlow(target)) score += 60;
 
-      // A known weakness means a One More: an entire extra action.
-      if (affinity === 'weak' && !turn?.oneMoreUsed && !instakill) {
-        score += brutal ? 55 : 35;
+      // A knockdown is only worth a One More when it lands on a STANDING
+      // Persona: a killing blow, a guard, a Stalwart and an already-downed
+      // target all pay nothing. A Shock Technical knocks down in its own right,
+      // so it earns the same bonus without needing a weakness. The cap applies
+      // unless the attacker chains.
+      const knocksDown = affinity === 'weak' || technical === 'shock';
+      if (knocksDown && target && oneMoreAvailable(state, active, turn)) {
+        const wouldKnockDown =
+          !target.knockedDown && !target.guarding && amount < target.hp && !preventsKnockdown(target);
+        if (wouldKnockDown) score += brutal ? 55 : 35;
       }
       if (affinity === 'resist') score -= 10;
 
-      // Don't burn a big-ticket Special on a target that is nearly dead.
-      if (action.type === 'PLAY_SPECIAL' && target && target.hp < amount * 0.4) score -= 25;
+      // Don't burn a big-ticket Special or a once-a-match Showtime on a target
+      // that is nearly dead.
+      if ((action.type === 'PLAY_SPECIAL' || action.type === 'SHOWTIME') && target && target.hp < amount * 0.4) {
+        score -= 25;
+      }
 
       return score;
     }
@@ -250,23 +309,11 @@ function scoreAction(state, action, difficulty) {
       return score;
     }
 
-    case 'FUSE': {
-      if (!brutal && difficulty !== 'medium') return 0;
-      const result = getPersona(action.result);
-      const parents = action.sacrifices.map((sac) => {
-        const persona = findPersona(state, sac.uid);
-        if (persona) return getPersona(persona.cardId);
-        const entry = state.players[playerId].hand.find((c) => c.uid === sac.uid);
-        return entry ? getPersona(entry.cardId) : null;
-      });
-      const parentPower = parents.reduce((sum, card) => sum + (card ? card.strength + card.magic + card.endurance : 0), 0);
-      const resultPower = result.strength + result.magic + result.endurance;
-      // Two bodies become one, so it has to be a clear upgrade to be worth it.
-      const gain = resultPower - parentPower / 1.6;
-      if (gain <= 0) return 0;
-      if (livingField(state, playerId).length <= 2) return 0; // don't gut a thin board
-      return brutal ? gain * 1.4 : gain * 0.6;
-    }
+    case 'FUSE':
+      return scoreFusion(state, action, difficulty);
+
+    case 'GALLOWS':
+      return scoreGallows(state, action, difficulty);
 
     case 'GUARD': {
       if (!active) return 0;
@@ -286,6 +333,115 @@ function scoreAction(state, action, difficulty) {
   }
 }
 
+/**
+ * What a fusion is worth.
+ *
+ * Two bodies become one, so the question is never "is the result strong?" but
+ * "is it stronger than what it costs me?". The costs differ sharply by zone: a
+ * Persona on the field is board presence you are giving up, while one in hand
+ * is a card you have not paid for yet — feeding the hand copy is close to free.
+ * Sacrificial Lamb material is cheaper still, and pays the result extra levels.
+ */
+function scoreFusion(state, action, difficulty) {
+  const playerId = action.player;
+  const brutal = difficulty === 'brutal';
+  if (!brutal && difficulty !== 'medium') return 0;
+
+  const result = getPersona(action.result);
+  const own = livingField(state, playerId);
+  const active = getActive(state, playerId);
+  const enemyActive = getActive(state, opponentOf(playerId));
+
+  const parents = action.sacrifices.map((sac) => {
+    const persona = findPersona(state, sac.uid);
+    if (persona) return { card: getPersona(persona.cardId), persona, zone: 'field' };
+    const entry = state.players[playerId].hand.find((c) => c.uid === sac.uid);
+    return entry ? { card: getPersona(entry.cardId), persona: null, zone: 'hand' } : null;
+  });
+  if (parents.some((p) => !p)) return 0;
+
+  const fieldParents = parents.filter((p) => p.zone === 'field').length;
+  // Never fuse away the last of your board, and never fuse the Persona that is
+  // currently holding the line if there is nothing to put in its place.
+  if (own.length - fieldParents < 1) return 0;
+  if (own.length <= 2 && fieldParents > 0) return 0;
+
+  // An immediate lethal threat outranks any amount of long-term value.
+  if (active && enemyActive) {
+    const incoming = bestDamageFrom(state, enemyActive, active, difficulty);
+    if (incoming >= active.hp && own.length - fieldParents <= 1) return 0;
+  }
+
+  const power = (card) => card.strength + card.magic + card.endurance;
+  const bonusLevels = fusionLevelBonus(parents.map((p) => p.persona ?? { cardId: p.card.id, passive: p.card.passive }));
+
+  const resultValue =
+    power(result) +
+    (result.level + bonusLevels) * 0.8 +
+    result.skills.length * 4 +
+    (result.passive ? 8 : 0);
+
+  const cost = parents.reduce((sum, parent) => {
+    const lamb = parent.card.passive === 'sacrificial-lamb';
+    if (parent.zone === 'hand') return sum + power(parent.card) * (lamb ? 0.1 : 0.25);
+    // Losing a body off the field costs presence as well as stats.
+    const presence = own.length <= 4 ? 34 : 18;
+    const level = parent.persona ? parent.persona.level : parent.card.level;
+    return sum + (power(parent.card) * 0.7 + level * 0.5 + presence) * (lamb ? 0.55 : 1);
+  }, 0);
+
+  const gain = resultValue - cost;
+  if (gain <= 0) return 0;
+  return brutal ? gain * 1.6 : gain * 0.8;
+}
+
+/**
+ * What feeding one Persona to another is worth.
+ *
+ * The same trade as a fusion, one size down: a body for a level. It is worth
+ * doing with a card in hand that will never be worth playing, and almost never
+ * worth doing with a body already holding the line — so the cost of field food
+ * carries the board-presence penalty and hand food barely costs anything.
+ */
+function scoreGallows(state, action, difficulty) {
+  const brutal = difficulty === 'brutal';
+  if (!brutal && difficulty !== 'medium') return 0;
+
+  const playerId = action.player;
+  const eater = findPersona(state, action.eaterUid);
+  if (!eater) return 0;
+
+  const own = livingField(state, playerId);
+  const fromField = action.food.zone === 'field';
+  if (fromField && own.length <= 2) return 0; // never eat your way to an empty board
+
+  const card = getPersona(action.foodCardId);
+  const foodPersona = fromField ? findPersona(state, action.food.uid) : null;
+  const level = foodPersona ? foodPersona.level : card.level;
+  const lamb = (foodPersona ? passiveOf(foodPersona) : card.passive) === 'sacrificial-lamb';
+
+  // The tier and its payout already rode in on the action, so the bot values
+  // exactly what the rules will hand it.
+  const LEVEL_VALUE = 16;
+  const gain = action.nourishing
+    ? action.levels * LEVEL_VALUE
+    : Math.min(eater.maxHp - eater.hp, action.heal) * 0.6;
+
+  const power = (c) => c.strength + c.magic + c.endurance;
+  let cost = fromField
+    ? (power(card) * 0.5 + level * 0.5 + (own.length <= 4 ? 30 : 16)) * (lamb ? 0.5 : 1)
+    : power(card) * (lamb ? 0.08 : 0.2);
+
+  // A junk meal costs no action, so the only thing it spends is the card — and
+  // if the eater is at full HP there is nothing to weigh against that but the
+  // tidiness of the board, which the bot does not care about.
+  if (!action.usesAction) cost *= 0.35;
+
+  const value = gain - cost;
+  if (value <= 0) return 0;
+  return brutal ? value * 1.3 : value * 0.7;
+}
+
 /** Best damage a Persona could do to a target right now, for comparisons. */
 function bestDamageFrom(state, attacker, defender, difficulty) {
   let best = estimateDamage(attacker, defender, { power: CONFIG.BASIC_ATTACK_POWER, damageType: 'phys', category: 'phys' }, difficulty).amount;
@@ -294,7 +450,15 @@ function bestDamageFrom(state, attacker, defender, difficulty) {
     const cat = skillCategory(skill.type);
     const affordable = cat === 'phys' ? attacker.hp > skill.hpCost : attacker.sp >= (skill.spCost ?? 0);
     if (!affordable) continue;
-    best = Math.max(best, estimateDamage(attacker, defender, { power: skill.power, damageType: skill.type, category: cat }, difficulty).amount);
+    best = Math.max(
+      best,
+      estimateDamage(
+        attacker,
+        defender,
+        { power: skill.power, damageType: skill.type, category: cat, execute: skill.effect.execute },
+        difficulty
+      ).amount
+    );
   }
   return best;
 }
@@ -382,6 +546,105 @@ function scoreSupportEffect(state, action, effect, difficulty, source) {
       return 0;
     }
 
+    /**
+     * A Skill Card is worth exactly what it adds that the student did not
+     * already have — which is why the bot will happily put a Fire skill on a
+     * Persona with none and ignore the same card for one that already knows it.
+     */
+    case 'teachSkill': {
+      const student = action.targetUid ? findPersona(state, action.targetUid) : null;
+      const taught = getSkillDefinition(effect.skillId);
+      if (!student || !taught) return 0;
+      if (personaSkills(state, student).some((s) => s.id === taught.id)) return 0;
+
+      if (taught.effect.kind !== 'damage') return student.uid === active?.uid ? 14 : 6;
+      if (!enemyActive) return 8;
+
+      const cat = skillCategory(taught.type);
+      const before = bestDamageFrom(state, student, enemyActive, difficulty);
+      const after = estimateDamage(
+        student,
+        enemyActive,
+        { power: taught.power, damageType: taught.type, category: cat, execute: taught.effect.execute },
+        difficulty
+      ).amount;
+      // A coverage patch on the Persona actually fighting is worth far more
+      // than the same card parked on the bench.
+      return Math.max(4, (after - before) * (student.uid === active?.uid ? 0.8 : 0.35));
+    }
+
+    /**
+     * A guaranteed ailment is only worth what the follow-up is worth, so this
+     * prices the Technical it sets up rather than the ailment itself.
+     *
+     * Shock is the immediate one: it costs no action, any physical hit cashes
+     * it in — and the basic attack is always a physical hit — and the Technical
+     * knocks them down, which is a One More. Burn is the patient one: half a
+     * Technical next turn, plus its ticks in the meantime.
+     */
+    case 'inflict': {
+      if (!active || !enemyActive) return 0;
+      const wanted = action.ailment ?? effect.ailments[0];
+      if (hasAilment(enemyActive, wanted)) return 1; // just refreshing the timer
+
+      const follow = bestDamageFrom(state, active, enemyActive, difficulty);
+      const bonus = follow * (CONFIG.TECHNICAL_MULT - 1);
+
+      if (wanted === 'shock') {
+        const knocksDown =
+          oneMoreAvailable(state, active, turn) &&
+          !enemyActive.knockedDown &&
+          !enemyActive.guarding &&
+          !preventsKnockdown(enemyActive);
+        // The 12 is their lost turn: a shocked Persona cannot act at all.
+        return bonus + (knocksDown ? 30 : 0) + 12;
+      }
+      return bonus * 0.5 + CONFIG.BURN_DAMAGE * CONFIG.BURN_DURATION * 0.5;
+    }
+
+    /**
+     * Twist of Fate: worth exactly the damage it unlocks.
+     *
+     * Score the named element by what our own board could actually do with it.
+     * A weakness we cannot hit is worth nothing, so the bot naturally names the
+     * element it has the most and the biggest skills in — which is also the
+     * only sensible way to play the card.
+     */
+    case 'twistFate': {
+      if (!active || !enemyActive) return 0;
+      const element = action.element;
+      if (!element) return 0;
+
+      // The best skill we hold in that element, across the whole living field:
+      // a weakness lasts, so it is worth opening for a Persona on the bench.
+      let best = 0;
+      for (const persona of livingField(state, playerId)) {
+        for (const skill of personaSkills(state, persona)) {
+          if (skill.type !== element || skill.effect.kind !== 'damage') continue;
+          best = Math.max(best, skill.power ?? 0);
+        }
+      }
+      if (element === 'phys') best = Math.max(best, CONFIG.BASIC_ATTACK_POWER);
+      if (!best) return 0; // naming something we cannot hit is a wasted card
+
+      // Roughly what the extra multiplier is worth, plus the One More a
+      // weakness hit tends to buy.
+      const gain = best * (CONFIG.WEAK_MULT - 1) * 0.5;
+      return gain + (oneMoreAvailable(state, active, turn) ? 20 : 0);
+    }
+
+    case 'drainSp': {
+      const target = (action.targetUid && findPersona(state, action.targetUid)) || enemyActive;
+      if (!active || !target) return 0;
+      const stolen = Math.min(effect.amount, target.sp);
+      if (stolen <= 0) return 0;
+      const gained = Math.min(stolen, active.maxSp - active.sp);
+      // Denial is worth something on its own, but only when the SP was going to
+      // buy them anything. Filling your own pool is what makes it a real play.
+      const denial = target.sp - stolen < 6 ? stolen * 0.8 : stolen * 0.3;
+      return gained * 1.2 + denial;
+    }
+
     case 'transferSp': {
       const from = findPersona(state, action.fromUid);
       const to = findPersona(state, action.toUid);
@@ -389,6 +652,142 @@ function scoreSupportEffect(state, action, effect, difficulty, source) {
       if (to.uid !== active?.uid) return 0; // only feed the Persona that is fighting
       const moved = Math.min(effect.amount, from.sp, to.maxSp - to.sp);
       return to.sp < 10 ? moved * 1.2 : moved * 0.2;
+    }
+
+    /* --- Strategic Specials ------------------------------------------- */
+
+    case 'guaranteedDraw':
+      // Worth most when the board is thin and a body is what you need.
+      return livingField(state, playerId).length <= 2 ? 26 : 8;
+
+    case 'fateFetch': {
+      // A body that answers what is standing opposite you is worth more than
+      // just any body, and worth most when you are behind — which is also the
+      // point at which the card stops needing you to have found the weakness.
+      if (!enemyActive) return 0;
+      return koDeficit(state, playerId) >= CONFIG.WHIMS_DEFICIT ? 24 : 14;
+    }
+
+    case 'providence': {
+      const top = action.providenceTop ?? [];
+      const picked = action.discardIndexes ?? [];
+      if (!top.length) return 0;
+      // Throwing away a weak card is worth something and throwing away a strong
+      // one costs, on the same 0..1 scale Momentum Draw weights draws by. That
+      // makes "discard nothing" score zero, which is exactly right.
+      let value = 0;
+      for (const index of picked) value += (0.45 - cardQuality(top[index])) * 22;
+      return Math.max(0, value);
+    }
+
+    case 'growth': {
+      const bench = livingField(state, playerId).filter((p) => p.uid !== active?.uid);
+      return bench.length * (brutal ? 9 : 5);
+    }
+
+    case 'forceSwitch': {
+      if (!enemyActive) return 0;
+      const bench = livingField(state, foeId).filter((p) => p.uid !== enemyActive.uid && !p.knockedDown);
+      if (!bench.length) return 0;
+      // Dragging out a Persona you cannot hurt is the whole point.
+      const now = active ? bestDamageFrom(state, active, enemyActive, difficulty) : 0;
+      const after = active ? Math.max(...bench.map((p) => bestDamageFrom(state, active, p, difficulty))) : 0;
+      return Math.max(brutal ? 10 : 4, (after - now) * (brutal ? 0.8 : 0.3));
+    }
+
+    case 'reveal': {
+      // Knowledge the bot already has on Brutal; genuinely useful below that.
+      if (!enemyActive) return 0;
+      if (brutal && !enemyActive.rewritten) return 3;
+      const { weaknesses, resists } = affinitiesOf(enemyActive);
+      const unknown = [...weaknesses, ...resists].filter((t) => !enemyActive.revealedTypes.includes(t));
+      return unknown.length * 12;
+    }
+
+    case 'peekHand':
+      // The bot cannot act on hidden information it was never given, so this is
+      // cheap filler rather than a play it should build around.
+      return 2;
+
+    case 'recall': {
+      const target = action.targetUid ? findPersona(state, action.targetUid) : null;
+      if (!target) return 0;
+      const card = getPersona(target.cardId);
+      const power = (card.strength + card.magic + card.endurance) / 3;
+      // Getting a body back matters most when there is barely a board left.
+      return (livingField(state, playerId).length <= 2 ? 55 : 20) + power / 2;
+    }
+
+    case 'swapHpSp': {
+      if (!active) return 0;
+      const wouldHp = Math.max(1, Math.min(active.maxHp, active.sp));
+      const wouldSp = Math.min(active.maxSp, active.hp);
+      // Only a good trade if it moves the resource you are actually short of.
+      const hpGain = wouldHp - active.hp;
+      const spGain = wouldSp - active.sp;
+      if (hpGain <= 0 && spGain <= 0) return 0;
+      const hpUrgency = hpRatio(active) < HEAL_THRESHOLD ? 1.4 : 0.3;
+      return Math.max(0, hpGain * hpUrgency + Math.max(0, spGain) * 0.25);
+    }
+
+    case 'ward': {
+      // Total immunity, at the price of a whole turn of doing nothing. Only
+      // worth it when the alternative is losing the Persona outright.
+      if (!active || active.warded || !enemyActive) return 0;
+      const incoming = bestDamageFrom(state, enemyActive, active, difficulty);
+      if (incoming < active.hp) return 0;
+      return brutal ? 45 : 20;
+    }
+
+    case 'darkHour': {
+      // Symmetric, so it only favours whoever hits harder right now.
+      if (!active || !enemyActive) return 0;
+      const mine = bestDamageFrom(state, active, enemyActive, difficulty);
+      const theirs = bestDamageFrom(state, enemyActive, active, difficulty);
+      return mine > theirs ? (brutal ? (mine - theirs) * 0.5 : 4) : 0;
+    }
+
+    case 'phantomStrike': {
+      if (!active || !enemyActive) return 0;
+      const best = bestDamageFrom(state, active, enemyActive, difficulty);
+      return brutal ? best * 0.5 : best * 0.2;
+    }
+
+    case 'swapFree': {
+      const target = action.targetUid ? findPersona(state, action.targetUid) : null;
+      if (!target || !enemyActive) return 0;
+      const now = active ? bestDamageFrom(state, active, enemyActive, difficulty) : 0;
+      const after = bestDamageFrom(state, target, enemyActive, difficulty);
+      // A free swap is pure upside when it improves the matchup.
+      return Math.max(2, (after - now) * (brutal ? 0.7 : 0.3));
+    }
+
+    case 'shuffleTime':
+      return 12;
+
+    case 'evolve': {
+      if (!active) return 0;
+      const known = new Set(personaSkills(state, active).map((s) => s.id));
+      const next = getPersona(active.cardId).skills.filter((s) => !known.has(s.id))[0];
+      return next ? (brutal ? 26 : 14) : 0;
+    }
+
+    case 'mimic': {
+      const skill = mimicableSkill(state, playerId);
+      if (!skill || !active) return 0;
+      if (skill.effect.kind === 'damage') {
+        const target = enemyActive;
+        if (!target) return 0;
+        return estimateDamage(
+          active,
+          target,
+          { power: skill.power, damageType: skill.type, category: skillCategory(skill.type), execute: skill.effect.execute },
+          difficulty
+        ).amount;
+      }
+      // A free cast of someone else's support skill is worth roughly what it
+      // would be worth cast normally, minus the cost you did not pay.
+      return scoreSupportEffect(state, action, skill.effect, difficulty, skill) * 0.9;
     }
 
     default:
@@ -439,6 +838,19 @@ function pickChaotic(state, actions, rng) {
   return [actions[actions.length - 1], next];
 }
 
+/**
+ * Actions a bot must never take, at any difficulty.
+ *
+ * Resigning is legal on your turn and therefore appears in `getLegalActions`,
+ * which is also the bot's move list. A Chaos bot picking uniformly from that
+ * list would concede roughly one turn in twenty, so it is filtered out here
+ * rather than being given a very negative score — a score can be tied with.
+ */
+const FORBIDDEN_TYPES = new Set(['RESIGN']);
+
+const botLegalActions = (state, playerId) =>
+  getLegalActions(state, playerId).filter((action) => !FORBIDDEN_TYPES.has(action.type));
+
 /** Actions that give up the turn rather than doing something with it. */
 const PASSIVE_TYPES = new Set(['PASS', 'END_TURN']);
 
@@ -455,7 +867,7 @@ const endTurnFrom = (legal, fallback) => legal.find((a) => a.type === 'END_TURN'
  * this each bot turn when the ?debugBot flag is set.
  */
 export function explainBotActions(state, playerId, difficulty) {
-  return getLegalActions(state, playerId)
+  return botLegalActions(state, playerId)
     .map((action) => ({ action, score: Number(scoreAction(state, action, difficulty).toFixed(2)) }))
     .sort((a, b) => b.score - a.score);
 }
@@ -471,7 +883,7 @@ export function explainBotActions(state, playerId, difficulty) {
  * @returns {[object|null, object]} the action (null if there is nothing to do) and the next RNG
  */
 export function chooseBotAction(state, playerId, difficulty, rng) {
-  const legal = getLegalActions(state, playerId);
+  const legal = botLegalActions(state, playerId);
   if (!legal.length) return [null, rng];
   if (legal.length === 1) return [legal[0], rng];
 

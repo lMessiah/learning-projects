@@ -25,10 +25,17 @@
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 
+/* A plain card is a display object, so it only lifts. Cards you can actually
+ * pick carry `card--clickable` and get the hover ring from select.css. */
 .card:hover {
   transform: translateY(-3px);
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--arcana);
 }
+
+/* Knocked down / knocked out, wherever a full card is shown rather than a
+ * board tile. These classes were emitted by cardView.js and styled nowhere. */
+.card--down { transform: rotate(2deg); filter: saturate(0.7); }
+.card--ko { opacity: 0.55; filter: grayscale(0.85); }
 
 /* ---------- Header ---------- */
 
@@ -339,6 +346,57 @@
   white-space: nowrap;
 }
 
+.skill__keyword {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--arcana) 55%, transparent);
+  border-radius: 3px;
+  color: var(--arcana);
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+/* ---------- Passive ---------- */
+
+.card__passive {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--arcana) 10%, transparent);
+  font-size: 10.5px;
+}
+
+.card__passive-tag {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, var(--arcana) 55%, transparent);
+  border-radius: 3px;
+  color: var(--arcana);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+}
+
+.card__passive-name {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.card__passive-desc {
+  flex: 1 1 100%;
+  color: var(--ink-dim);
+  line-height: 1.4;
+}
+
+.card--compact .card__passive {
+  padding: 4px 8px;
+  font-size: 9.5px;
+}
+
 /* ---------- Footer ---------- */
 
 .card__growth {
@@ -396,7 +454,7 @@
   background: linear-gradient(100deg, rgba(224, 27, 50, 0.5), transparent);
 }
 
-/* ---------- Compact variant (used from Phase 3 onward) ---------- */
+/* ---------- Compact variant (bench tiles, hand rows, pickers) ---------- */
 
 .card--compact {
   width: 150px;
@@ -408,4 +466,26 @@
 
 .card--compact .card__symbol {
   font-size: 26px;
+}
+
+.card__tag--exclusive {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  color: var(--accent);
+}
+
+.card__tag--p3 { --accent: #6f7fd8; }
+.card__tag--p4 { --accent: #d8c04a; }
+.card__tag--p5 { --accent: #d8484f; }
+
+/* A Persona whose weaknesses and resists were rewritten mid-match. The printed
+ * card is no longer the truth, so it says so on its own face. */
+.card__rewritten {
+  margin-top: 6px;
+  padding: 3px 8px;
+  border: 1px dashed var(--gold);
+  border-radius: 4px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--gold);
+  text-align: center;
 }

@@ -10,5 +10,12 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.js'],
+    // The botMatch files play whole matches through a real jsdom board and are
+    // by far the heaviest thing here (see tests/support/fullMatch.js). Left to
+    // itself vitest opens one worker per core, and on a modest machine a worker
+    // gets OOM-killed mid-run — which surfaces as "Worker exited unexpectedly"
+    // and a SILENTLY SKIPPED file rather than a failure. Capping the pool keeps
+    // the peak inside a small box while staying comfortably parallel.
+    maxWorkers: 2,
   },
 });

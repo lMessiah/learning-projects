@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * Phase 6: themes, persisted settings, and the play assists that read them.
+ * Themes, persisted settings, and the play assists that read them.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createMatch, CONFIG } from '../src/engine/index.js';
@@ -18,6 +18,8 @@ import {
 } from '../src/ui/settings.js';
 import { THEMES, applyTheme, applyThemeFor, themeForDeck, resolveTheme, setThemeOverride } from '../src/ui/theme.js';
 import { renderSettings } from '../src/ui/settingsView.js';
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { getProfileName, setProfileName } from '../src/ui/profile.js';
 
 let root;
@@ -48,6 +50,46 @@ afterEach(() => {
   document.body.classList.remove('board-mode');
   vi.useRealTimers();
 });
+
+describe('tab identity', () => {
+  // Paths from the project root: under jsdom `import.meta.url` is not a file URL.
+  const fromRoot = (relative) => resolve(process.cwd(), relative);
+  const html = readFileSync(fromRoot('index.html'), 'utf8');
+
+  it('names the game and marks it as a fan project', () => {
+    expect(html).toMatch(/<title>Persona Card Game/);
+    expect(html).toMatch(/Unofficial/i);
+  });
+
+  it('ships an SVG favicon with a PNG fallback and a theme colour', () => {
+    expect(html).toMatch(/rel="icon"[^>]*type="image\/svg\+xml"/);
+    expect(html).toMatch(/rel="icon"[^>]*type="image\/png"[^>]*sizes="32x32"/);
+    expect(html).toMatch(/name="theme-color"/);
+    for (const file of ['favicon.svg', 'favicon-32.png', 'apple-touch-icon.png']) {
+      expect(existsSync(fromRoot(`public/${file}`)), file).toBe(true);
+    }
+  });
+
+  it('draws the icon from primitives — no embedded or external artwork', () => {
+    const svg = readFileSync(fromRoot('public/favicon.svg'), 'utf8');
+    expect(svg).not.toMatch(/<image|xlink:href|data:image|url\(/i);
+    expect(svg).toMatch(/<rect|<path|<circle/);
+  });
+
+  it('keeps theme-color in step with the theme', () => {
+    const meta = document.createElement('meta');
+    meta.setAttribute('name', 'theme-color');
+    meta.setAttribute('content', '#000000');
+    document.head.appendChild(meta);
+
+    for (const theme of THEMES) {
+      applyTheme(theme.id);
+      expect(meta.getAttribute('content')).toBe(theme.swatch[0]);
+    }
+    meta.remove();
+  });
+});
+
 
 describe('settings storage', () => {
   it('starts from the documented defaults', () => {

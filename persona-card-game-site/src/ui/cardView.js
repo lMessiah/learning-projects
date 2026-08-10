@@ -1,26 +1,37 @@
 /**
  * Card renderer — placeholder CSS art only.
  *
- * Returns DOM elements rather than strings so later phases can attach click
+ * Returns DOM elements rather than strings so callers can attach click
  * handlers directly. Pure presentation: it reads a card definition (and an
  * optional live in-match `instance`) and never mutates game state.
  *
  * Options:
- *   compact         - smaller card, skills hidden (bench/hand rows in later phases)
+ *   compact         - smaller card, skills hidden (bench tiles, hand rows, pickers)
  *   revealed        - Set/array of damage types revealed to the viewer; when
  *                     provided, unrevealed weaknesses/resists render as "?"
  *   showAllHidden   - force-reveal everything (gallery, own cards)
  *   instance        - live persona instance { level, hp, sp, ... } to display
  *                     instead of the printed values
+ *   selected        - chosen: strong themed ring (see styles/select.css)
+ *   targetable      - a legal choice right now: pulsing ring
+ *   disabled        - not a legal choice: dimmed
  */
 import { arcanaStyle, typeIcon, typeLabel, CARD_TYPE_STYLE } from './arcana.js';
 import { getSkillDefinition } from '../data/cards.js';
+import { passiveDefinition } from '../engine/passives.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text != null) node.textContent = text;
   return node;
+}
+
+/** A card only one game's deck can play wears its flavour on its face. */
+function exclusiveBadge(flavour) {
+  const badge = el('span', `card__tag card__tag--exclusive card__tag--${flavour}`, flavour.toUpperCase());
+  badge.title = `Exclusive to the ${flavour.toUpperCase()} deck — no other flavour can run it.`;
+  return badge;
 }
 
 function costLabel(skill) {
@@ -31,8 +42,8 @@ function costLabel(skill) {
 
 function powerLabel(skill) {
   const { effect } = skill;
-  if (effect.kind === 'instakill') return `${Math.round(effect.chance * 100)}% KO`;
   if (effect.kind === 'heal') return effect.amount >= 9999 ? 'Full' : `+${effect.amount}`;
+  if (effect.kind === 'drainSp') return `${effect.amount} SP`;
   if (effect.kind === 'buff') return effect.direction === 'up' ? '+40%' : '−40%';
   if (!skill.power) return '—';
   return String(skill.power);
@@ -45,6 +56,13 @@ function renderSkillRow(skill, unlocked, badge = null) {
   const main = el('div', 'skill__main');
   const top = el('div', 'skill__top');
   top.appendChild(el('span', 'skill__name', skill.name));
+  // Keywords sit next to the name so they read as part of the skill, not as
+  // fine print buried in the description.
+  if (skill.alacrity) {
+    const tag = el('span', 'skill__keyword', 'ALACRITY');
+    tag.title = 'If this knocks the target down, your Persona change this turn is refunded.';
+    top.appendChild(tag);
+  }
   top.appendChild(el('span', 'skill__lv', badge || `Lv${skill.unlockLevel}`));
   main.appendChild(top);
   main.appendChild(el('div', 'skill__desc', skill.description));
@@ -58,7 +76,19 @@ function renderSkillRow(skill, unlocked, badge = null) {
   return row;
 }
 
+/**
+ * The weakness/resist block.
+ *
+ * A live Persona can have had its chart rewritten (Turn of the Moon and
+ * friends), in which case the instance is the truth and the printed card is
+ * not — so the instance wins whenever there is one.
+ */
 function renderAffinities(persona, opts) {
+  const inst = opts.instance;
+  const chart = {
+    weaknesses: inst?.weaknesses ?? persona.weaknesses,
+    resists: inst?.resists ?? persona.resists,
+  };
   const wrap = el('div', 'card__affinities');
   const revealAll = opts.showAllHidden || !opts.revealed;
   const revealed = opts.revealed ? new Set(opts.revealed) : null;
@@ -81,8 +111,13 @@ function renderAffinities(persona, opts) {
     return row;
   };
 
-  wrap.appendChild(line('WEAK', persona.weaknesses, 'weak'));
-  wrap.appendChild(line('RESIST', persona.resists, 'resist'));
+  wrap.appendChild(line('WEAK', chart.weaknesses, 'weak'));
+  wrap.appendChild(line('RESIST', chart.resists, 'resist'));
+  if (inst?.rewritten) {
+    const note = el('div', 'card__rewritten', 'REWRITTEN — this card no longer describes it');
+    note.title = 'A rewrite Special replaced this Persona\'s weaknesses and resists.';
+    wrap.appendChild(note);
+  }
   return wrap;
 }
 
@@ -166,6 +201,7 @@ function renderPersonaCard(persona, opts) {
   if (inst?.ko) classes.push('card--ko');
   if (opts.selected) classes.push('card--selected');
   if (opts.targetable) classes.push('card--targetable');
+  if (opts.disabled) classes.push('card--disabled');
 
   const card = el('article', classes.join(' '));
   card.style.setProperty('--arcana', style.color);
@@ -181,6 +217,7 @@ function renderPersonaCard(persona, opts) {
   titles.appendChild(el('span', 'card__arcana', persona.arcana));
   header.appendChild(titles);
   if (persona.fusionOnly) header.appendChild(el('span', 'card__tag card__tag--fusion', 'FUSION'));
+  if (persona.exclusive) header.appendChild(exclusiveBadge(persona.exclusive));
   card.appendChild(header);
 
   // Placeholder "art": arcana symbol on a CSS gradient. No real artwork anywhere.
@@ -208,6 +245,23 @@ function renderPersonaCard(persona, opts) {
   card.appendChild(stats);
 
   card.appendChild(renderAffinities(persona, opts));
+
+  // The passive is always on and can decide a whole exchange, so it sits with
+  // the affinities rather than being buried in the skill list. A fusion can
+  // swap it, so the instance wins over the printed one.
+  // The card definition is already in hand, so read the instance override
+  // directly rather than looking the card up again.
+  const passiveId = (inst?.passive !== undefined ? inst.passive : persona.passive) || null;
+  const passive = passiveId ? passiveDefinition(passiveId) : null;
+  if (passive) {
+    const row = el('div', 'card__passive');
+    row.title = passive.description;
+    row.appendChild(el('span', 'card__passive-tag', 'PASSIVE'));
+    row.appendChild(el('span', 'card__passive-name', passive.name));
+    if (!opts.compact) row.appendChild(el('span', 'card__passive-desc', passive.description));
+    if (passiveId !== (persona.passive || null)) row.appendChild(el('span', 'card__passive-tag', 'INHERITED'));
+    card.appendChild(row);
+  }
 
   if (inst) {
     const status = renderStatus(inst);
@@ -267,6 +321,7 @@ function renderSupportCard(cardDef, opts) {
   titles.appendChild(el('h3', 'card__name', cardDef.name));
   titles.appendChild(el('span', 'card__arcana', kind.label));
   header.appendChild(titles);
+  if (cardDef.exclusive) header.appendChild(exclusiveBadge(cardDef.exclusive));
   card.appendChild(header);
 
   const art = el('div', 'card__art card__art--support');

@@ -2,8 +2,10 @@
  * Vs Bot setup: pick your deck and the bot's difficulty, then start the match.
  */
 import { DECKS } from '../../data/cards.js';
+import { ARCHETYPES } from '../../data/archetypes.js';
 import { DIFFICULTIES } from '../../engine/bot.js';
 import { getProfileName } from '../profile.js';
+import { renderArchetypeRow, ARCHETYPE_HEADING, ARCHETYPE_NOTE } from '../archetypeRow.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -15,7 +17,7 @@ function el(tag, className, text) {
 const DECK_SYMBOL = { p3: '🌙', p4: '🌫️', p5: '🎭' };
 
 export function renderBotSetup(root, { onStart, onExit }) {
-  const choice = { deckId: DECKS[0].id, difficulty: 'medium' };
+  const choice = { deckId: DECKS[0].id, archetype: ARCHETYPES[0].id, difficulty: 'medium' };
   root.innerHTML = '';
 
   const topbar = el('div', 'topbar');
@@ -41,7 +43,7 @@ export function renderBotSetup(root, { onStart, onExit }) {
     node.appendChild(el('span', 'setup-card__icon', DECK_SYMBOL[deck.id] || '🃏'));
     node.appendChild(el('span', 'setup-card__title', deck.name));
     node.appendChild(el('span', 'setup-card__tag', deck.game.toUpperCase()));
-    node.appendChild(el('span', 'setup-card__desc', deck.tagline));
+    node.appendChild(el('span', 'setup-card__desc', deck.playstyle || deck.tagline));
     node.addEventListener('click', () => {
       choice.deckId = deck.id;
       for (const [id, btn] of deckButtons) btn.classList.toggle('setup-card--on', id === deck.id);
@@ -51,6 +53,11 @@ export function renderBotSetup(root, { onStart, onExit }) {
   }
   deckButtons.get(choice.deckId).classList.add('setup-card--on');
   wrap.appendChild(deckRow);
+
+  // --- Archetype --------------------------------------------------------
+  wrap.appendChild(el('h2', 'setup__heading', ARCHETYPE_HEADING));
+  wrap.appendChild(renderArchetypeRow({ value: choice.archetype, onPick: (id) => { choice.archetype = id; } }));
+  wrap.appendChild(el('p', 'setup__note', ARCHETYPE_NOTE));
 
   // --- Difficulty -------------------------------------------------------
   wrap.appendChild(el('h2', 'setup__heading', 'Choose a difficulty'));

@@ -1,5 +1,5 @@
 /**
- * Phase 4 — Local multiplayer (hot-seat).
+ * Local multiplayer (hot-seat).
  *
  * Two players share one device. Between seats a full-screen privacy gate goes
  * up; while it is up the board is **unmounted entirely**, not merely covered,
@@ -7,6 +7,8 @@
  */
 import { createMatch } from '../../engine/index.js';
 import { DECKS } from '../../data/cards.js';
+import { ARCHETYPES } from '../../data/archetypes.js';
+import { renderArchetypeRow, ARCHETYPE_HEADING } from '../archetypeRow.js';
 import { getProfileName } from '../profile.js';
 import { createController } from './controller.js';
 import { mountBoard } from './board.js';
@@ -52,8 +54,8 @@ export function seatToAct(state) {
 
 function renderSetup(root, { onStart, onExit }) {
   const seats = [
-    { name: getProfileName(), deckId: DECKS[0].id },
-    { name: 'Player 2', deckId: DECKS[1].id },
+    { name: getProfileName(), deckId: DECKS[0].id, archetype: ARCHETYPES[0].id },
+    { name: 'Player 2', deckId: DECKS[1].id, archetype: ARCHETYPES[1].id },
   ];
   root.innerHTML = '';
 
@@ -95,7 +97,7 @@ function renderSetup(root, { onStart, onExit }) {
       node.appendChild(el('span', 'setup-card__icon', DECK_SYMBOL[deck.id] || '🃏'));
       node.appendChild(el('span', 'setup-card__title', deck.name));
       node.appendChild(el('span', 'setup-card__tag', deck.game.toUpperCase()));
-      node.appendChild(el('span', 'setup-card__desc', deck.tagline));
+      node.appendChild(el('span', 'setup-card__desc', deck.playstyle || deck.tagline));
       node.addEventListener('click', () => {
         seat.deckId = deck.id;
         for (const [id, btn] of buttons) btn.classList.toggle('setup-card--on', id === deck.id);
@@ -105,6 +107,16 @@ function renderSetup(root, { onStart, onExit }) {
     }
     buttons.get(seat.deckId).classList.add('setup-card--on');
     wrap.appendChild(row);
+
+    wrap.appendChild(el('p', 'setup__note', ARCHETYPE_HEADING));
+    wrap.appendChild(
+      renderArchetypeRow({
+        value: seat.archetype,
+        onPick: (id) => {
+          seat.archetype = id;
+        },
+      })
+    );
   });
 
   wrap.appendChild(button('Start match', 'btn btn--primary setup__start', () => onStart(seats.map((s) => ({ ...s })))));
@@ -172,7 +184,12 @@ function startMatch(root, seats, { onExit, onRematch }) {
   const seed = Math.floor(Date.now() % 2147483647) || 1;
   const state = createMatch({
     seed,
-    players: seats.map((seat) => ({ name: seat.name, deckId: seat.deckId, controller: 'human' })),
+    players: seats.map((seat) => ({
+      name: seat.name,
+      deckId: seat.deckId,
+      archetype: seat.archetype,
+      controller: 'human',
+    })),
   });
 
   // No bot: both seats are driven by whoever is holding the device.

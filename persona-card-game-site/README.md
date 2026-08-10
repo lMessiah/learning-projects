@@ -1,10 +1,11 @@
-# Persona Card Game (Unofficial Alpha)
+# Persona Card Game (Unofficial Beta)
 
 A browser card game inspired by the **mechanics** of ATLUS's Persona series, played as a TCG.
 Fan project — not affiliated with or endorsed by ATLUS or SEGA. **All card art is placeholder
 CSS** (coloured frames + arcana symbols + text). No game artwork, sprites or logos are used.
 
-Runs entirely client-side: no backend, no accounts, no database.
+Runs entirely client-side: no backend, no accounts, no database. (Online play is
+peer-to-peer; a tiny optional server exists only to shorten invite codes.)
 
 ## Running it
 
@@ -13,6 +14,7 @@ npm install
 npm run dev      # http://localhost:5173
 npm test         # engine, bot and UI suites
 npm run build    # static bundle in dist/ (relative asset paths)
+npm run simulate # headless balance report (200 bot-vs-bot matches, ~100s)
 node server/rendezvous.js   # optional: six-character online match codes
 
 # The build uses base: './', so dist/ serves from anywhere:
@@ -32,15 +34,61 @@ persist in localStorage and apply immediately.
 
 | Path | Purpose |
 | --- | --- |
-| `src/data/cards.json` | The entire card database — Personas, Items, Specials, fusion recipes, decks. Adding cards never touches code. |
+| `src/data/cards.json` | The entire card database — Personas, Items, Specials, fusion recipes, deck flavours. Adding cards never touches code. |
 | `src/data/cards.js` | Pure loader: resolves skill references, freezes data, validates integrity. |
+| `src/data/archetypes.js` | Deck **generation**: a flavour picks the card pool, an archetype weights it, the match seed rolls the 30 cards. Twelve decks, no twelve lists. |
+| `src/engine/passives.js` | The passive system, as a table of hooks. One printed passive per card at most; adding one is an entry here plus a field in cards.json. |
+| `src/ui/tips.js` | Post-loss tips (from the per-player counters the engine keeps), the six strategy tips, and the rotating connection-screen tip. |
+| `src/ui/matchStats.js` | The post-match scoreboard: damage ledger, knockout timeline, biggest hit, MVP per side. Reads the engine's own counters, never the log. |
+| `src/ui/attribution.js` | The site-attribution link, rendered into the Settings credits section. |
+| `tools/simulate.js` | Headless balance simulator. Not part of the app bundle. |
 | `src/engine/` | Pure deterministic state machine — `applyAction(state, action)` / `getLegalActions(state, player)`. No DOM, no `Math.random()`; all randomness comes from a seeded RNG stored in state, so the same engine can later run on a server for online play. |
 | `src/engine/bot.js` | The four bot difficulties. Also pure: `chooseBotAction(state, player, difficulty, rng)` returns an action plus the advanced RNG, and only ever picks from `getLegalActions`. |
 | `src/ui/` | Rendering and event handling only. Never contains game rules. |
 | `server/rendezvous.js` | Optional, zero-dependency short-code server. Not needed to play. |
 | `src/net/` | Online play: `transport.js` (a 4-method interface + an in-memory pair for tests), `webrtc.js` (peer-to-peer data channel, copy-paste signalling), `onlineMatch.js` (host-authoritative protocol, same controller shape the board already consumes). |
 | `src/ui/game/` | The match screen: `controller.js` (owns the state, paces the bot), `board.js` (renders + input), `inspect.js` (hover tooltip / tap detail), `anim.js` (state-diff feedback), `setup.js` (vs-bot picker), `hotseat.js` (local multiplayer + privacy gate). |
-| `tests/` | Vitest suites. |
+| `src/styles/select.css` | The one selection & highlight system: hoverable / selected / valid-target / invalid, for every screen that lets you pick something. Loaded last so it wins; rings are `box-shadow`, never a border width, so a highlight can never move the layout. |
+| `tests/` | Vitest suites. The four `botMatch.*.test.js` files play whole matches through the real UI and are one difficulty per file — see the note in `tests/support/fullMatch.js` before merging any of them. |
+
+### The board never reflows
+
+Everything that appears and disappears mid-turn lives **outside the board's
+layout**: the battle log is its own fixed-width scrolling column, the One More
+announcement is a chip in a fixed-height strip plus a transform-only splash, and
+the Full Analysis hand reveal floats over the board rather than being inserted
+into it. `anim.js` animates only `transform`, `opacity`, `filter` and the width
+of a bar fill inside a fixed-height track — so a hit, a heal, a Technical or the
+fusion sequence can never move a single tile. `tests/anim.test.js` asserts that
+contract against the stylesheet itself.
+
+Every base duration lives in one table, `DURATIONS` in `anim.js`. `board.js`
+stamps it onto the board element as `--dur-*` custom properties and the
+stylesheet only ever divides those by `--anim-scale`, so the JS and the CSS
+cannot drift apart and the speed setting is a single multiplier. The two long
+ceremonies (fusion, Gallows) are skippable: the overlay itself stays
+`pointer-events: none` so it can never swallow a click meant for the board, and
+a one-shot capture-phase listener clears it on the way past.
+
+### Resigning and the post-match screen
+
+`RESIGN` is legal in `getLegalActions` on your own turn, and the handler accepts
+it at any time — the legal list is what the bot and the auto-end-turn logic read,
+and neither should ever consider conceding, but a player who wants out should not
+have to wait for their opponent's turn. It is reachable from the pause menu and
+from a small button beside the log, always behind a confirmation, and online it
+travels as an ordinary action for the host to apply.
+
+Every match — win, loss or resignation — ends on a scoreboard: damage dealt and
+taken, One Mores, Technicals, fusions, Gallows, Showtimes, cards drawn and
+played, SP spent, the biggest single hit with the skill that threw it, the full
+knockout timeline, and an MVP Persona per side.
+
+The result overlay blurs the board behind it, which used to take the battle log
+away at exactly the moment it is worth reading, so it carries a **Battle log**
+tab of its own holding the *complete* feed rather than the sidebar's recent
+tail. The log only ever clears when a new match starts, because a new match is a
+new state with a new log.
 
 ## A turn, at a glance
 
@@ -49,14 +97,232 @@ All of these are config constants in `src/engine/config.js`.
 | Allowance | Per turn |
 | --- | --- |
 | Draw | 1 (plus 1 more if you pass) |
-| Action | 1 — attack, skill, guard, fuse or pass |
+| SP regen | 3, **to the active Persona only** — the bench regains nothing |
+| Action | 1 — attack, skill, Showtime, guard, a Feast/Meal at the Gallows, or pass |
+| **Fusions** | **1** — free, like an Item or a Special |
 | **Item cards** | **1** |
 | **Special cards** | **1** (counted separately from Items) |
 | Persona change | 1, plus 1 extra on a One More (Baton Pass) |
 | Personas played to the field | unlimited up to `FIELD_CAP` (8) |
+| Gallows sacrifices | 1 — costs your action unless it was junk food |
 | Hand limit | 7, discard down at end of turn |
 
 Win by knocking out `KO_TARGET` (8) of the opponent's Personas.
+
+### One More
+
+Knocking a **standing** enemy Persona down with a weakness hit earns a One More:
+one extra action, one extra Persona change (Baton Pass), and — the single
+exception to active-only targeting — that action may hit **any** enemy Persona,
+bench included. Hitting something already down pays nothing, a guarded hit pays
+nothing, and a killing blow pays a level-up instead. Baseline is one per turn;
+the **Trickster** passive lifts the cap so knockdowns scored during a One More
+keep the chain alive.
+
+### Technicals
+
+Hitting a Persona that already has an ailment with the right follow-up lands a
+**Technical** for ×1.5 damage. Burn combos with physical and wind; Shock combos
+with physical, and also knocks the target down — which pays a One More by the
+ordinary rule. Both halves are visible on the board before you commit, and a
+Shock Technical *replaces* the plain +50% Shock damage rather than stacking with
+it.
+
+Ailments come from two places: every Fire skill can inflict Burn and every
+Electric skill can inflict Shock, each printing its own percentage (40% at the
+light and medium tiers, 50% heavy, 70% severe) — and **Lesser Theurgy**, which
+inflicts Burn *or* Shock with no roll at all and costs no action, so you can
+play it and cash it in on the same turn. Shock expires at the end of its
+victim's next turn, so a Shock Technical has to be taken immediately; Burn lasts
+three and can wait.
+
+### Rewriting what a Persona is
+
+Each deck holds one Special that **rewrites** a Persona's weaknesses and
+resists: **Turn of the Moon** (P3, your active), **Jester's Trickery** (P4, any
+one of yours) and **Change of Heart** (P5, both actives at once). The new chart
+is drawn from the seeded RNG, keeps the same *number* of weaknesses and resists,
+and is disjoint — so it changes what a Persona is without making it stronger or
+weaker. Everything either player had uncovered is wiped.
+
+It exists for two reasons. The card database is finite, so a dedicated player
+eventually stops reading the board and starts reciting it. And the **Brutal**
+bot reads that same database outright from turn one — its one sanctioned cheat.
+A rewritten Persona is no longer described by its card, so Brutal's cheat buys
+it nothing and it has to probe like everyone else. That is implemented as one
+branch in `perceivedAffinity` and one flag (`rewritten`) on the instance.
+
+Every reader of a Persona's chart — the damage formula, the bot, the card face,
+the board strip, Whims of Fate, Third Eye — goes through `state.affinitiesOf`,
+so none of them can disagree about what a Persona currently is.
+
+### Twist of Fate
+
+A rewrite scrambles a chart and hands you a new puzzle. **Twist of Fate** — one
+per deck, no flavour exclusive — makes a single precise edit instead: you *name
+an element*, and it replaces one of the enemy active's weaknesses with it. It is
+the answer to the worst position in the game, which is holding a hand full of
+fire against something that is weak to nothing you own.
+
+Two rules keep it a trade rather than a free win:
+
+- You **cannot** name something the target **resists**. A resist beats a
+  weakness, so it would be a dead card — the resist is not stripped, the option
+  is simply never offered. `twistableElements()` is what both the picker and the
+  handler read, so the UI cannot offer a choice the engine would refuse.
+- **The defender** chooses which weakness they give up. There is no way to pause
+  an action and ask them, and a coin flip would not be "the opponent chooses" in
+  any meaningful sense, so `twistSacrifice()` makes their best move for them:
+  they shed a weakness you had already *uncovered* before one you had not, since
+  the uncovered one is the one actually costing them. Fully deterministic — it
+  spends no RNG at all, which also means it can never desync an online match.
+
+The new weakness is revealed to both players immediately, so Whims of Fate can
+fetch an answer for it on the spot.
+
+### No random knockouts
+
+Nothing in the game has a chance to remove a Persona outright. The Hama and Mudo
+lines are ordinary Light and Dark damage skills with a deterministic **execute**
+rider (`CONFIG.EXECUTE_MULT`): Hama hits +50% harder against a target that is
+already knocked down, Mudo against one below 40% HP. Ailment riders are the only
+randomness a skill carries, and every one of them prints its percentage on the
+card.
+
+### The Gallows
+
+Once a turn, feed one Persona from your field or hand to another Persona on your
+field. What you get back — and what it costs — depends entirely on how the food
+compares with the eater. `gallowsMeal()` in `state.js` is the only place that
+comparison is made; the legal-action list, the handler, the bot and the panel's
+before-you-confirm preview all read it, so the tier the UI shows you is by
+construction the tier you get.
+
+| Tier | Food level | Gain | Cost |
+| --- | --- | --- | --- |
+| **Feast** | at or above the eater | **+2 levels** | your action |
+| **Meal** | within `COMEBACK_FARM_GAP` (5) below | **+1 level** | your action |
+| **Junk** | further below than that | no levels, **20% HP** | **nothing** |
+
+Sacrificial Lamb adds +1 on top of whichever tier it lands in, so a Lamb is
+always the best version of the meal it would otherwise have been. Junk disposal
+is free because clearing a card your board outgrew ten turns ago is housekeeping
+rather than a play, and charging a whole turn for it meant nobody ever did it —
+but all three tiers share the one-per-turn cap, so it stays tempo and never
+becomes an engine. Like fusion material, a fed Persona is **not** a knockout.
+
+Alongside it, Persona draws gain a slowly rising **level floor**: from turn
+`DRAW_SCALE_START` (8) the minimum printed level a draw aims for climbs by 1
+every 2 turns up to `DRAW_SCALE_CAP` (20). It is a re-weighting rather than a
+filter, so a deck of nothing but openers still draws normally — it just stops
+turn 27 feeling like turn 3. Explicit draw manipulation always overrides it.
+
+### Showtime
+
+Five pairs of Personas have a **Showtime**: a duo attack that unlocks the moment
+both halves are on your field and on their feet. It costs your action, it does
+not matter which of the two is active, and each pair fires **once per match**. A
+card that is half of a duo names its partner in `duoPartners`, mirrored from the
+`showtimes` table in cards.json.
+
+| Duo | Pair | Flavour |
+| --- | --- | --- |
+| Evening Elegy | Orpheus + Apsaras | P3 |
+| Truth Unveiled | Izanagi + Ara Mitama | P4 |
+| Curtain Call | Arsène + Jack-o'-Lantern | P5 |
+| Hee-Ho Hop | Pixie + Jack Frost | common |
+| Frozen Rebellion | Jack Frost + Black Frost | needs a fusion |
+
+### Draw manipulation
+
+Four Specials reserve or reshape what you draw, all deterministic through the
+seeded RNG and all overriding the Momentum weighting and the level floor for the
+draw they claim:
+
+- **Fortune's Draw** — name an Arcana; your next draw is the first Persona of it.
+- **Arcana Reading** — name an Arcana; your next draw is the *highest-level* one.
+- **Whims of Fate** — your next draw becomes a Persona that answers the enemy
+  active's weaknesses. It matches only weaknesses you have uncovered until you
+  are `WHIMS_DEFICIT` (2) knockouts behind, at which point it matches all of
+  them — without revealing anything. Redaction strips the resolved type list
+  from every view, so the card hands you the answer and not the question.
+- **Providence** — look at the top 5 and discard any of them.
+
+### The SP economy
+
+Every Persona **enters play at full SP** — starters, cards played from hand,
+fusion results and revivals alike. Scarcity comes from spending, not from
+arriving broke: SP regenerates **in the active slot only**, so a Persona on the
+bench neither gains nor loses it and rotating a spent one out is a real cost
+rather than a free refill.
+Costs are tuned against that tap: ~6 is a light probe, 8 a workhorse, 14+
+something you save for, spend an item on, or move with SP Transfer. SP-restore
+items are capped at **two per deck between them** (`deckGroup`).
+
+### Passives
+
+A Persona card may print at most one passive, and most print none. Passives are
+always-on or auto-triggered — never an activated choice, never a legal action.
+They are declared as hooks in `src/engine/passives.js`: `onKnockdownAttempt`,
+`onDamageTaken`, `onFatalDamage`, `onDamageDealt`, `onSkillUsed`, `onTurnStart`,
+`onFusionMaterial`, plus damage-multiplier and One-More-chain hooks. A fusion may inherit a parent's passive **instead of**
+one of its skills; the result carries at most one, and overwriting a native
+passive takes an explicit confirmation.
+
+### Comeback mechanics
+
+All keyed off the KO deficit, and all inert at parity or ahead:
+
+- **Momentum Draw** — draws are weighted toward higher-quality cards, scaling
+  with the deficit, through the seeded RNG so online stays reproducible.
+- **Underdog Draw** — behind by `COMEBACK_UNDERDOG_DEFICIT` (3), draw 2 a turn.
+- **Level catch-up** — a knockout teaches nothing when the victim was
+  `COMEBACK_FARM_GAP` (5) or more levels below the killer.
+
+### Keywords
+
+**Alacrity** on a skill refunds a Persona change when the skill knocks the
+target down — hit, rotate, hit again. It is the Swift keyword, and it is printed
+next to the skill name on the card.
+
+### Skill Cards and drains
+
+A **Skill Card** is an Item that permanently teaches its printed skill to one of
+your field Personas for the rest of the match — the way you patch a hole in your
+board's element coverage without waiting for a level. It can only ever name an
+entry in `skillLibrary`, so it can never teach a passive or a Showtime, and
+`deckGroup: "skill-card"` caps them at two per deck between them.
+
+**Drain skills** are skills, not affinities — there is no drain or repel
+reaction anywhere in the game. **Life Drain** takes **20% of the target's
+current HP** and gives the user exactly that much back: it scales against a big
+healthy wall, and because it takes a share of what is *left* it can never itself
+land a knockout. **Spirit Drain** deals no damage at all and moves up to 6 SP
+from the enemy active to yours for a 1 SP cast. Both are Almighty, so neither
+has any weakness, resist or Technical interaction.
+
+### Flavour exclusives
+
+Each flavour holds three or four cards no other deck can run, plus a
+`flavourLean` archetype axis the deck builder weights on top of the play style
+you chose:
+
+| Flavour | Lean | Exclusives |
+| --- | --- | --- |
+| **P3** — haymaker | Aggressive | Theurgy · Dark Hour · Moonless Gown · Chewing Soul · **Turn of the Moon** |
+| **P4** — midrange grind | Defensive | Shuffle Time · Persona Evolution · Steak Skewer · Full Analysis · **Jester's Trickery** |
+| **P5** — scout then strike | Tactical | Phantom Strike · Smoke Bomb · Third Eye · **Change of Heart** |
+
+### Decks are generated
+
+You pick a **flavour** (P3/P4/P5, which decides the card pool) and an
+**archetype** (Aggressive / Defensive / Tactical / Swift, which decides how that
+pool is weighted). The 30 cards are then rolled from the match seed, so twelve
+decks exist without twelve lists to maintain — add a card with an `affinity`
+block in cards.json and it enters circulation. `validateDecks()` checks that
+every flavour x archetype pair still builds a legal 30-card deck — and that it
+contains the material for at least two completable fusion recipes, repairing the
+most redundant slots if the weighting left it unable to fuse.
 
 ### The power curve
 
@@ -70,15 +336,19 @@ Fusion is exempt from the gap: it is already paid for with two sacrificed Person
 and a combined-level requirement, and the recipes form a ladder — mid tier (28–40)
 then high tier (46–64).
 
-## Phase status
+## What's in the beta
 
-- [x] **Phase 1** — Card database + card renderer + gallery
-- [x] **Phase 2** — Game engine + unit tests
-- [x] **Phase 3** — Vs Bot mode (Easy / Medium / Brutal / Chaos)
-- [x] **Phase 4** — Local multiplayer (hot-seat, pass-the-device screen)
-- [x] **Phase 5** — Fusion + Special cards fully wired in
-- [x] **Phase 6** — Settings + polish (themes, play assists, animation speed, reset)
-- [x] **Online multiplayer** — peer-to-peer, host-authoritative, no server
+Everything below is built, wired to the UI and covered by tests.
+
+| | |
+| --- | --- |
+| **Modes** | Vs Bot (Easy / Medium / Brutal / Chaos), local hot-seat with a pass-the-device gate, and peer-to-peer online play with no server or account |
+| **Combat** | Weakness → knockdown → One More, Technicals off Burn and Shock, Guard, buffs and debuffs, Charge and Concentrate, execute riders, no random knockouts anywhere |
+| **The board** | Fusion (free, 1/turn), the three-tier Gallows, Showtime duo attacks, 8 passives, Baton Pass, bench targeting |
+| **Cards** | Generated decks from 3 flavours × 4 archetypes, flavour exclusives, Skill Cards, drains, draw manipulation, affinity rewrites, Twist of Fate |
+| **Around the match** | Battle log sidebar and a full post-match log tab, resignation, post-match scoreboard with a knockout timeline and MVP, contextual post-loss tips, a full Rules and FAQ screen |
+| **Presentation** | Three themes, one selection-highlight system across every picker, a full battle animation pass, a skippable Velvet-Room fusion sequence, animation-speed and play-assist settings |
+| **Not in it** | No shop, no deck building, no between-match progression, no audio, no saved games |
 
 ## Online multiplayer
 

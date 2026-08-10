@@ -176,9 +176,17 @@ describe('fusion', () => {
     expect(after.players[0].koCount).toBe(0);
   });
 
-  it('uses up your action', () => {
+  it('costs no action — you can fuse AND still attack', () => {
     const state = fuse(fusionBoard());
-    expect(state.turnState.actionsRemaining).toBe(0);
+    expect(state.turnState.actionsRemaining).toBe(CONFIG.ACTIONS_PER_TURN);
+    expect(state.turnState.fusionsPerformed).toBe(1);
+    expect(getLegalActions(state, 0).some((a) => a.type === 'ATTACK')).toBe(true);
+  });
+
+  it('is rationed per turn instead, like an Item or a Special', () => {
+    const state = fuse(fusionBoard());
+    expect(getLegalActions(state, 0).some((a) => a.type === 'FUSE')).toBe(false);
+    expect(state.turnState.fusionsPerformed).toBe(CONFIG.FUSIONS_PER_TURN);
   });
 
   it('offers fusion in the legal action list only when a recipe is satisfiable', () => {

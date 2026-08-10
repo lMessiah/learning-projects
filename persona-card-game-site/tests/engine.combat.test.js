@@ -106,6 +106,9 @@ describe('knockdown', () => {
 describe('hidden weaknesses', () => {
   it('hides affinities from the opponent until that damage type lands', () => {
     let state = fireVsIce();
+    // Hua Po also knows Agi but prints no Analyst passive, so only the type it
+    // actually strikes with becomes public.
+    setField(state, 0, [{ cardId: 'hua-po', active: true }]);
     const before = visibleAffinities(state, activeOf(state, 1), 0);
     expect(before.weaknesses).toEqual([]);
     expect(before.resists).toEqual([]);

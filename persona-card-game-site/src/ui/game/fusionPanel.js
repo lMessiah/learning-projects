@@ -9,7 +9,7 @@
  * Also doubles as a read-only recipe reference (`readOnly`), reachable from the
  * in-match menu so recipes are never a memory test.
  */
-import { describeFusions, CONFIG } from '../../engine/index.js';
+import { describeFusions, CONFIG, passiveDefinition, PASSIVE_CHOICE_PREFIX } from '../../engine/index.js';
 import { getPersona } from '../../data/cards.js';
 import { renderCard } from '../cardView.js';
 import { arcanaStyle } from '../arcana.js';
@@ -118,7 +118,10 @@ function renderConfirm(entry, pair, draft, { onChange, onConfirm, onBack, skillN
   cost.appendChild(parentChip(pair.b));
   side.appendChild(cost);
 
-  side.appendChild(el('p', 'modal__hint', 'It keeps its own printed skills and inherits one skill of your choice from each parent.'));
+  side.appendChild(
+    el('p', 'modal__hint',
+      'It keeps its own printed skills. From each parent, take ONE thing: a skill, or that parent\'s passive.')
+  );
 
   [pair.a, pair.b].forEach((parent, index) => {
     const field = el('label', 'fusion-pick');
@@ -129,17 +132,50 @@ function renderConfirm(entry, pair, draft, { onChange, onConfirm, onBack, skillN
       option.value = skill.id;
       select.appendChild(option);
     }
+    const parentPassive = parent.passive ? passiveDefinition(parent.passive) : null;
+    if (parentPassive) {
+      const option = el('option', null, `⭐ ${parentPassive.name} (passive) — ${parentPassive.description}`);
+      option.value = `${PASSIVE_CHOICE_PREFIX}${parent.passive}`;
+      select.appendChild(option);
+    }
     select.value = draft.inherit[index] || parent.skills[0].id;
     select.addEventListener('change', () => onChange(index, select.value));
     field.appendChild(select);
     side.appendChild(field);
   });
 
+  // Two passives can't both stick, and overwriting the result's own passive is
+  // a real loss — so say so before the button rather than after the throw.
+  const chosenPassives = draft.inherit.filter((c) => typeof c === 'string' && c.startsWith(PASSIVE_CHOICE_PREFIX));
+  const nativePassive = entry.resultPassive ? passiveDefinition(entry.resultPassive) : null;
+  const doubleUp = chosenPassives.length > 1;
+  const overwrites =
+    chosenPassives.length === 1 &&
+    nativePassive &&
+    chosenPassives[0] !== `${PASSIVE_CHOICE_PREFIX}${entry.resultPassive}`;
+
+  if (nativePassive) {
+    side.appendChild(
+      el('p', 'modal__hint', `${entry.result.name} has its own passive: ${nativePassive.name}.`)
+    );
+  }
+  if (doubleUp) {
+    side.appendChild(el('p', 'fusion-warn', 'A fusion result can carry at most one passive — pick a skill from one parent.'));
+  } else if (overwrites) {
+    const incoming = passiveDefinition(chosenPassives[0].slice(PASSIVE_CHOICE_PREFIX.length));
+    side.appendChild(
+      el('p', 'fusion-warn', `This replaces ${nativePassive.name} with ${incoming?.name ?? 'the inherited passive'}. Confirm below.`)
+    );
+  }
+
   const actions = el('div', 'fusion-preview__actions');
   actions.appendChild(button('← Back', 'btn btn--ghost btn--small', onBack));
   actions.appendChild(
-    button('Fuse — uses your action', 'btn btn--primary', () => onConfirm(), {
-      title: 'Performing a fusion consumes your one action for this turn',
+    button(overwrites ? 'Replace passive and fuse' : 'Fuse — uses your action', 'btn btn--primary', () => onConfirm(), {
+      disabled: doubleUp,
+      title: doubleUp
+        ? 'Only one passive can survive a fusion'
+        : 'Performing a fusion consumes your one action for this turn',
     })
   );
   side.appendChild(actions);
@@ -225,6 +261,9 @@ export function renderFusionPanel(options) {
             { zone: pair.b.zone, uid: pair.b.uid },
           ],
           inherit: [draft.inherit[0] || pair.a.skills[0].id, draft.inherit[1] || pair.b.skills[0].id],
+          // Reaching the confirm button IS the confirmation: the panel spells
+          // out what would be overwritten right above it.
+          replacePassive: true,
         }),
       onBack: () => onDraft({ ...draft, pairIndex: null, inherit: [] }),
     })

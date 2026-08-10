@@ -1,13 +1,16 @@
 /**
  * SPA entry point + hash router.
  *
- * Routes are added phase by phase; unknown routes fall back to the menu.
+ * Unknown routes fall back to the menu.
  */
 import './styles/base.css';
 import './styles/cards.css';
 import './styles/gallery.css';
 import './styles/themes.css';
 import './styles/board.css';
+// Last on purpose: the one selection/highlight system overrides whatever the
+// component sheets above happen to say about hover, selected and target states.
+import './styles/select.css';
 
 import { renderMenu } from './ui/menu.js';
 import { renderGallery } from './ui/gallery.js';

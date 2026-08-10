@@ -276,7 +276,9 @@ describe('full playthrough', () => {
 
     let steps = 0;
     while (state.winner === null && state.turn <= maxTurns && steps < 20000) {
-      const legal = getLegalActions(state, state.activePlayer);
+      // Resigning is legal every turn, and a random player who concedes on
+      // turn three is not testing that a match can be played to a finish.
+      const legal = getLegalActions(state, state.activePlayer).filter((a) => a.type !== 'RESIGN');
       expect(legal.length).toBeGreaterThan(0);
       // Bias away from ending the turn so turns actually do something.
       const nonEnd = legal.filter((a) => a.type !== 'END_TURN');

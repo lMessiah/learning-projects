@@ -1,5 +1,5 @@
 /**
- * Phase 1 — Card gallery.
+ * Card gallery.
  *
  * Renders every card in the database so the whole set can be inspected visually,
  * plus reference panels for the three starter decks and the fusion recipes.
@@ -13,8 +13,16 @@ import {
   FUSION_RECIPES,
   STARTER_POOL,
   getCard,
-  validateDatabase,
 } from '../data/cards.js';
+import {
+  ARCHETYPES,
+  DECK_SHAPE,
+  DECK_SIZE,
+  MAX_COPIES,
+  poolFor,
+  exclusivesFor,
+  validateAll,
+} from '../data/archetypes.js';
 import { renderCard } from './cardView.js';
 import { arcanaStyle } from './arcana.js';
 import { CONFIG } from '../engine/index.js';
@@ -193,44 +201,74 @@ function renderFilters(rerender) {
 function renderDeckReference() {
   const wrap = el('section');
   const head = el('div', 'section-head');
-  head.appendChild(el('h2', null, 'Starter decks'));
-  head.appendChild(el('span', null, '30 cards each · max 2 copies'));
+  head.appendChild(el('h2', null, 'Deck pools'));
+  head.appendChild(
+    el('span', null, `${DECK_SIZE} cards built per match · max ${MAX_COPIES} copies · ${ARCHETYPES.length} play styles`)
+  );
   wrap.appendChild(head);
+
+  wrap.appendChild(
+    el(
+      'p',
+      'ref-note',
+      'Decks are generated, not hand-built. Picking a flavour picks the pool below; picking a play style ' +
+        'weights which of those cards fill the 30 slots. Every card is tagged 0–3 for each style.'
+    )
+  );
 
   const grid = el('div', 'ref-grid');
   for (const deck of DECKS) {
+    const pool = poolFor(deck.id);
     const box = el('div', 'ref-card');
     box.style.borderLeftColor = 'var(--accent)';
     box.appendChild(el('h3', null, `${deck.name} (${deck.game.toUpperCase()})`));
     box.appendChild(el('p', 'ref-card__tagline', deck.tagline));
+    if (deck.playstyle) box.appendChild(el('p', 'ref-card__playstyle', deck.playstyle));
+
+    const exclusives = exclusivesFor(deck.id);
+    if (exclusives.length) {
+      const row = el('p', 'ref-card__exclusives');
+      row.appendChild(el('span', 'card__tag card__tag--exclusive', 'ONLY HERE'));
+      row.appendChild(document.createTextNode(` ${exclusives.map((c) => c.name).join(' · ')}`));
+      box.appendChild(row);
+    }
 
     const list = el('ul', 'ref-list');
-    let total = 0;
     const groups = [
       ['Personas', 'persona'],
       ['Items', 'item'],
       ['Specials', 'special'],
     ];
     for (const [label, type] of groups) {
-      const entries = deck.cards.filter((entry) => getCard(entry.id).type === type);
-      if (!entries.length) continue;
-      const count = entries.reduce((sum, e) => sum + e.count, 0);
-      total += count;
-      list.appendChild(el('li', 'ref-list__group', `${label} — ${count}`));
-      for (const entry of entries) {
-        const card = getCard(entry.id);
+      const cards = pool[type];
+      if (!cards.length) continue;
+      list.appendChild(el('li', 'ref-list__group', `${label} — ${cards.length} in pool, ${DECK_SHAPE[type]} drawn`));
+      for (const card of cards) {
         const row = el('li');
-        const name = el('span', null, card.type === 'persona' ? `${card.name} · Lv${card.level}` : card.name);
-        row.appendChild(name);
-        row.appendChild(el('span', null, `x${entry.count}`));
+        row.appendChild(el('span', null, card.type === 'persona' ? `${card.name} · Lv${card.level}` : card.name));
+        // The affinity block IS the archetype weighting, so show it.
+        const best = ARCHETYPES.filter((a) => (card.affinity?.[a.id] ?? 0) >= 2).map((a) => a.icon);
+        row.appendChild(el('span', null, best.length ? best.join('') : '·'));
         list.appendChild(row);
       }
     }
     box.appendChild(list);
-    box.appendChild(el('div', 'ref-total', `Total ${total} cards`));
     grid.appendChild(box);
   }
   wrap.appendChild(grid);
+
+  const styles = el('div', 'ref-card');
+  styles.appendChild(el('h3', null, 'Play styles'));
+  const styleList = el('ul', 'ref-list');
+  for (const archetype of ARCHETYPES) {
+    const row = el('li');
+    row.appendChild(el('span', null, `${archetype.icon} ${archetype.name}`));
+    row.appendChild(el('span', null, archetype.blurb));
+    styleList.appendChild(row);
+  }
+  styles.appendChild(styleList);
+  wrap.appendChild(styles);
+
   return wrap;
 }
 
@@ -258,13 +296,13 @@ function renderFusionReference() {
 }
 
 function renderValidationBanner() {
-  const errors = validateDatabase();
+  const errors = validateAll();
   if (errors.length === 0) {
     return el(
       'div',
       'notice notice--ok',
       `Card database OK — ${PERSONAS.length} Personas, ${ITEMS.length} Items, ${SPECIALS.length} Specials, ` +
-        `${FUSION_RECIPES.length} fusion recipes, ${DECKS.length} decks of 30.`
+        `${FUSION_RECIPES.length} fusion recipes, ${DECKS.length} flavours x ${ARCHETYPES.length} play styles.`
     );
   }
   const box = el('div', 'notice notice--error');
@@ -300,7 +338,7 @@ export function renderGallery(root) {
   topbar.appendChild(back);
   const titleWrap = el('div');
   titleWrap.appendChild(el('h1', 'topbar__title', 'Card Gallery'));
-  titleWrap.appendChild(el('div', 'topbar__sub', 'Phase 1 · every card in the database'));
+  titleWrap.appendChild(el('div', 'topbar__sub', 'Every card in the database'));
   topbar.appendChild(titleWrap);
   topbar.appendChild(el('div', 'topbar__spacer'));
   root.appendChild(topbar);

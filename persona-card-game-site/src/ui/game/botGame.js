@@ -3,6 +3,7 @@
  */
 import { createMatch } from '../../engine/index.js';
 import { DECKS } from '../../data/cards.js';
+import { ARCHETYPES, getArchetype } from '../../data/archetypes.js';
 import { DIFFICULTIES } from '../../engine/bot.js';
 import { getProfileName } from '../profile.js';
 import { createController } from './controller.js';
@@ -48,16 +49,24 @@ function startMatch(root, choice, onRematch, onExit) {
   applyThemeFor({ deckId: choice.deckId });
 
   const seed = freshSeed();
-  // The bot plays one of the decks the player didn't pick.
+  // The bot plays one of the decks the player didn't pick, with an archetype
+  // of its own picked at random — so you cannot count on what it is running.
   const otherDecks = DECKS.filter((d) => d.id !== choice.deckId);
   const botDeck = otherDecks[seed % otherDecks.length];
+  const botArchetype = ARCHETYPES[(seed >>> 3) % ARCHETYPES.length];
   const difficulty = DIFFICULTIES.find((d) => d.id === choice.difficulty) || DIFFICULTIES[1];
 
   const state = createMatch({
     seed,
     players: [
-      { name: getProfileName(), deckId: choice.deckId, controller: 'human' },
-      { name: `Bot (${difficulty.label})`, deckId: botDeck.id, controller: 'bot', difficulty: difficulty.id },
+      { name: getProfileName(), deckId: choice.deckId, archetype: choice.archetype, controller: 'human' },
+      {
+        name: `Bot (${difficulty.label})`,
+        deckId: botDeck.id,
+        archetype: botArchetype.id,
+        controller: 'bot',
+        difficulty: difficulty.id,
+      },
     ],
   });
 
@@ -72,7 +81,9 @@ function startMatch(root, choice, onRematch, onExit) {
     controller,
     viewer: HUMAN,
     title: 'Against Bot',
-    subtitle: `${DECKS.find((d) => d.id === choice.deckId).name} vs ${botDeck.name} · ${difficulty.label}`,
+    subtitle:
+      `${DECKS.find((d) => d.id === choice.deckId).name} (${getArchetype(choice.archetype)?.name ?? 'mixed'}) ` +
+      `vs ${botDeck.name} (${botArchetype.name}) · ${difficulty.label}`,
     onExit,
     onRematch: () => startMatch(root, choice, onRematch, onExit),
   });

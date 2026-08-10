@@ -22,12 +22,16 @@
 
   --ink: #eef4ff;
   --ink-dim: #a3b4d4;
-  --ink-faint: #6a7 da0;
   --ink-faint: #6a7da0;
 
   --gold: #9fd8ff;
   --ok: #4fd6b0;
   --warn: #ffc46b;
+
+  /* Selection (see select.css). P3's gold is a pale blue, which would vanish
+   * next to the blue accent — so "valid target" swings warm. */
+  --sel-on: #3d8bff;
+  --sel-target: #ffcf5c;
 
   --glow-a: rgba(61, 139, 255, 0.22);
   --glow-b: rgba(120, 200, 255, 0.12);
@@ -59,6 +63,11 @@
   --gold: #fff08a;
   --ok: #8fd44a;
   --warn: #ff9a3c;
+
+  /* P4's accent is already the gold everything else uses for targeting, so the
+   * target ring goes cyan — the two states have to stay tellable apart. */
+  --sel-on: #f5c518;
+  --sel-target: #5ad2ff;
 
   --glow-a: rgba(245, 197, 24, 0.16);
   --glow-b: rgba(255, 226, 120, 0.08);
@@ -101,6 +110,9 @@
   --gold: #f0c243;
   --ok: #3fd08a;
   --warn: #f0a91e;
+
+  --sel-on: #e01b32;
+  --sel-target: #f0c243;
 
   --glow-a: rgba(224, 27, 50, 0.2);
   --glow-b: rgba(224, 27, 50, 0.1);

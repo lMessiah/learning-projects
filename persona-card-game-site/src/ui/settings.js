@@ -6,10 +6,18 @@
  */
 const KEY = 'pcg.settings';
 
+/**
+ * Speed is one multiplier over the whole duration table in ui/game/anim.js —
+ * `scale` divides every base duration, in JS and in CSS alike.
+ *
+ * Normal was retimed to be followable: bar drains, damage count-ups and the
+ * fusion sequence all used to blur past. Fast (x2) puts the pacing back roughly
+ * where Normal used to sit, for anyone who liked it that way.
+ */
 export const ANIMATION_SPEEDS = Object.freeze([
   { id: 'off', label: 'Off', scale: 0, blurb: 'No animations. Also removes the auto-end-turn delay.' },
-  { id: 'fast', label: 'Fast', scale: 1.8, blurb: 'Everything, roughly twice as quick.' },
-  { id: 'normal', label: 'Normal', scale: 1, blurb: 'The default pacing.' },
+  { id: 'fast', label: 'Fast', scale: 2, blurb: 'Twice as quick — roughly the old pacing.' },
+  { id: 'normal', label: 'Normal', scale: 1, blurb: 'The default. Slow enough to read what happened.' },
 ]);
 
 export const DEFAULTS = Object.freeze({

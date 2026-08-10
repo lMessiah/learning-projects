@@ -5,11 +5,27 @@
       "Unofficial fan project. No official ATLUS artwork, sprites or logos are used or referenced.",
       "DESIGN NOTE: stats, weaknesses and resistances are balance approximations inspired by the games, not exact ports.",
       "DESIGN NOTE: skills are stored once in `skillLibrary` and referenced by personas via { skill, unlockLevel }. The data loader (src/data/cards.js) resolves each reference into a full skill object { name, type, power, spCost|hpCost, unlockLevel, description, effect }. This keeps the file small and means new cards never touch engine code.",
-      "DESIGN NOTE: alpha ailments are Burn and Shock only. Canonically these come from fire and electric skills, so they are applied via `ailment` + `ailmentChance` on those damage skills rather than via dedicated ailment-only skills. `type: \"ailment\"` remains a valid schema value for future cards.",
+      "DESIGN NOTE: the beta ships two ailments, Burn and Shock. Canonically these come from fire and electric skills, so they are applied via `ailment` + `ailmentChance` on those damage skills rather than via dedicated ailment-only skills. `type: \"ailment\"` remains a valid schema value for future cards. RULE: an ailment chance is the ONLY randomness a skill may carry, and the card text must print the percentage.",
       "DESIGN NOTE: `usesAction` is stored on every Item and Special. Per the rules, playing Items/Specials is separate from your one action, so it defaults to false; the two strongest Specials set it to true.",
       "RULE: you may play at most ONE Item card and ONE Special card per turn (engine constants ITEMS_PER_TURN / SPECIALS_PER_TURN). The two limits are counted separately, so one of each in the same turn is legal.",
       "RULE: prebuilt decks contain no Persona above level 25 (CONFIG.DECK_MAX_PERSONA_LEVEL). Everything stronger is fusion-only, and every fusionOnly Persona is the result of exactly one recipe.",
-      "RULE: a Persona card may only be played to the field if its printed level is at most the highest level among your field Personas + CONFIG.PLAY_LEVEL_GAP (default 10). High-tier cards wait in hand until your board grows into them."
+      "RULE: a Persona card may only be played to the field if its printed level is at most the highest level among your field Personas + CONFIG.PLAY_LEVEL_GAP (default 10). High-tier cards wait in hand until your board grows into them.",
+      "RULE: a Persona card may print at most ONE `passive`. Passives are always-on or auto-triggered, never an activated choice, and are implemented as hooks in src/engine/passives.js. The ids allowed here are listed in meta.passives.",
+      "DESIGN NOTE: `quality` (1-5) on every Item and Special is the hand-assigned strength tag used by Momentum Draw (engine/effects.js). Personas score themselves from printed level + skill count, so they need no tag.",
+      "RULE: a Special that prints a number deals that number FLAT (`\"flat\": true` + `amount`). Only weakness, resist and guard change it — never stats, buffs, Shock or Charge. Card text and behaviour are asserted equal by tests/engine.specials.test.js.",
+      "RULE: decks are GENERATED, not hand-built. A deck entry here is a flavour (P3/P4/P5) and nothing more; the 30 cards are drawn from that flavour's pool (its own cards plus every `common` one) and weighted by the archetype the player chose. See src/data/archetypes.js. `affinity` on each card is that weighting, 0-3 per archetype.",
+      "RULE: every Persona ENTERS PLAY AT FULL SP — starters, cards played from hand, fusion results and revivals alike. SP then regenerates in the ACTIVE SLOT ONLY (CONFIG.SP_REGEN_PER_TURN); benched Personas neither gain nor lose SP. Scarcity is a spending problem, not an arrival problem. Skill costs are tuned against that tap: ~6 is a light probe, 8 a workhorse, 14+ something you save for or pay for with an item.",
+      "RULE: `deckGroup` puts cards under a shared per-deck cap (meta.deckGroupCaps). SP-restore items are capped at 2 per deck between them, so no deck can paper over the SP economy.",
+      "RULE: `alacrity: true` on a skill means a knockdown from it refunds a Persona change (CONFIG.ALACRITY_REFUND). It is the Swift keyword: hit, rotate, hit again.",
+      "RULE: `exclusive: 'p3'|'p4'|'p5'` locks a card to one flavour's pool. Each flavour also declares a `flavourLean` archetype axis, which the deck builder weights on top of the player's own archetype choice — that is what makes P3 swing, P4 grind and P5 scout.",
+      "RULE: no skill has a random chance to knock a Persona out. The Hama and Mudo lines are ordinary Light/Dark damage skills with a deterministic `execute` rider (CONFIG.EXECUTE_MULT) — Hama against a knocked-down target, Mudo against one below 40% HP.",
+      "RULE: `showtimes` are duo attacks. Each names a `pair` of Persona card ids; when BOTH are on your field and standing, the combo unlocks as an extra option for your one action, once per match per pair. Every Persona in a pair mirrors it in `duoPartners`, which is derived from this table and asserted equal by tests/engine.showtime.test.js.",
+      "RULE: drain SKILLS, not drain affinities. `drain: \"hp\"` on a damage effect heals the attacker for exactly the damage dealt; `kind: \"drainSp\"` deals no damage and moves up to `amount` SP from the enemy active to yours. Both are Almighty, so neither has any weakness, resist or Technical interaction.",
+      "RULE: a Skill Card is an Item whose effect is `{ kind: \"teachSkill\", skillId }`. It permanently adds that skill to one of your field Personas for the rest of the match. It may only ever name an entry in `skillLibrary`, so it can never teach a passive or a Showtime. `deckGroup: \"skill-card\"` caps them at meta.deckGroupCaps[\"skill-card\"] per deck.",
+      "RULE: draw manipulation is deterministic and seeded. `guaranteedDraw` reserves the next draw for a Persona of a named Arcana (`best: true` takes the highest-level one); `fateFetch` reserves it for a Persona that answers the enemy active's weaknesses, widening from revealed-only to all of them at CONFIG.WHIMS_DEFICIT; `providence` looks at the top CONFIG.PROVIDENCE_LOOK cards and discards any of them. A reservation ALWAYS overrides Momentum Draw weighting and the draw-level floor for that draw, and is spent whether or not it found anything.",
+      "RULE: `kind: \"inflict\"` applies a named ailment with certainty and deals no damage. It is the only guaranteed way to start a Technical — every other source is a percentage rider on a fire or electric skill, and every one of those prints its odds.",
+      "RULE: `percentOfTargetHp` on a damage effect replaces the power curve entirely: the hit deals that fraction of the target's CURRENT HP, modified only by weakness, resist and guard, exactly like a flat Special. Taking a share of what remains can never reduce it to zero, so a percentage skill never lands a knockout.",
+      "RULE: `rewriteAffinities` replaces a Persona INSTANCE's weakness and resist lists, preserving the count of each, clearing everything anyone had revealed, and setting `rewritten`. Every reader goes through state.affinitiesOf, and a rewritten Persona is opaque even to the Brutal bot — its cheat is reading the card, and the card no longer describes it. One exclusive per flavour: Turn of the Moon (P3), Jester's Trickery (P4), Change of Heart (P5)."
     ],
     "damageTypes": [
       "phys",
@@ -43,7 +59,29 @@
       "Moon",
       "Sun",
       "Judgement"
-    ]
+    ],
+    "passives": [
+      "trickster",
+      "stalwart",
+      "counter",
+      "analyst",
+      "bloodlust",
+      "soul-battery",
+      "sacrificial-lamb",
+      "momentum",
+      "endure"
+    ],
+    "archetypes": [
+      "aggressive",
+      "defensive",
+      "tactical",
+      "swift"
+    ],
+    "deckGroupCaps": {
+      "sp-restore": 2,
+      "skill-card": 2,
+      "twist-fate": 1
+    }
   },
   "skillLibrary": {
     "bash": {
@@ -51,10 +89,11 @@
       "type": "phys",
       "power": 40,
       "hpCost": 6,
-      "description": "Light physical damage to the enemy active Persona.",
+      "description": "Light physical damage to the enemy active Persona. Alacrity: a knockdown refunds your Persona change.",
       "effect": {
         "kind": "damage"
-      }
+      },
+      "alacrity": true
     },
     "cleave": {
       "name": "Cleave",
@@ -120,12 +159,12 @@
       "name": "Agi",
       "type": "fire",
       "power": 38,
-      "spCost": 4,
-      "description": "Light Fire damage. May inflict Burn.",
+      "spCost": 6,
+      "description": "Light Fire damage. 40% chance to inflict Burn.",
       "effect": {
         "kind": "damage",
         "ailment": "burn",
-        "ailmentChance": 0.25
+        "ailmentChance": 0.4
       }
     },
     "agilao": {
@@ -133,42 +172,42 @@
       "type": "fire",
       "power": 58,
       "spCost": 8,
-      "description": "Medium Fire damage. May inflict Burn.",
+      "description": "Medium Fire damage. 40% chance to inflict Burn.",
       "effect": {
         "kind": "damage",
         "ailment": "burn",
-        "ailmentChance": 0.25
+        "ailmentChance": 0.4
       }
     },
     "agidyne": {
       "name": "Agidyne",
       "type": "fire",
       "power": 84,
-      "spCost": 12,
-      "description": "Heavy Fire damage. May inflict Burn.",
-      "effect": {
-        "kind": "damage",
-        "ailment": "burn",
-        "ailmentChance": 0.3
-      }
-    },
-    "ragnarok": {
-      "name": "Ragnarok",
-      "type": "fire",
-      "power": 110,
-      "spCost": 20,
-      "description": "Severe Fire damage. Often inflicts Burn.",
+      "spCost": 14,
+      "description": "Heavy Fire damage. 50% chance to inflict Burn.",
       "effect": {
         "kind": "damage",
         "ailment": "burn",
         "ailmentChance": 0.5
       }
     },
+    "ragnarok": {
+      "name": "Ragnarok",
+      "type": "fire",
+      "power": 110,
+      "spCost": 24,
+      "description": "Severe Fire damage. 70% chance to inflict Burn.",
+      "effect": {
+        "kind": "damage",
+        "ailment": "burn",
+        "ailmentChance": 0.7
+      }
+    },
     "bufu": {
       "name": "Bufu",
       "type": "ice",
       "power": 38,
-      "spCost": 4,
+      "spCost": 6,
       "description": "Light Ice damage to the enemy active Persona.",
       "effect": {
         "kind": "damage"
@@ -188,7 +227,7 @@
       "name": "Bufudyne",
       "type": "ice",
       "power": 84,
-      "spCost": 12,
+      "spCost": 14,
       "description": "Heavy Ice damage to the enemy active Persona.",
       "effect": {
         "kind": "damage"
@@ -198,7 +237,7 @@
       "name": "Ice Breath",
       "type": "ice",
       "power": 46,
-      "spCost": 6,
+      "spCost": 7,
       "description": "Light Ice damage to the enemy active Persona.",
       "effect": {
         "kind": "damage"
@@ -208,59 +247,61 @@
       "name": "Zio",
       "type": "elec",
       "power": 38,
-      "spCost": 4,
-      "description": "Light Elec damage. May inflict Shock.",
+      "spCost": 6,
+      "description": "Light Elec damage. 40% chance to inflict Shock. Alacrity: a knockdown refunds your Persona change.",
       "effect": {
         "kind": "damage",
         "ailment": "shock",
-        "ailmentChance": 0.25
-      }
+        "ailmentChance": 0.4
+      },
+      "alacrity": true
     },
     "zionga": {
       "name": "Zionga",
       "type": "elec",
       "power": 58,
       "spCost": 8,
-      "description": "Medium Elec damage. May inflict Shock.",
+      "description": "Medium Elec damage. 40% chance to inflict Shock.",
       "effect": {
         "kind": "damage",
         "ailment": "shock",
-        "ailmentChance": 0.25
+        "ailmentChance": 0.4
       }
     },
     "ziodyne": {
       "name": "Ziodyne",
       "type": "elec",
       "power": 84,
-      "spCost": 12,
-      "description": "Heavy Elec damage. May inflict Shock.",
-      "effect": {
-        "kind": "damage",
-        "ailment": "shock",
-        "ailmentChance": 0.3
-      }
-    },
-    "thunder-reign": {
-      "name": "Thunder Reign",
-      "type": "elec",
-      "power": 118,
-      "spCost": 22,
-      "description": "Severe Elec damage. Often inflicts Shock.",
+      "spCost": 14,
+      "description": "Heavy Elec damage. 50% chance to inflict Shock.",
       "effect": {
         "kind": "damage",
         "ailment": "shock",
         "ailmentChance": 0.5
       }
     },
+    "thunder-reign": {
+      "name": "Thunder Reign",
+      "type": "elec",
+      "power": 118,
+      "spCost": 24,
+      "description": "Severe Elec damage. 70% chance to inflict Shock.",
+      "effect": {
+        "kind": "damage",
+        "ailment": "shock",
+        "ailmentChance": 0.7
+      }
+    },
     "garu": {
       "name": "Garu",
       "type": "wind",
       "power": 38,
-      "spCost": 4,
-      "description": "Light Wind damage to the enemy active Persona.",
+      "spCost": 6,
+      "description": "Light Wind damage to the enemy active Persona. Alacrity: a knockdown refunds your Persona change.",
       "effect": {
         "kind": "damage"
-      }
+      },
+      "alacrity": true
     },
     "garula": {
       "name": "Garula",
@@ -276,7 +317,7 @@
       "name": "Garudyne",
       "type": "wind",
       "power": 84,
-      "spCost": 12,
+      "spCost": 14,
       "description": "Heavy Wind damage to the enemy active Persona.",
       "effect": {
         "kind": "damage"
@@ -286,7 +327,7 @@
       "name": "Kouha",
       "type": "light",
       "power": 38,
-      "spCost": 4,
+      "spCost": 6,
       "description": "Light Light damage to the enemy active Persona.",
       "effect": {
         "kind": "damage"
@@ -306,7 +347,7 @@
       "name": "Kougaon",
       "type": "light",
       "power": 84,
-      "spCost": 12,
+      "spCost": 14,
       "description": "Heavy Light damage to the enemy active Persona.",
       "effect": {
         "kind": "damage"
@@ -315,30 +356,34 @@
     "hama": {
       "name": "Hama",
       "type": "light",
-      "power": 0,
-      "spCost": 8,
-      "description": "Chance to instantly KO the enemy active Persona.",
+      "power": 44,
+      "spCost": 7,
+      "description": "Light Light damage. Deals +50% to a target that is knocked down.",
       "effect": {
-        "kind": "instakill",
-        "chance": 0.3
+        "kind": "damage",
+        "execute": {
+          "when": "knockedDown"
+        }
       }
     },
     "hamaon": {
       "name": "Hamaon",
       "type": "light",
-      "power": 0,
-      "spCost": 14,
-      "description": "High chance to instantly KO the enemy active Persona.",
+      "power": 78,
+      "spCost": 15,
+      "description": "Heavy Light damage. Deals +50% to a target that is knocked down.",
       "effect": {
-        "kind": "instakill",
-        "chance": 0.4
+        "kind": "damage",
+        "execute": {
+          "when": "knockedDown"
+        }
       }
     },
     "eiha": {
       "name": "Eiha",
       "type": "dark",
       "power": 38,
-      "spCost": 4,
+      "spCost": 6,
       "description": "Light Dark damage to the enemy active Persona.",
       "effect": {
         "kind": "damage"
@@ -358,7 +403,7 @@
       "name": "Eigaon",
       "type": "dark",
       "power": 84,
-      "spCost": 12,
+      "spCost": 14,
       "description": "Heavy Dark damage to the enemy active Persona.",
       "effect": {
         "kind": "damage"
@@ -367,30 +412,36 @@
     "mudo": {
       "name": "Mudo",
       "type": "dark",
-      "power": 0,
-      "spCost": 8,
-      "description": "Chance to instantly KO the enemy active Persona.",
+      "power": 44,
+      "spCost": 7,
+      "description": "Light Dark damage. Deals +50% to a target below 40% HP.",
       "effect": {
-        "kind": "instakill",
-        "chance": 0.3
+        "kind": "damage",
+        "execute": {
+          "when": "lowHp",
+          "threshold": 0.4
+        }
       }
     },
     "mudoon": {
       "name": "Mudoon",
       "type": "dark",
-      "power": 0,
-      "spCost": 14,
-      "description": "High chance to instantly KO the enemy active Persona.",
+      "power": 78,
+      "spCost": 15,
+      "description": "Heavy Dark damage. Deals +50% to a target below 40% HP.",
       "effect": {
-        "kind": "instakill",
-        "chance": 0.4
+        "kind": "damage",
+        "execute": {
+          "when": "lowHp",
+          "threshold": 0.4
+        }
       }
     },
     "megido": {
       "name": "Megido",
       "type": "almighty",
       "power": 70,
-      "spCost": 16,
+      "spCost": 18,
       "description": "Medium Almighty damage. Cannot be resisted.",
       "effect": {
         "kind": "damage"
@@ -400,7 +451,7 @@
       "name": "Megidola",
       "type": "almighty",
       "power": 96,
-      "spCost": 22,
+      "spCost": 26,
       "description": "Heavy Almighty damage. Cannot be resisted.",
       "effect": {
         "kind": "damage"
@@ -410,7 +461,7 @@
       "name": "Megidolaon",
       "type": "almighty",
       "power": 130,
-      "spCost": 30,
+      "spCost": 34,
       "description": "Severe Almighty damage. Cannot be resisted.",
       "effect": {
         "kind": "damage"
@@ -420,7 +471,7 @@
       "name": "Myriad Truths",
       "type": "almighty",
       "power": 140,
-      "spCost": 32,
+      "spCost": 36,
       "description": "Colossal Almighty damage. Cannot be resisted.",
       "effect": {
         "kind": "damage"
@@ -430,7 +481,7 @@
       "name": "Dia",
       "type": "heal",
       "power": 30,
-      "spCost": 4,
+      "spCost": 6,
       "description": "Restore 30 HP to one of your Personas.",
       "effect": {
         "kind": "heal",
@@ -442,7 +493,7 @@
       "name": "Diarama",
       "type": "heal",
       "power": 60,
-      "spCost": 8,
+      "spCost": 9,
       "description": "Restore 60 HP to one of your Personas.",
       "effect": {
         "kind": "heal",
@@ -454,7 +505,7 @@
       "name": "Diarahan",
       "type": "heal",
       "power": 9999,
-      "spCost": 24,
+      "spCost": 28,
       "description": "Fully restore HP of one of your Personas.",
       "effect": {
         "kind": "heal",
@@ -466,7 +517,7 @@
       "name": "Media",
       "type": "heal",
       "power": 25,
-      "spCost": 10,
+      "spCost": 11,
       "description": "Restore 25 HP to all of your Personas.",
       "effect": {
         "kind": "heal",
@@ -478,7 +529,7 @@
       "name": "Mediarama",
       "type": "heal",
       "power": 45,
-      "spCost": 16,
+      "spCost": 19,
       "description": "Restore 45 HP to all of your Personas.",
       "effect": {
         "kind": "heal",
@@ -490,7 +541,7 @@
       "name": "Salvation",
       "type": "heal",
       "power": 9999,
-      "spCost": 30,
+      "spCost": 34,
       "description": "Fully restore HP and cure ailments on all of your Personas.",
       "effect": {
         "kind": "heal",
@@ -503,7 +554,7 @@
       "name": "Tarukaja",
       "type": "buff",
       "power": 0,
-      "spCost": 5,
+      "spCost": 6,
       "description": "Raise your active Persona's attack for 3 turns.",
       "effect": {
         "kind": "buff",
@@ -517,7 +568,7 @@
       "name": "Rakukaja",
       "type": "buff",
       "power": 0,
-      "spCost": 5,
+      "spCost": 6,
       "description": "Raise your active Persona's defense for 3 turns.",
       "effect": {
         "kind": "buff",
@@ -531,7 +582,7 @@
       "name": "Tarunda",
       "type": "debuff",
       "power": 0,
-      "spCost": 5,
+      "spCost": 6,
       "description": "Lower the enemy active Persona's attack for 3 turns.",
       "effect": {
         "kind": "buff",
@@ -545,7 +596,7 @@
       "name": "Rakunda",
       "type": "debuff",
       "power": 0,
-      "spCost": 5,
+      "spCost": 6,
       "description": "Lower the enemy active Persona's defense for 3 turns.",
       "effect": {
         "kind": "buff",
@@ -553,6 +604,29 @@
         "direction": "down",
         "target": "enemyActive",
         "duration": 3
+      }
+    },
+    "life-drain": {
+      "name": "Life Drain",
+      "type": "almighty",
+      "power": 0,
+      "spCost": 8,
+      "description": "Drains 20% of the enemy active Persona's CURRENT HP and restores that much to the user. Almighty, so nothing resists it — and because it takes a share of what is left, it can never land a knockout.",
+      "effect": {
+        "kind": "damage",
+        "drain": "hp",
+        "percentOfTargetHp": 0.2
+      }
+    },
+    "spirit-drain": {
+      "name": "Spirit Drain",
+      "type": "almighty",
+      "power": 0,
+      "spCost": 1,
+      "description": "Deals no damage. Steals up to 6 SP from the enemy active Persona — a net gain of 5.",
+      "effect": {
+        "kind": "drainSp",
+        "amount": 6
       }
     }
   },
@@ -565,6 +639,7 @@
       "level": 3,
       "game": "common",
       "flavor": "A tiny fairy whose healing spells outshine her fists.",
+      "passive": "trickster",
       "strength": 4,
       "magic": 8,
       "endurance": 4,
@@ -604,6 +679,15 @@
           "skill": "zionga",
           "unlockLevel": 14
         }
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 2,
+        "tactical": 2,
+        "swift": 3
+      },
+      "duoPartners": [
+        "jack-frost"
       ]
     },
     {
@@ -614,6 +698,7 @@
       "level": 6,
       "game": "common",
       "flavor": "Hee-ho! A cheerful snow spirit with a mean cold streak.",
+      "passive": "momentum",
       "strength": 6,
       "magic": 9,
       "endurance": 6,
@@ -653,6 +738,16 @@
           "skill": "bufudyne",
           "unlockLevel": 24
         }
+      ],
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 0,
+        "tactical": 1,
+        "swift": 3
+      },
+      "duoPartners": [
+        "pixie",
+        "black-frost"
       ]
     },
     {
@@ -663,6 +758,7 @@
       "level": 5,
       "game": "p3",
       "flavor": "A celestial dancer of clouds and water.",
+      "passive": "soul-battery",
       "strength": 4,
       "magic": 8,
       "endurance": 5,
@@ -702,6 +798,15 @@
           "skill": "bufula",
           "unlockLevel": 15
         }
+      ],
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 3,
+        "tactical": 3,
+        "swift": 2
+      },
+      "duoPartners": [
+        "orpheus"
       ]
     },
     {
@@ -712,6 +817,7 @@
       "level": 4,
       "game": "p3",
       "flavor": "The Master of Strings. A first awakening, fragile but bold.",
+      "passive": "analyst",
       "strength": 7,
       "magic": 8,
       "endurance": 6,
@@ -751,6 +857,15 @@
           "skill": "agilao",
           "unlockLevel": 12
         }
+      ],
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 3
+      },
+      "duoPartners": [
+        "apsaras"
       ]
     },
     {
@@ -800,6 +915,15 @@
           "skill": "ziodyne",
           "unlockLevel": 22
         }
+      ],
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 0,
+        "tactical": 0,
+        "swift": 3
+      },
+      "duoPartners": [
+        "ara-mitama"
       ]
     },
     {
@@ -849,6 +973,15 @@
           "skill": "eigaon",
           "unlockLevel": 20
         }
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 0,
+        "tactical": 3,
+        "swift": 2
+      },
+      "duoPartners": [
+        "jack-o-lantern"
       ]
     },
     {
@@ -859,13 +992,15 @@
       "level": 4,
       "game": "p4",
       "flavor": "A rough soul. All courage, no subtlety.",
+      "passive": "stalwart",
       "strength": 10,
       "magic": 4,
       "endurance": 7,
       "hp": 52,
       "sp": 18,
       "weaknesses": [
-        "ice"
+        "ice",
+        "elec"
       ],
       "resists": [
         "phys"
@@ -898,6 +1033,15 @@
           "skill": "heat-wave",
           "unlockLevel": 20
         }
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 3,
+        "tactical": 1,
+        "swift": 3
+      },
+      "duoPartners": [
+        "izanagi"
       ]
     },
     {
@@ -947,7 +1091,13 @@
           "skill": "hamaon",
           "unlockLevel": 18
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 0,
+        "swift": 2
+      }
     },
     {
       "id": "jack-o-lantern",
@@ -957,6 +1107,7 @@
       "level": 9,
       "game": "p5",
       "flavor": "A pumpkin-headed prankster with a lantern full of fire.",
+      "passive": "sacrificial-lamb",
       "strength": 7,
       "magic": 11,
       "endurance": 7,
@@ -996,6 +1147,15 @@
           "skill": "agidyne",
           "unlockLevel": 26
         }
+      ],
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 0,
+        "tactical": 3,
+        "swift": 3
+      },
+      "duoPartners": [
+        "arsene"
       ]
     },
     {
@@ -1006,6 +1166,7 @@
       "level": 10,
       "game": "common",
       "flavor": "A flower spirit born from a burning tree.",
+      "passive": "sacrificial-lamb",
       "strength": 7,
       "magic": 12,
       "endurance": 7,
@@ -1045,7 +1206,69 @@
           "skill": "diarama",
           "unlockLevel": 22
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 3
+      }
+    },
+    {
+      "id": "koppa-tengu",
+      "name": "Koppa Tengu",
+      "type": "persona",
+      "arcana": "Hermit",
+      "level": 8,
+      "game": "common",
+      "flavor": "A small crow tengu: all bluster, short flights and a borrowed sword.",
+      "passive": "momentum",
+      "strength": 8,
+      "magic": 7,
+      "endurance": 6,
+      "hp": 46,
+      "sp": 24,
+      "weaknesses": [
+        "fire"
+      ],
+      "resists": [
+        "wind"
+      ],
+      "statGrowth": {
+        "strength": 1,
+        "magic": 1,
+        "endurance": 1,
+        "hp": 3,
+        "sp": 2
+      },
+      "skills": [
+        {
+          "skill": "garu",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "bash",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 6
+        },
+        {
+          "skill": "garula",
+          "unlockLevel": 12
+        },
+        {
+          "skill": "assault-dive",
+          "unlockLevel": 16
+        }
+      ],
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 1,
+        "tactical": 2,
+        "swift": 3
+      }
     },
     {
       "id": "omoikane",
@@ -1094,7 +1317,13 @@
           "skill": "ziodyne",
           "unlockLevel": 24
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 2,
+        "tactical": 1,
+        "swift": 2
+      }
     },
     {
       "id": "nekomata",
@@ -1143,7 +1372,71 @@
           "skill": "agilao",
           "unlockLevel": 18
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 1,
+        "tactical": 3,
+        "swift": 2
+      },
+      "passive": "endure"
+    },
+    {
+      "id": "kaiwan",
+      "name": "Kaiwan",
+      "type": "persona",
+      "arcana": "Star",
+      "level": 14,
+      "game": "common",
+      "flavor": "A star-reading spirit. It has already seen how this ends.",
+      "strength": 9,
+      "magic": 14,
+      "endurance": 9,
+      "hp": 54,
+      "sp": 32,
+      "weaknesses": [
+        "light"
+      ],
+      "resists": [
+        "dark",
+        "elec"
+      ],
+      "statGrowth": {
+        "strength": 0,
+        "magic": 2,
+        "endurance": 1,
+        "hp": 4,
+        "sp": 3
+      },
+      "skills": [
+        {
+          "skill": "eiha",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "zio",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarunda",
+          "unlockLevel": 8
+        },
+        {
+          "skill": "eiga",
+          "unlockLevel": 12
+        },
+        {
+          "skill": "zionga",
+          "unlockLevel": 16
+        }
+      ],
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 0,
+        "tactical": 2,
+        "swift": 2
+      },
+      "passive": "endure"
     },
     {
       "id": "incubus",
@@ -1185,6 +1478,10 @@
           "unlockLevel": 14
         },
         {
+          "skill": "life-drain",
+          "unlockLevel": 16
+        },
+        {
           "skill": "eiga",
           "unlockLevel": 18
         },
@@ -1192,7 +1489,13 @@
           "skill": "eigaon",
           "unlockLevel": 28
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 0,
+        "tactical": 1,
+        "swift": 1
+      }
     },
     {
       "id": "silky",
@@ -1241,7 +1544,13 @@
           "skill": "diarama",
           "unlockLevel": 23
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 1,
+        "swift": 1
+      }
     },
     {
       "id": "ippon-datara",
@@ -1290,7 +1599,13 @@
           "skill": "heat-wave",
           "unlockLevel": 22
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 2,
+        "tactical": 0,
+        "swift": 2
+      }
     },
     {
       "id": "yaksini",
@@ -1339,7 +1654,13 @@
           "skill": "rakunda",
           "unlockLevel": 20
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 1,
+        "tactical": 3,
+        "swift": 1
+      }
     },
     {
       "id": "berith",
@@ -1388,7 +1709,13 @@
           "skill": "tarukaja",
           "unlockLevel": 23
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 1,
+        "tactical": 3,
+        "swift": 0
+      }
     },
     {
       "id": "take-minakata",
@@ -1398,6 +1725,7 @@
       "level": 17,
       "game": "p3",
       "flavor": "A thunder god who lost a duel and never forgot it.",
+      "passive": "bloodlust",
       "strength": 15,
       "magic": 12,
       "endurance": 11,
@@ -1437,7 +1765,13 @@
           "skill": "ziodyne",
           "unlockLevel": 28
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 2,
+        "tactical": 0,
+        "swift": 1
+      }
     },
     {
       "id": "mothman",
@@ -1476,6 +1810,10 @@
           "unlockLevel": 1
         },
         {
+          "skill": "spirit-drain",
+          "unlockLevel": 1
+        },
+        {
           "skill": "tarunda",
           "unlockLevel": 20
         },
@@ -1487,7 +1825,13 @@
           "skill": "ziodyne",
           "unlockLevel": 27
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 1,
+        "tactical": 2,
+        "swift": 1
+      }
     },
     {
       "id": "sarasvati",
@@ -1541,7 +1885,13 @@
           "skill": "bufudyne",
           "unlockLevel": 30
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 3,
+        "tactical": 0,
+        "swift": 0
+      }
     },
     {
       "id": "unicorn",
@@ -1594,7 +1944,13 @@
           "skill": "kouga",
           "unlockLevel": 28
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 0,
+        "swift": 0
+      }
     },
     {
       "id": "anzu",
@@ -1643,7 +1999,13 @@
           "skill": "garudyne",
           "unlockLevel": 30
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 1,
+        "tactical": 3,
+        "swift": 1
+      }
     },
     {
       "id": "mithra",
@@ -1698,7 +2060,13 @@
           "unlockLevel": 36
         }
       ],
-      "fusionOnly": true
+      "fusionOnly": true,
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 0
+      }
     },
     {
       "id": "kikuri-hime",
@@ -1753,7 +2121,13 @@
           "unlockLevel": 40
         }
       ],
-      "fusionOnly": true
+      "fusionOnly": true,
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 3,
+        "tactical": 0,
+        "swift": 0
+      }
     },
     {
       "id": "titania",
@@ -1808,7 +2182,13 @@
           "unlockLevel": 40
         }
       ],
-      "fusionOnly": true
+      "fusionOnly": true,
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 3,
+        "tactical": 1,
+        "swift": 0
+      }
     },
     {
       "id": "rangda",
@@ -1859,7 +2239,13 @@
           "unlockLevel": 40
         }
       ],
-      "fusionOnly": true
+      "fusionOnly": true,
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 2,
+        "tactical": 2,
+        "swift": 0
+      }
     },
     {
       "id": "girimehkala",
@@ -1910,7 +2296,13 @@
           "unlockLevel": 40
         }
       ],
-      "fusionOnly": true
+      "fusionOnly": true,
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 2,
+        "tactical": 1,
+        "swift": 0
+      }
     },
     {
       "id": "vasuki",
@@ -1961,7 +2353,13 @@
           "unlockLevel": 46
         }
       ],
-      "fusionOnly": true
+      "fusionOnly": true,
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 0
+      }
     },
     {
       "id": "black-frost",
@@ -1972,6 +2370,7 @@
       "game": "common",
       "fusionOnly": true,
       "flavor": "Hee-ho... A Jack Frost that went bad. Very bad.",
+      "passive": "trickster",
       "strength": 22,
       "magic": 28,
       "endurance": 20,
@@ -2012,6 +2411,15 @@
           "skill": "megido",
           "unlockLevel": 44
         }
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 0
+      },
+      "duoPartners": [
+        "jack-frost"
       ]
     },
     {
@@ -2062,7 +2470,13 @@
           "skill": "megidola",
           "unlockLevel": 52
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 2,
+        "tactical": 1,
+        "swift": 0
+      }
     },
     {
       "id": "thanatos",
@@ -2073,6 +2487,7 @@
       "game": "p3",
       "fusionOnly": true,
       "flavor": "Death itself, wrapped in coffins and silence.",
+      "passive": "bloodlust",
       "strength": 34,
       "magic": 30,
       "endurance": 26,
@@ -2113,7 +2528,13 @@
           "skill": "megidola",
           "unlockLevel": 54
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 2,
+        "tactical": 1,
+        "swift": 0
+      }
     },
     {
       "id": "odin",
@@ -2124,6 +2545,7 @@
       "game": "p4",
       "fusionOnly": true,
       "flavor": "The All-Father, one eye traded for every answer.",
+      "passive": "counter",
       "strength": 32,
       "magic": 36,
       "endurance": 26,
@@ -2164,7 +2586,13 @@
           "skill": "thunder-reign",
           "unlockLevel": 58
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 3,
+        "tactical": 3,
+        "swift": 0
+      }
     },
     {
       "id": "yoshitsune",
@@ -2215,7 +2643,13 @@
           "skill": "hassou-tobi",
           "unlockLevel": 60
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 2,
+        "tactical": 1,
+        "swift": 0
+      }
     },
     {
       "id": "messiah",
@@ -2270,7 +2704,13 @@
           "skill": "megidolaon",
           "unlockLevel": 66
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 3,
+        "tactical": 1,
+        "swift": 0
+      }
     },
     {
       "id": "satanael",
@@ -2321,7 +2761,13 @@
           "skill": "megidolaon",
           "unlockLevel": 66
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 2,
+        "tactical": 1,
+        "swift": 0
+      }
     },
     {
       "id": "izanagi-no-okami",
@@ -2374,7 +2820,13 @@
           "skill": "myriad-truths",
           "unlockLevel": 68
         }
-      ]
+      ],
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 0
+      }
     }
   ],
   "items": [
@@ -2383,11 +2835,18 @@
       "name": "Medicine",
       "type": "item",
       "usesAction": false,
+      "quality": 2,
       "description": "Restore 50 HP to one of your Personas.",
       "effect": {
         "kind": "heal",
         "amount": 50,
         "target": "ownAny"
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 1,
+        "swift": 2
       }
     },
     {
@@ -2395,11 +2854,18 @@
       "name": "Bead",
       "type": "item",
       "usesAction": false,
+      "quality": 4,
       "description": "Fully restore HP of one of your Personas.",
       "effect": {
         "kind": "heal",
         "amount": 9999,
         "target": "ownAny"
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 1,
+        "swift": 2
       }
     },
     {
@@ -2407,11 +2873,18 @@
       "name": "Bead Chain",
       "type": "item",
       "usesAction": false,
+      "quality": 3,
       "description": "Restore 40 HP to all of your Personas.",
       "effect": {
         "kind": "heal",
         "amount": 40,
         "target": "ownAll"
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 2,
+        "swift": 1
       }
     },
     {
@@ -2419,35 +2892,59 @@
       "name": "Snuff Soul",
       "type": "item",
       "usesAction": false,
-      "description": "Restore 30 SP to one of your Personas.",
+      "quality": 2,
+      "description": "Restore 18 SP to one of your Personas.",
       "effect": {
         "kind": "restoreSp",
-        "amount": 30,
+        "amount": 18,
         "target": "ownAny"
-      }
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 1,
+        "tactical": 2,
+        "swift": 3
+      },
+      "deckGroup": "sp-restore"
     },
     {
       "id": "chewing-soul",
       "name": "Chewing Soul",
       "type": "item",
       "usesAction": false,
-      "description": "Restore 60 SP to one of your Personas.",
+      "quality": 3,
+      "description": "Restore 36 SP to one of your Personas.",
       "effect": {
         "kind": "restoreSp",
-        "amount": 60,
+        "amount": 36,
         "target": "ownAny"
-      }
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 1,
+        "tactical": 2,
+        "swift": 2
+      },
+      "deckGroup": "sp-restore",
+      "exclusive": "p3"
     },
     {
       "id": "soma",
       "name": "Soma",
       "type": "item",
       "usesAction": false,
+      "quality": 5,
       "description": "Fully restore HP and SP of one of your Personas and cure its ailments.",
       "effect": {
         "kind": "fullRestore",
         "target": "ownAny",
         "cureAilments": true
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 1,
+        "swift": 1
       }
     },
     {
@@ -2455,11 +2952,18 @@
       "name": "Revival Bead",
       "type": "item",
       "usesAction": false,
+      "quality": 4,
       "description": "Revive a knocked-out Persona on your bench at 50% HP. Does NOT reduce the opponent's KO tally.",
       "effect": {
         "kind": "revive",
         "hpPercent": 0.5,
         "target": "ownKO"
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 2,
+        "swift": 1
       }
     },
     {
@@ -2467,10 +2971,17 @@
       "name": "Amrita Soda",
       "type": "item",
       "usesAction": false,
+      "quality": 1,
       "description": "Cure all status ailments on one of your Personas.",
       "effect": {
         "kind": "cureAilments",
         "target": "ownAny"
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 2,
+        "tactical": 2,
+        "swift": 2
       }
     },
     {
@@ -2478,6 +2989,7 @@
       "name": "Sapping Device",
       "type": "item",
       "usesAction": false,
+      "quality": 2,
       "description": "Lower the enemy active Persona's defense for 3 turns (Rakunda).",
       "effect": {
         "kind": "buff",
@@ -2485,6 +2997,12 @@
         "direction": "down",
         "target": "enemyActive",
         "duration": 3
+      },
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 0,
+        "tactical": 3,
+        "swift": 2
       }
     },
     {
@@ -2492,6 +3010,7 @@
       "name": "Muscle Drink",
       "type": "item",
       "usesAction": false,
+      "quality": 2,
       "description": "Raise your active Persona's attack for 3 turns (Tarukaja).",
       "effect": {
         "kind": "buff",
@@ -2499,6 +3018,108 @@
         "direction": "up",
         "target": "ownActive",
         "duration": 3
+      },
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 0,
+        "tactical": 2,
+        "swift": 2
+      }
+    },
+    {
+      "id": "smoke-bomb",
+      "name": "Smoke Bomb",
+      "type": "item",
+      "usesAction": false,
+      "quality": 4,
+      "exclusive": "p5",
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 3
+      },
+      "description": "Swap your active Persona for one on your bench. Costs neither your action nor your Persona change for the turn.",
+      "effect": {
+        "kind": "swapFree",
+        "target": "ownBench"
+      }
+    },
+    {
+      "id": "steak-skewer",
+      "name": "Steak Skewer",
+      "type": "item",
+      "usesAction": true,
+      "quality": 5,
+      "exclusive": "p4",
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 1,
+        "swift": 0
+      },
+      "description": "A meal worth stopping for. Fully restores one of your Personas and cures its ailments. Uses up your action.",
+      "effect": {
+        "kind": "fullRestore",
+        "target": "ownAny",
+        "cureAilments": true
+      }
+    },
+    {
+      "id": "skill-card-agilao",
+      "name": "Skill Card: Agilao",
+      "type": "item",
+      "usesAction": false,
+      "quality": 3,
+      "deckGroup": "skill-card",
+      "description": "Teach Agilao to one of your field Personas for the rest of the match. Medium Fire damage, and a way to cover an element your board simply does not have. It costs 8 SP to cast, like any other skill.",
+      "effect": {
+        "kind": "teachSkill",
+        "skillId": "agilao"
+      },
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 0,
+        "tactical": 3,
+        "swift": 1
+      }
+    },
+    {
+      "id": "skill-card-rakukaja",
+      "name": "Skill Card: Rakukaja",
+      "type": "item",
+      "usesAction": false,
+      "quality": 2,
+      "deckGroup": "skill-card",
+      "description": "Teach Rakukaja to one of your field Personas for the rest of the match. Raises defense for 3 turns. It costs 6 SP to cast, like any other skill.",
+      "effect": {
+        "kind": "teachSkill",
+        "skillId": "rakukaja"
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 3,
+        "swift": 1
+      }
+    },
+    {
+      "id": "skill-card-life-drain",
+      "name": "Skill Card: Life Drain",
+      "type": "item",
+      "usesAction": false,
+      "quality": 4,
+      "deckGroup": "skill-card",
+      "description": "Teach Life Drain to one of your field Personas for the rest of the match. Light Almighty damage that heals the user for what it dealt — sustain for a Persona that had none. It costs 8 SP to cast, like any other skill.",
+      "effect": {
+        "kind": "teachSkill",
+        "skillId": "life-drain"
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 1
       }
     }
   ],
@@ -2508,27 +3129,42 @@
       "name": "Theurgy",
       "type": "special",
       "usesAction": true,
-      "description": "Your active Persona unleashes its ultimate. Deals 120 power Almighty damage to the enemy active Persona. Uses up your action.",
+      "quality": 5,
+      "description": "Your active Persona unleashes its ultimate. Deals exactly 60 Almighty damage to the enemy active Persona — stats, buffs and Charge do not change it. Uses up your action.",
       "effect": {
         "kind": "damage",
         "damageType": "almighty",
-        "power": 120,
-        "target": "enemyActive",
-        "statSource": "best"
-      }
+        "amount": 60,
+        "flat": true,
+        "target": "enemyActive"
+      },
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 0,
+        "tactical": 0,
+        "swift": 0
+      },
+      "exclusive": "p3"
     },
     {
       "id": "armageddon",
       "name": "Armageddon",
       "type": "special",
       "usesAction": true,
-      "description": "A fusion spell that engulfs the whole enemy field. Deals 60 power Almighty damage to EVERY enemy Persona, active and benched. Uses up your action.",
+      "quality": 5,
+      "description": "A fusion spell that engulfs the whole enemy field. Deals exactly 30 Almighty damage to EVERY enemy Persona, active and benched. Uses up your action.",
       "effect": {
         "kind": "damage",
         "damageType": "almighty",
-        "power": 60,
-        "target": "enemyAll",
-        "statSource": "magic"
+        "amount": 30,
+        "flat": true,
+        "target": "enemyAll"
+      },
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 0,
+        "tactical": 1,
+        "swift": 0
       }
     },
     {
@@ -2536,11 +3172,18 @@
       "name": "Ambush",
       "type": "special",
       "usesAction": false,
+      "quality": 3,
       "description": "You caught them off guard. This turn, your attacks and offensive skills may target any single enemy Persona, including benched ones.",
       "effect": {
         "kind": "grant",
         "grant": "targetBench",
         "duration": "thisTurn"
+      },
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 0,
+        "tactical": 2,
+        "swift": 2
       }
     },
     {
@@ -2548,10 +3191,17 @@
       "name": "SP Transfer",
       "type": "special",
       "usesAction": false,
-      "description": "Move up to 30 SP from one of your Personas to another.",
+      "quality": 2,
+      "description": "Move up to 18 SP from one of your Personas to another.",
       "effect": {
         "kind": "transferSp",
-        "amount": 30
+        "amount": 18
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 1,
+        "tactical": 2,
+        "swift": 3
       }
     },
     {
@@ -2559,12 +3209,19 @@
       "name": "Baton Pass",
       "type": "special",
       "usesAction": false,
+      "quality": 2,
       "description": "Hand off the momentum. You may change your active Persona one extra time this turn.",
       "effect": {
         "kind": "grant",
         "grant": "extraPersonaChange",
         "amount": 1,
         "duration": "thisTurn"
+      },
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 0,
+        "tactical": 1,
+        "swift": 3
       }
     },
     {
@@ -2572,11 +3229,18 @@
       "name": "Dekaja",
       "type": "special",
       "usesAction": false,
+      "quality": 2,
       "description": "Remove all buffs from the enemy active Persona.",
       "effect": {
         "kind": "dispel",
         "remove": "buffs",
         "target": "enemyActive"
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 2
       }
     },
     {
@@ -2584,11 +3248,18 @@
       "name": "Dekunda",
       "type": "special",
       "usesAction": false,
+      "quality": 2,
       "description": "Remove all debuffs from your active Persona.",
       "effect": {
         "kind": "dispel",
         "remove": "debuffs",
         "target": "ownActive"
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 2,
+        "swift": 2
       }
     },
     {
@@ -2596,6 +3267,7 @@
       "name": "Concentrate",
       "type": "special",
       "usesAction": false,
+      "quality": 4,
       "description": "The next magic skill your active Persona uses deals x2.5 damage.",
       "effect": {
         "kind": "charge",
@@ -2603,6 +3275,12 @@
         "multiplier": 2.5,
         "appliesTo": "magic",
         "target": "ownActive"
+      },
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 0,
+        "tactical": 1,
+        "swift": 1
       }
     },
     {
@@ -2610,6 +3288,7 @@
       "name": "Charge",
       "type": "special",
       "usesAction": false,
+      "quality": 4,
       "description": "The next physical skill your active Persona uses deals x2.5 damage.",
       "effect": {
         "kind": "charge",
@@ -2617,6 +3296,409 @@
         "multiplier": 2.5,
         "appliesTo": "phys",
         "target": "ownActive"
+      },
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 0,
+        "tactical": 1,
+        "swift": 1
+      }
+    },
+    {
+      "id": "fortunes-draw",
+      "name": "Fortune's Draw",
+      "type": "special",
+      "usesAction": false,
+      "quality": 4,
+      "description": "Name an Arcana still in your deck. Your next draw is guaranteed to be a Persona of that Arcana.",
+      "effect": {
+        "kind": "guaranteedDraw",
+        "target": "ownDeck"
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 1,
+        "tactical": 2,
+        "swift": 3
+      }
+    },
+    {
+      "id": "growth-ritual",
+      "name": "Growth Ritual",
+      "type": "special",
+      "usesAction": false,
+      "quality": 4,
+      "description": "Every Persona on your bench gains +1 level. Your active Persona is busy fighting and gains nothing.",
+      "effect": {
+        "kind": "growth",
+        "levels": 1,
+        "target": "ownBench"
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 2
+      }
+    },
+    {
+      "id": "marionette-strings",
+      "name": "Marionette Strings",
+      "type": "special",
+      "usesAction": false,
+      "quality": 4,
+      "description": "Force the opponent to switch. Their active Persona is pulled to the bench and their strongest healthy benched Persona steps up in its place — you do not get to choose which.",
+      "effect": {
+        "kind": "forceSwitch",
+        "target": "enemyActive"
+      },
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 1,
+        "tactical": 3,
+        "swift": 2
+      }
+    },
+    {
+      "id": "third-eye",
+      "name": "Third Eye",
+      "type": "special",
+      "usesAction": false,
+      "quality": 3,
+      "description": "Read the enemy active Persona: all of its weaknesses and resists are revealed to you for the rest of the match.",
+      "effect": {
+        "kind": "reveal",
+        "target": "enemyActive"
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 1,
+        "tactical": 3,
+        "swift": 2
+      },
+      "exclusive": "p5"
+    },
+    {
+      "id": "full-analysis",
+      "name": "Full Analysis",
+      "type": "special",
+      "usesAction": false,
+      "quality": 3,
+      "description": "Scan the opponent's hand. You may look at every card in it until the end of your turn.",
+      "effect": {
+        "kind": "peekHand",
+        "target": "enemyHand"
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 1,
+        "tactical": 3,
+        "swift": 2
+      },
+      "exclusive": "p4"
+    },
+    {
+      "id": "velvet-summons",
+      "name": "Velvet Summons",
+      "type": "special",
+      "usesAction": true,
+      "quality": 5,
+      "description": "Call one of your knocked-out Personas back from the Velvet Room to your hand. It does NOT reduce your opponent's KO tally. Uses up your action.",
+      "effect": {
+        "kind": "recall",
+        "target": "ownKO"
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 2,
+        "swift": 0
+      }
+    },
+    {
+      "id": "soul-inversion",
+      "name": "Soul Inversion",
+      "type": "special",
+      "usesAction": false,
+      "quality": 3,
+      "description": "Swap your active Persona's remaining HP and SP. Neither can exceed its maximum, and it can never drop below 1 HP.",
+      "effect": {
+        "kind": "swapHpSp",
+        "target": "ownActive"
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 2,
+        "tactical": 2,
+        "swift": 3
+      }
+    },
+    {
+      "id": "wild-card",
+      "name": "Wild Card",
+      "type": "special",
+      "usesAction": true,
+      "quality": 4,
+      "description": "Borrow the last skill your opponent used and cast it yourself, free of HP or SP cost. Uses up your action.",
+      "effect": {
+        "kind": "mimic",
+        "target": "lastEnemySkill"
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 0,
+        "tactical": 3,
+        "swift": 1
+      }
+    },
+    {
+      "id": "phantom-strike",
+      "name": "Phantom Strike",
+      "type": "special",
+      "usesAction": false,
+      "quality": 5,
+      "exclusive": "p5",
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 0,
+        "tactical": 3,
+        "swift": 2
+      },
+      "description": "Playable only once the enemy active Persona's weaknesses and resists are fully revealed. The next skill you land on one of its weaknesses deals +50% damage and costs no SP.",
+      "effect": {
+        "kind": "phantomStrike",
+        "target": "enemyActive"
+      }
+    },
+    {
+      "id": "shuffle-time",
+      "name": "Shuffle Time",
+      "type": "special",
+      "usesAction": false,
+      "quality": 4,
+      "exclusive": "p4",
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 3
+      },
+      "description": "Look at the top 3 cards of your deck. Draw one of them; the other two go to the bottom.",
+      "effect": {
+        "kind": "shuffleTime",
+        "look": 3,
+        "target": "ownDeck"
+      }
+    },
+    {
+      "id": "persona-evolution",
+      "name": "Persona Evolution",
+      "type": "special",
+      "usesAction": false,
+      "quality": 5,
+      "exclusive": "p4",
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 0
+      },
+      "description": "Your active Persona breaks through and learns the next skill printed on its card, whatever level that skill would normally need.",
+      "effect": {
+        "kind": "evolve",
+        "target": "ownActive"
+      }
+    },
+    {
+      "id": "dark-hour",
+      "name": "Dark Hour",
+      "type": "special",
+      "usesAction": false,
+      "quality": 5,
+      "exclusive": "p3",
+      "affinity": {
+        "aggressive": 3,
+        "defensive": 0,
+        "tactical": 2,
+        "swift": 0
+      },
+      "description": "The hour between days. For one full round, every skill and attack — yours and theirs — deals x1.5 damage. Specials that print a flat number are unaffected.",
+      "effect": {
+        "kind": "darkHour",
+        "turns": 2
+      }
+    },
+    {
+      "id": "moonless-gown",
+      "name": "Moonless Gown",
+      "type": "special",
+      "usesAction": false,
+      "quality": 4,
+      "exclusive": "p3",
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 3,
+        "tactical": 2,
+        "swift": 0
+      },
+      "description": "Your active Persona takes NO damage until the start of your next turn — and cannot act for that whole time.",
+      "effect": {
+        "kind": "ward",
+        "target": "ownActive"
+      }
+    },
+    {
+      "id": "whims-of-fate",
+      "name": "Whims of Fate",
+      "type": "special",
+      "usesAction": false,
+      "quality": 4,
+      "description": "Fate looks for the answer to whatever is in front of you. Your next draw becomes a Persona from your deck that can hit one of the enemy active Persona's weaknesses. It matches only weaknesses you have already UNCOVERED — unless you are behind by 2 or more knockouts, in which case it matches every weakness, revealed or not. It does not reveal anything. If your deck holds no answer, you draw as normal.",
+      "effect": {
+        "kind": "fateFetch",
+        "target": "ownDeck"
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 1,
+        "tactical": 3,
+        "swift": 2
+      }
+    },
+    {
+      "id": "arcana-reading",
+      "name": "Arcana Reading",
+      "type": "special",
+      "usesAction": false,
+      "quality": 3,
+      "description": "Name an Arcana still in your deck. Your next draw becomes the HIGHEST-level Persona of that Arcana you have left.",
+      "effect": {
+        "kind": "guaranteedDraw",
+        "best": true,
+        "target": "ownDeck"
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 2
+      }
+    },
+    {
+      "id": "providence",
+      "name": "Providence",
+      "type": "special",
+      "usesAction": false,
+      "quality": 4,
+      "description": "Look at the top 5 cards of your deck. Discard any number of them; the rest stay on top, in the order they were.",
+      "effect": {
+        "kind": "providence",
+        "look": 5,
+        "target": "ownDeck"
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 2
+      }
+    },
+    {
+      "id": "lesser-theurgy",
+      "name": "Lesser Theurgy",
+      "type": "special",
+      "usesAction": false,
+      "quality": 4,
+      "description": "Choose Burn or Shock and inflict it on the enemy active Persona. No targeting, no roll: it always lands. You may only choose an ailment it does not already have — Shock sets up a physical Technical this turn; Burn sets up a fire/wind one and keeps burning meanwhile.",
+      "effect": {
+        "kind": "inflict",
+        "ailments": [
+          "burn",
+          "shock"
+        ],
+        "target": "enemyActive"
+      },
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 0,
+        "tactical": 3,
+        "swift": 2
+      }
+    },
+    {
+      "id": "turn-of-the-moon",
+      "name": "Turn of the Moon",
+      "type": "special",
+      "usesAction": false,
+      "quality": 4,
+      "exclusive": "p3",
+      "description": "The hour turns and your active Persona turns with it: its weaknesses and resists are rewritten. The new chart is drawn at random, keeps the same number of weaknesses and resists, and is hidden from everyone again — including a Brutal opponent, whose knowledge comes from the card and the card no longer applies.",
+      "effect": {
+        "kind": "rewriteAffinities",
+        "scope": "ownActive"
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 3,
+        "tactical": 3,
+        "swift": 1
+      }
+    },
+    {
+      "id": "jesters-trickery",
+      "name": "Jester's Trickery",
+      "type": "special",
+      "usesAction": false,
+      "quality": 5,
+      "exclusive": "p4",
+      "description": "A shuffle of the cards nobody asked for. Rewrite the weaknesses and resists of ANY one Persona on your field. The new chart is drawn at random, keeps the same number of weaknesses and resists, and is hidden from everyone again — including a Brutal opponent, whose knowledge comes from the card and the card no longer applies.",
+      "effect": {
+        "kind": "rewriteAffinities",
+        "scope": "ownAny"
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 3,
+        "tactical": 3,
+        "swift": 2
+      }
+    },
+    {
+      "id": "change-of-heart",
+      "name": "Change of Heart",
+      "type": "special",
+      "usesAction": false,
+      "quality": 5,
+      "exclusive": "p5",
+      "description": "Steal both hearts at once: BOTH active Personas have their weaknesses and resists rewritten. You lose everything you had scouted on them, and they lose everything they had on you. The new chart is drawn at random, keeps the same number of weaknesses and resists, and is hidden from everyone again — including a Brutal opponent, whose knowledge comes from the card and the card no longer applies.",
+      "effect": {
+        "kind": "rewriteAffinities",
+        "scope": "bothActive"
+      },
+      "affinity": {
+        "aggressive": 2,
+        "defensive": 2,
+        "tactical": 3,
+        "swift": 1
+      }
+    },
+    {
+      "id": "twist-of-fate",
+      "name": "Twist of Fate",
+      "type": "special",
+      "usesAction": true,
+      "quality": 5,
+      "deckGroup": "twist-fate",
+      "description": "Uses up your action. Name an element: it replaces ONE of the enemy active Persona's weaknesses, and you cannot name something it resists. Your opponent decides which weakness is given up, and they will shed one you had already uncovered before one you had not. The new weakness is revealed to both of you.",
+      "effect": {
+        "kind": "twistFate",
+        "target": "enemyActive"
+      },
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 0,
+        "tactical": 3,
+        "swift": 1
       }
     }
   ],
@@ -2638,8 +3720,8 @@
         "Priestess",
         "Hierophant"
       ],
-      "minCombinedLevel": 26,
-      "description": "Priestess + Hierophant (combined level 26+)"
+      "minCombinedLevel": 24,
+      "description": "Priestess + Hierophant (combined level 24+)"
     },
     {
       "id": "fuse-titania",
@@ -2648,8 +3730,8 @@
         "Lovers",
         "Star"
       ],
-      "minCombinedLevel": 28,
-      "description": "Lovers + Star (combined level 28+)"
+      "minCombinedLevel": 24,
+      "description": "Lovers + Star (combined level 24+)"
     },
     {
       "id": "fuse-rangda",
@@ -2778,316 +3860,111 @@
       "name": "Burning Bravery",
       "game": "p3",
       "tagline": "P3 Deck — steady healers, thunder and a coffin waiting to open.",
-      "cards": [
-        {
-          "id": "orpheus",
-          "count": 2
-        },
-        {
-          "id": "apsaras",
-          "count": 2
-        },
-        {
-          "id": "pixie",
-          "count": 2
-        },
-        {
-          "id": "ara-mitama",
-          "count": 2
-        },
-        {
-          "id": "jack-frost",
-          "count": 1
-        },
-        {
-          "id": "omoikane",
-          "count": 1
-        },
-        {
-          "id": "take-minakata",
-          "count": 1
-        },
-        {
-          "id": "silky",
-          "count": 1
-        },
-        {
-          "id": "unicorn",
-          "count": 1
-        },
-        {
-          "id": "sarasvati",
-          "count": 1
-        },
-        {
-          "id": "angel",
-          "count": 1
-        },
-        {
-          "id": "hua-po",
-          "count": 1
-        },
-        {
-          "id": "medicine",
-          "count": 2
-        },
-        {
-          "id": "bead",
-          "count": 1
-        },
-        {
-          "id": "bead-chain",
-          "count": 1
-        },
-        {
-          "id": "snuff-soul",
-          "count": 2
-        },
-        {
-          "id": "chewing-soul",
-          "count": 1
-        },
-        {
-          "id": "revival-bead",
-          "count": 1
-        },
-        {
-          "id": "theurgy",
-          "count": 1
-        },
-        {
-          "id": "armageddon",
-          "count": 1
-        },
-        {
-          "id": "sp-transfer",
-          "count": 1
-        },
-        {
-          "id": "dekaja",
-          "count": 1
-        },
-        {
-          "id": "concentrate",
-          "count": 1
-        },
-        {
-          "id": "baton-pass",
-          "count": 1
-        }
-      ]
+      "flavourLean": "aggressive",
+      "playstyle": "Haymaker — big SP skills, its own SP economy, and swings that end rounds."
     },
     {
       "id": "p4",
       "name": "Reach Out To The Truth",
       "game": "p4",
       "tagline": "P4 Deck — blunt physical pressure and a fog that hides nothing.",
-      "cards": [
-        {
-          "id": "izanagi",
-          "count": 2
-        },
-        {
-          "id": "jack-frost",
-          "count": 2
-        },
-        {
-          "id": "yaksini",
-          "count": 2
-        },
-        {
-          "id": "ippon-datara",
-          "count": 2
-        },
-        {
-          "id": "ara-mitama",
-          "count": 1
-        },
-        {
-          "id": "pixie",
-          "count": 1
-        },
-        {
-          "id": "mothman",
-          "count": 1
-        },
-        {
-          "id": "hua-po",
-          "count": 1
-        },
-        {
-          "id": "berith",
-          "count": 1
-        },
-        {
-          "id": "anzu",
-          "count": 1
-        },
-        {
-          "id": "angel",
-          "count": 1
-        },
-        {
-          "id": "nekomata",
-          "count": 1
-        },
-        {
-          "id": "medicine",
-          "count": 2
-        },
-        {
-          "id": "bead",
-          "count": 1
-        },
-        {
-          "id": "snuff-soul",
-          "count": 1
-        },
-        {
-          "id": "chewing-soul",
-          "count": 1
-        },
-        {
-          "id": "amrita-soda",
-          "count": 1
-        },
-        {
-          "id": "muscle-drink",
-          "count": 1
-        },
-        {
-          "id": "revival-bead",
-          "count": 1
-        },
-        {
-          "id": "theurgy",
-          "count": 1
-        },
-        {
-          "id": "armageddon",
-          "count": 1
-        },
-        {
-          "id": "ambush",
-          "count": 1
-        },
-        {
-          "id": "charge",
-          "count": 1
-        },
-        {
-          "id": "dekunda",
-          "count": 1
-        },
-        {
-          "id": "baton-pass",
-          "count": 1
-        }
-      ]
+      "flavourLean": "defensive",
+      "playstyle": "Midrange grind — healing, buffs and steady growth. Outlast, then out-know."
     },
     {
       "id": "p5",
       "name": "Take Your Heart",
       "game": "p5",
       "tagline": "P5 Deck — curses, ambushes and stolen momentum.",
-      "cards": [
-        {
-          "id": "arsene",
-          "count": 2
-        },
-        {
-          "id": "nekomata",
-          "count": 2
-        },
-        {
-          "id": "incubus",
-          "count": 2
-        },
-        {
-          "id": "jack-o-lantern",
-          "count": 2
-        },
-        {
-          "id": "pixie",
-          "count": 1
-        },
-        {
-          "id": "berith",
-          "count": 1
-        },
-        {
-          "id": "anzu",
-          "count": 1
-        },
-        {
-          "id": "mothman",
-          "count": 1
-        },
-        {
-          "id": "sarasvati",
-          "count": 1
-        },
-        {
-          "id": "silky",
-          "count": 1
-        },
-        {
-          "id": "unicorn",
-          "count": 1
-        },
-        {
-          "id": "omoikane",
-          "count": 1
-        },
-        {
-          "id": "medicine",
-          "count": 2
-        },
-        {
-          "id": "bead",
-          "count": 1
-        },
-        {
-          "id": "snuff-soul",
-          "count": 2
-        },
-        {
-          "id": "sapping-device",
-          "count": 1
-        },
-        {
-          "id": "soma",
-          "count": 1
-        },
-        {
-          "id": "amrita-soda",
-          "count": 1
-        },
-        {
-          "id": "theurgy",
-          "count": 1
-        },
-        {
-          "id": "ambush",
-          "count": 1
-        },
-        {
-          "id": "concentrate",
-          "count": 1
-        },
-        {
-          "id": "charge",
-          "count": 1
-        },
-        {
-          "id": "sp-transfer",
-          "count": 1
-        },
-        {
-          "id": "baton-pass",
-          "count": 1
-        }
-      ]
+      "flavourLean": "tactical",
+      "playstyle": "Scout then strike — probe for weaknesses, swap into the counter, hit once and hard."
+    }
+  ],
+  "showtimes": [
+    {
+      "id": "duo-evening-elegy",
+      "name": "Evening Elegy",
+      "pair": [
+        "orpheus",
+        "apsaras"
+      ],
+      "flavour": "p3",
+      "description": "Orpheus takes up the lyre and Apsaras dances to it. Deals exactly 75 Almighty damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage",
+        "damageType": "almighty",
+        "amount": 75,
+        "flat": true,
+        "target": "enemyActive"
+      }
+    },
+    {
+      "id": "duo-truth-unveiled",
+      "name": "Truth Unveiled",
+      "pair": [
+        "izanagi",
+        "ara-mitama"
+      ],
+      "flavour": "p4",
+      "description": "Blade and fury, swung together through the fog. Deals exactly 42 Almighty damage to EVERY enemy Persona, active and benched.",
+      "effect": {
+        "kind": "damage",
+        "damageType": "almighty",
+        "amount": 42,
+        "flat": true,
+        "target": "enemyAll"
+      }
+    },
+    {
+      "id": "duo-curtain-call",
+      "name": "Curtain Call",
+      "pair": [
+        "arsene",
+        "jack-o-lantern"
+      ],
+      "flavour": "p5",
+      "description": "A gentleman thief, a lantern, and no witnesses. Deals exactly 60 Dark damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage",
+        "damageType": "dark",
+        "amount": 60,
+        "flat": true,
+        "target": "enemyActive"
+      }
+    },
+    {
+      "id": "duo-hee-ho-hop",
+      "name": "Hee-Ho Hop",
+      "pair": [
+        "pixie",
+        "jack-frost"
+      ],
+      "flavour": "common",
+      "description": "Hee-ho! Small, cheerful, and colder than it looks. Deals exactly 55 Ice damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage",
+        "damageType": "ice",
+        "amount": 55,
+        "flat": true,
+        "target": "enemyActive"
+      }
+    },
+    {
+      "id": "duo-frozen-rebellion",
+      "name": "Frozen Rebellion",
+      "pair": [
+        "jack-frost",
+        "black-frost"
+      ],
+      "flavour": "common",
+      "description": "What Jack Frost became, standing beside what he was. Deals exactly 110 Almighty damage to the enemy active Persona.",
+      "effect": {
+        "kind": "damage",
+        "damageType": "almighty",
+        "amount": 110,
+        "flat": true,
+        "target": "enemyActive"
+      }
     }
   ]
 }

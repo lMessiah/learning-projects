@@ -65,13 +65,22 @@ afterEach(() => {
 });
 
 describe('setup', () => {
-  it('collects two names and two decks', () => {
+  it('collects a name, a deck flavour and a play style for each seat', () => {
     renderHotseat(root);
     expect($$('.seat-name input')).toHaveLength(2);
-    expect($$('.setup__row')).toHaveLength(2);
-    // Each seat starts on a different deck.
-    const chosen = $$('.setup__row').map((row) => row.querySelector('.setup-card--on').dataset.deckId);
-    expect(chosen[0]).not.toBe(chosen[1]);
+    // Two rows per seat now: the flavour, then the archetype.
+    expect($$('.setup__row')).toHaveLength(4);
+
+    const deckRows = $$('.setup__row').filter((row) => row.querySelector('[data-deck-id]'));
+    const styleRows = $$('.setup__row').filter((row) => row.querySelector('[data-archetype]'));
+    expect(deckRows).toHaveLength(2);
+    expect(styleRows).toHaveLength(2);
+
+    // Each seat starts on a different deck and a different play style.
+    const decks = deckRows.map((row) => row.querySelector('.setup-card--on').dataset.deckId);
+    const styles = styleRows.map((row) => row.querySelector('.setup-card--on').dataset.archetype);
+    expect(decks[0]).not.toBe(decks[1]);
+    expect(styles[0]).not.toBe(styles[1]);
   });
 });
 

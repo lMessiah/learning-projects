@@ -1,4 +1,4 @@
-/* Card gallery — Phase 1 inspection view. */
+/* Card gallery — the card-database reference view. */
 
 .gallery__filters {
   display: flex;
@@ -186,4 +186,17 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--gold);
+}
+
+.ref-card__playstyle {
+  margin: 2px 0 6px;
+  font-size: 11.5px;
+  color: var(--ink);
+}
+
+.ref-card__exclusives {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--ink-dim);
+  line-height: 1.5;
 }

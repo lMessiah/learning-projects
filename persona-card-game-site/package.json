@@ -3,13 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Unofficial fan-made Persona-inspired browser card game (alpha). No official artwork or assets.",
+  "description": "Unofficial fan-made Persona-inspired browser card game (beta). No official artwork or assets.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "simulate": "vite-node tools/simulate.js"
   },
   "devDependencies": {
     "jsdom": "^30.0.1",

@@ -29,8 +29,22 @@ export {
   handCard,
   handCardDefinition,
   visibleAffinities,
+  affinitiesOf,
+  canTargetBench,
+  availableShowtimes,
+  gallowsMeal,
 } from './state.js';
-export { computeDamage, instakillChance, affinityOf, attackStatOf } from './damage.js';
+export {
+  PASSIVE_DEFS,
+  PASSIVE_LIST,
+  PASSIVE_CHOICE_PREFIX,
+  passiveOf,
+  printedPassive,
+  passiveDefinition,
+  hasPassive,
+  koDeficit,
+} from './passives.js';
+export { computeDamage, executeMultiplier, technicalFor, affinityOf, attackStatOf } from './damage.js';
 export {
   applyBuff,
   applyAilment,
@@ -43,10 +57,22 @@ export {
   levelUp,
   koPersona,
   drawCards,
+  revealType,
+  revealAllTypes,
+  twistFate,
+  twistableElements,
+  twistSacrifice,
   evaluateGameEnd,
   runStartOfTurn,
   runEndOfTurn,
 } from './effects.js';
 export { applyAction } from './actions.js';
 export { redactStateFor, isRedacted, findLeaks, HIDDEN_CARD } from './redact.js';
-export { getLegalActions, describeFusions, fusionCandidates } from './legal.js';
+export {
+  getLegalActions,
+  describeFusions,
+  fusionCandidates,
+  gallowsActions,
+  gallowsAvailable,
+  showtimeActions,
+} from './legal.js';

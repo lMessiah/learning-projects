@@ -8,7 +8,7 @@
  * the alternatives are attached as metadata for the UI.
  */
 import { CONFIG, skillCategory } from './config.js';
-import { getCard, getPersona, FUSION_RECIPES } from '../data/cards.js';
+import { getCard, getPersona, cardQuality, FUSION_RECIPES } from '../data/cards.js';
 import {
   opponentOf,
   getActive,
@@ -19,14 +19,33 @@ import {
   canPlayPersonaCard,
   personaSkills,
   hasAilment,
+  canTargetBench,
+  remainingPersonaArcana,
+  mimicableSkill,
+  affinitiesFullyRevealed,
+  affinitiesOf,
+  availableShowtimes,
+  deckTop,
+  gallowsMeal,
 } from './state.js';
+import { passiveOf, printedPassive, koDeficit, PASSIVE_CHOICE_PREFIX } from './passives.js';
+import { twistableElements } from './effects.js';
 
-/** Enemy Personas that may legally be targeted right now. */
+/**
+ * Enemy Personas that may legally be targeted right now. Active-only, unless
+ * Ambush opened the bench for the turn or a One More is waiting to be spent.
+ */
 function enemyTargets(state, playerId) {
   const foeId = opponentOf(playerId);
-  if (state.turnState?.canTargetBench) return livingField(state, foeId);
+  if (canTargetBench(state)) return livingField(state, foeId);
   const active = getActive(state, foeId);
   return active ? [active] : [];
+}
+
+/** Has this Persona anything to rewrite? A blank chart cannot be scrambled. */
+function rewritable(persona) {
+  const { weaknesses, resists } = affinitiesOf(persona);
+  return weaknesses.length + resists.length > 0;
 }
 
 function canAffordSkill(persona, skill) {
@@ -44,12 +63,89 @@ function effectTargets(state, playerId, effect) {
     case 'cureAilments':
       return livingField(state, playerId);
     case 'revive':
+    case 'recall':
       return koedField(state, playerId);
+    case 'swapFree':
+      return benchOf(state, playerId).filter((p) => !p.knockedDown);
     case 'damage':
       return effect.target === 'enemyAll' ? null : enemyTargets(state, playerId);
+    case 'drainSp':
+      return enemyTargets(state, playerId).filter((p) => p.sp > 0);
+    case 'teachSkill':
+      return livingField(state, playerId).filter(
+        (p) => !personaSkills(state, p).some((s) => s.id === effect.skillId)
+      );
+    case 'rewriteAffinities':
+      // Only the "any of yours" scope needs a target; the rest hit fixed slots.
+      return effect.scope === 'ownAny'
+        ? livingField(state, playerId).filter((p) => rewritable(p))
+        : null;
+    case 'mimic': {
+      // Whatever the copied skill would need.
+      const skill = mimicableSkill(state, playerId);
+      return skill ? effectTargets(state, playerId, skill.effect) : null;
+    }
     default:
-      return null; // buff / dispel / charge / grant hit fixed slots
+      // buff / dispel / charge / grant / growth / forceSwitch / reveal /
+      // peekHand / swapHpSp all hit fixed slots.
+      return null;
   }
+}
+
+/**
+ * The extra, non-Persona choices an effect needs. Fortune's Draw is the only
+ * one: it asks for an Arcana rather than a target on the board.
+ */
+function effectChoices(state, playerId, effect) {
+  if (effect.kind === 'guaranteedDraw') {
+    const arcana = remainingPersonaArcana(state, playerId);
+    return arcana.length ? arcana.map((value) => ({ arcana: value })) : null;
+  }
+  if (effect.kind === 'shuffleTime') {
+    // One choice per card the player is allowed to look at. The card ids ride
+    // along so the UI can show what it is choosing between.
+    const top = deckTop(state, playerId, effect.look ?? CONFIG.SHUFFLE_TIME_LOOK);
+    return top.length ? top.map((cardId, index) => ({ keepIndex: index, keepCardId: cardId })) : null;
+  }
+  if (effect.kind === 'inflict' && effect.ailments.length > 1) {
+    // One option per ailment on offer — the whole point of the card is which.
+    const target = getActive(state, opponentOf(playerId));
+    const open = effect.ailments.filter((type) => target && !hasAilment(target, type));
+    return open.length ? open.map((ailment) => ({ ailment })) : null;
+  }
+  if (effect.kind === 'twistFate') {
+    // One option per element you are allowed to name. Nothing you resist, and
+    // nothing they are already weak to — the picker offers exactly what the
+    // handler will accept.
+    const target = getActive(state, opponentOf(playerId));
+    const elements = twistableElements(target);
+    return elements.length ? elements.map((element) => ({ element })) : null;
+  }
+  if (effect.kind === 'providence') {
+    const top = deckTop(state, playerId, effect.look ?? CONFIG.PROVIDENCE_LOOK);
+    if (!top.length) return null;
+
+    // DESIGN NOTE: Providence accepts any subset of the cards it showed you, so
+    // the honest legal-action list would be 2^5 entries. Instead this offers
+    // "throw away the k weakest", ranked by the same 0..1 card-quality scale
+    // Momentum Draw uses, for k = 0..look. That is a real gradient for the bot
+    // to score against; the UI ignores these and opens a free-form picker, and
+    // the handler accepts whatever it sends.
+    const ranked = top
+      .map((cardId, index) => ({ index, quality: cardQuality(cardId) }))
+      .sort((a, b) => a.quality - b.quality);
+
+    const options = [];
+    for (let k = 0; k <= ranked.length; k++) {
+      options.push({
+        discardIndexes: ranked.slice(0, k).map((entry) => entry.index).sort((a, b) => a - b),
+        providenceTop: top,
+        needsChoice: true,
+      });
+    }
+    return options;
+  }
+  return null;
 }
 
 /** True when an effect has at least one thing to do. */
@@ -85,11 +181,123 @@ function effectIsUseful(state, playerId, effect) {
       const own = livingField(state, playerId);
       return own.some((a) => a.sp > 0) && own.some((b) => b.sp < b.maxSp) && own.length >= 2;
     }
+
+    // Worth casting even at a full pool: taking it off them is half the value.
+    case 'drainSp':
+      return Boolean(getActive(state, playerId)) && enemyTargets(state, playerId).some((p) => p.sp > 0);
+
+    case 'teachSkill':
+      return livingField(state, playerId).some(
+        (p) => !personaSkills(state, p).some((s) => s.id === effect.skillId)
+      );
     case 'damage': {
       // Damage Specials are delivered BY your active Persona, so they need one.
       if (!getActive(state, playerId)) return false;
       return effect.target === 'enemyAll' ? livingField(state, foeId).length > 0 : enemyTargets(state, playerId).length > 0;
     }
+
+    case 'guaranteedDraw':
+      return remainingPersonaArcana(state, playerId).length > 0;
+
+    case 'fateFetch': {
+      // Playable once there is a question to answer. Below the deficit that
+      // means a weakness you have actually uncovered; at or above it, any.
+      const target = getActive(state, foeId);
+      if (!target) return false;
+      const { weaknesses } = affinitiesOf(target);
+      if (koDeficit(state, playerId) >= CONFIG.WHIMS_DEFICIT) return weaknesses.length > 0;
+      return weaknesses.some((type) => target.revealedTypes.includes(type));
+    }
+
+    case 'providence':
+      return deckTop(state, playerId, effect.look ?? CONFIG.PROVIDENCE_LOOK).length > 0;
+
+    case 'rewriteAffinities': {
+      // A Persona with nothing printed either way has nothing to scramble.
+      if (effect.scope === 'ownAny') return livingField(state, playerId).some((p) => rewritable(p));
+      const mine = getActive(state, playerId);
+      if (effect.scope === 'bothActive') {
+        const theirs = getActive(state, foeId);
+        return Boolean(mine && theirs) && (rewritable(mine) || rewritable(theirs));
+      }
+      return Boolean(mine) && rewritable(mine);
+    }
+
+    case 'twistFate': {
+      // Needs a target with at least one weakness to trade away, and at least
+      // one element left that is neither resisted nor already a weakness.
+      const target = getActive(state, foeId);
+      return twistableElements(target).length > 0;
+    }
+
+    case 'inflict': {
+      const target = getActive(state, foeId);
+      // Re-applying an ailment only refreshes its duration, so it is still
+      // worth doing — but not if they already have every one on offer at full.
+      return Boolean(target) && effect.ailments.some((type) => !hasAilment(target, type));
+    }
+
+    case 'growth':
+      return benchOf(state, playerId).length > 0;
+
+    case 'forceSwitch':
+      return Boolean(getActive(state, foeId)) && benchOf(state, foeId).some((p) => !p.knockedDown);
+
+    case 'reveal': {
+      const target = getActive(state, foeId);
+      if (!target) return false;
+      const { weaknesses, resists } = affinitiesOf(target);
+      // Nothing to learn if it has already been read.
+      return [...weaknesses, ...resists].some((type) => !target.revealedTypes.includes(type));
+    }
+
+    case 'peekHand':
+      return state.players[foeId].hand.length > 0 && !state.turnState?.peekHand;
+
+    case 'recall':
+      return koedField(state, playerId).length > 0;
+
+    case 'swapHpSp': {
+      const active = getActive(state, playerId);
+      return Boolean(active) && active.hp !== active.sp;
+    }
+
+    case 'phantomStrike': {
+      const target = getActive(state, foeId);
+      // Only worth arming — and only legal — once the mark has been fully read.
+      return Boolean(target) && affinitiesFullyRevealed(target) && !state.turnState?.phantomStrike;
+    }
+
+    case 'swapFree':
+      return benchOf(state, playerId).some((p) => !p.knockedDown);
+
+    case 'shuffleTime':
+      return deckTop(state, playerId, effect.look ?? CONFIG.SHUFFLE_TIME_LOOK).length > 0;
+
+    case 'evolve': {
+      const active = getActive(state, playerId);
+      if (!active) return false;
+      const known = new Set(personaSkills(state, active).map((s) => s.id));
+      return getPersona(active.cardId).skills.some((s) => !known.has(s.id));
+    }
+
+    case 'darkHour':
+      return !(state.darkHour?.turnsLeft > 0);
+
+    case 'ward': {
+      const active = getActive(state, playerId);
+      return Boolean(active) && !active.warded;
+    }
+
+    case 'mimic': {
+      const skill = mimicableSkill(state, playerId);
+      if (!skill) return false;
+      if (skill.effect.kind === 'damage') {
+        return Boolean(getActive(state, playerId)) && enemyTargets(state, playerId).length > 0;
+      }
+      return Boolean(getActive(state, playerId)) && effectIsUseful(state, playerId, skill.effect);
+    }
+
     default:
       return false;
   }
@@ -114,6 +322,9 @@ function cardActions(state, playerId, entry, card, actionType) {
     return out;
   }
 
+  const choices = effectChoices(state, playerId, card.effect);
+  if (choices) return choices.map((choice) => ({ ...base, ...choice }));
+
   const targets = effectTargets(state, playerId, card.effect);
   if (!targets) return [base];
   return targets.map((target) => ({ ...base, targetUid: target.uid }));
@@ -137,6 +348,7 @@ export function fusionCandidates(state, playerId) {
         level: persona.level,
         arcana: card.arcana,
         skills: personaSkills(state, persona),
+        passive: passiveOf(persona),
         isActive: player.activeUid === persona.uid,
       };
     }),
@@ -152,6 +364,7 @@ export function fusionCandidates(state, playerId) {
           level: card.level,
           arcana: card.arcana,
           skills: card.skills.filter((s) => s.unlockLevel <= card.level),
+          passive: printedPassive(card.id),
           isActive: false,
         };
       }),
@@ -173,7 +386,7 @@ function pairFits(state, playerId, a, b) {
  */
 export function describeFusions(state, playerId) {
   const candidates = fusionCandidates(state, playerId);
-  const hasAction = (state.turnState?.actionsRemaining ?? 0) > 0;
+  const spent = (state.turnState?.fusionsPerformed ?? 0) >= CONFIG.FUSIONS_PER_TURN;
 
   return FUSION_RECIPES.map((recipe) => {
     const pairs = [];
@@ -213,25 +426,49 @@ export function describeFusions(state, playerId) {
       else if (bestCombined < recipe.minCombinedLevel) reason = `Combined level ${bestCombined}/${recipe.minCombinedLevel}`;
       else if (blockedByRoom) reason = 'No room on your field for the result';
       else reason = 'No usable pair';
-    } else if (!hasAction) {
-      reason = 'No action left this turn';
+    } else if (spent) {
+      reason = `Already fused this turn (${CONFIG.FUSIONS_PER_TURN} per turn)`;
     }
 
     return {
       recipe,
       result: getPersona(recipe.result),
+      resultPassive: printedPassive(recipe.result),
       minCombinedLevel: recipe.minCombinedLevel,
       arcana: recipe.arcana,
       pairs,
       bestCombined,
-      satisfiable: pairs.length > 0 && hasAction,
+      satisfiable: pairs.length > 0 && !spent,
       reason,
     };
   });
 }
 
+/**
+ * Is there at least one fusion this player could perform right now? Cheaper
+ * than `describeFusions` because it stops at the first hit — used once per turn
+ * to record whether a fusion went begging.
+ */
+export function fusionAvailable(state, playerId) {
+  const candidates = fusionCandidates(state, playerId);
+  for (const recipe of FUSION_RECIPES) {
+    for (let i = 0; i < candidates.length; i++) {
+      for (let j = i + 1; j < candidates.length; j++) {
+        const a = candidates[i];
+        const b = candidates[j];
+        if (!pairMatchesArcana(a, b, recipe.arcana)) continue;
+        if (a.level + b.level < recipe.minCombinedLevel) continue;
+        if (!a.skills.length || !b.skills.length) continue;
+        if (!pairFits(state, playerId, a, b)) continue;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function fusionActions(state, playerId) {
-  if (state.turnState.actionsRemaining <= 0) return [];
+  if (state.turnState.fusionsPerformed >= CONFIG.FUSIONS_PER_TURN) return [];
   const candidates = fusionCandidates(state, playerId);
   const out = [];
   for (const recipe of FUSION_RECIPES) {
@@ -246,6 +483,15 @@ function fusionActions(state, playerId) {
         // fed entirely from hand can be blocked by a full field.
         if (!pairFits(state, playerId, a, b)) continue;
 
+        // Each parent offers its unlocked skills OR its passive; the result can
+        // take at most one passive, and overwriting a native one needs a
+        // confirmation (`replacePassive`), which is why the default choice is
+        // always two skills.
+        const options = [a, b].map((parent) => [
+          ...parent.skills.map((s) => s.id),
+          ...(parent.passive ? [`${PASSIVE_CHOICE_PREFIX}${parent.passive}`] : []),
+        ]);
+
         out.push({
           type: 'FUSE',
           player: playerId,
@@ -255,14 +501,106 @@ function fusionActions(state, playerId) {
             { zone: a.zone, uid: a.uid },
             { zone: b.zone, uid: b.uid },
           ],
-          inherit: [a.skills[0].id, b.skills[0].id], // default choice
-          inheritOptions: [a.skills.map((s) => s.id), b.skills.map((s) => s.id)],
+          inherit: [a.skills[0].id, b.skills[0].id], // default choice: skills only
+          inheritOptions: options,
+          resultPassive: printedPassive(recipe.result),
           needsChoice: true,
         });
       }
     }
   }
   return out;
+}
+
+/** Duo attacks that are unlocked, unspent and would actually do something. */
+export function showtimeActions(state, playerId) {
+  if ((state.turnState?.actionsRemaining ?? 0) <= 0) return [];
+  const out = [];
+  for (const showtime of availableShowtimes(state, playerId)) {
+    if (!effectIsUseful(state, playerId, showtime.effect)) continue;
+    const base = { type: 'SHOWTIME', player: playerId, showtimeId: showtime.id, name: showtime.name };
+    const targets = effectTargets(state, playerId, showtime.effect);
+    if (!targets) out.push(base);
+    else for (const target of targets) out.push({ ...base, targetUid: target.uid });
+  }
+  return out;
+}
+
+/**
+ * Every (eater, food) pairing the Gallows would accept right now.
+ *
+ * `nourishing` rides along so the UI can say which meals are worth a level and
+ * which are only worth the HP, without re-deriving the rule.
+ */
+export function gallowsActions(state, playerId) {
+  const turn = state.turnState;
+  if (!turn) return [];
+  if (turn.gallowsUsed >= CONFIG.GALLOWS_PER_TURN) return [];
+
+  const eaters = livingField(state, playerId);
+  if (!eaters.length) return [];
+
+  // With the action already spent, only the free junk tier is still on offer —
+  // and junk needs food further than COMEBACK_FARM_GAP beneath its eater. Rule
+  // that out on two numbers before building the cross product: this runs on
+  // every getLegalActions call, and the bot makes thousands of them per match.
+  const spentAction = turn.actionsRemaining <= 0;
+  if (spentAction) {
+    const tallestEater = Math.max(...eaters.map((p) => p.level));
+    const smallestMeal = Math.min(
+      ...eaters.map((p) => p.level),
+      ...state.players[playerId].hand
+        .filter((entry) => getCard(entry.cardId).type === 'persona')
+        .map((entry) => getPersona(entry.cardId).level),
+      Infinity
+    );
+    if (smallestMeal >= tallestEater - CONFIG.COMEBACK_FARM_GAP) return [];
+  }
+
+  const meals = [
+    ...eaters.map((p) => ({ zone: 'field', uid: p.uid, cardId: p.cardId, level: p.level, passive: passiveOf(p) })),
+    ...state.players[playerId].hand
+      .filter((entry) => getCard(entry.cardId).type === 'persona')
+      .map((entry) => ({
+        zone: 'hand',
+        uid: entry.uid,
+        cardId: entry.cardId,
+        level: getPersona(entry.cardId).level,
+        passive: printedPassive(entry.cardId),
+      })),
+  ];
+
+  const out = [];
+  for (const eater of eaters) {
+    for (const meal of meals) {
+      if (meal.zone === 'field' && meal.uid === eater.uid) continue;
+      const worth = gallowsMeal(eater.level, meal.level, meal.passive, eater.maxHp);
+      // The top two tiers cost the action, so they need one to spend. Junk
+      // disposal is free and stays on the list even on a spent turn.
+      if (worth.usesAction && turn.actionsRemaining <= 0) continue;
+      out.push({
+        type: 'GALLOWS',
+        player: playerId,
+        eaterUid: eater.uid,
+        food: { zone: meal.zone, uid: meal.uid },
+        foodCardId: meal.cardId,
+        // The whole verdict rides along so neither the UI nor the bot has to
+        // re-derive it — `nourishing` is kept for callers that only care whether
+        // any levels are coming.
+        tier: worth.tier,
+        levels: worth.levels,
+        heal: worth.heal,
+        usesAction: worth.usesAction,
+        nourishing: worth.nourishing,
+      });
+    }
+  }
+  return out;
+}
+
+/** Is there anything the Gallows would accept right now? */
+export function gallowsAvailable(state, playerId) {
+  return gallowsActions(state, playerId).length > 0;
 }
 
 export function getLegalActions(state, playerId) {
@@ -307,6 +645,16 @@ export function getLegalActions(state, playerId) {
     }
   }
 
+  // Fusion costs no action, so it sits with the other free plays and is
+  // available even after you have attacked — and even to a Persona that cannot
+  // act, because fusing is something the player does, not the active Persona.
+  actions.push(...fusionActions(state, playerId));
+
+  // The Gallows sits with fusion for the same reason, and because its bottom
+  // tier costs no action at all: `gallowsActions` decides for itself which
+  // meals still need one, so it cannot live inside the action block.
+  actions.push(...gallowsActions(state, playerId));
+
   if (turn.personaChangesRemaining > 0) {
     for (const persona of benchOf(state, playerId)) {
       if (persona.knockedDown) continue;
@@ -317,7 +665,7 @@ export function getLegalActions(state, playerId) {
   // --- The one action ---------------------------------------------------
   if (turn.actionsRemaining > 0) {
     const active = getActive(state, playerId);
-    const canAct = active && !active.knockedDown && !hasAilment(active, 'shock');
+    const canAct = active && !active.knockedDown && !active.warded && !hasAilment(active, 'shock');
 
     if (canAct) {
       for (const target of enemyTargets(state, playerId)) {
@@ -326,7 +674,7 @@ export function getLegalActions(state, playerId) {
 
       for (const skill of personaSkills(state, active)) {
         if (!canAffordSkill(active, skill)) continue;
-        const isOffensive = skill.effect.kind === 'damage' || skill.effect.kind === 'instakill';
+        const isOffensive = skill.effect.kind === 'damage';
         if (isOffensive) {
           for (const target of enemyTargets(state, playerId)) {
             actions.push({ type: 'USE_SKILL', player: playerId, skillId: skill.id, targetUid: target.uid });
@@ -344,12 +692,17 @@ export function getLegalActions(state, playerId) {
       }
 
       actions.push({ type: 'GUARD', player: playerId });
-      actions.push(...fusionActions(state, playerId));
+      actions.push(...showtimeActions(state, playerId));
     }
 
     // Pass is always available — it is the guaranteed escape from any lock.
     actions.push({ type: 'PASS', player: playerId });
   }
+
+  // Conceding is always available on your own turn. It is deliberately last:
+  // the bot's "is there anything productive left" check works off this list,
+  // and resigning is never productive.
+  actions.push({ type: 'RESIGN', player: playerId, needsConfirmation: true });
 
   // --- Ending the turn --------------------------------------------------
   const overflow = Math.max(0, player.hand.length - CONFIG.HAND_LIMIT);

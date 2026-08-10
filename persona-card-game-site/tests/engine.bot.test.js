@@ -205,8 +205,9 @@ describe('passivity', () => {
       activeOf(state, 1).ailments.push({ type: 'shock', turnsLeft: 1 });
       setHand(state, 1, []);
 
+      // RESIGN is legal on every turn of every match; the bot never sees it.
       const legal = getLegalActions(state, 1).map((a) => a.type);
-      expect(new Set(legal)).toEqual(new Set(['PASS', 'END_TURN']));
+      expect(new Set(legal)).toEqual(new Set(['PASS', 'RESIGN', 'END_TURN']));
 
       const [action] = chooseBotAction(state, 1, difficulty, createRng(3));
       expect(['PASS', 'END_TURN']).toContain(action.type);

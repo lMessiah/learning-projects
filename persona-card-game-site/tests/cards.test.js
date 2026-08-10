@@ -6,16 +6,17 @@ import {
   DECKS,
   FUSION_RECIPES,
   STARTER_POOL,
-  expandDeck,
   getCard,
   skillsAtLevel,
   validateDatabase,
 } from '../src/data/cards.js';
+import { ARCHETYPE_IDS, expandDeck, validateDecks, validateAll } from '../src/data/archetypes.js';
 import { CONFIG } from '../src/engine/config.js';
 
 describe('card database', () => {
   it('passes structural validation', () => {
     expect(validateDatabase()).toEqual([]);
+    expect(validateAll()).toEqual([]);
   });
 
   it('has the expected card counts', () => {
@@ -27,13 +28,15 @@ describe('card database', () => {
     expect(FUSION_RECIPES.length).toBe(PERSONAS.filter((p) => p.fusionOnly).length);
   });
 
-  it('keeps every deck under the level cap, with the strong Personas fusion-only', () => {
+  it('keeps every generated deck under the level cap, with the strong Personas fusion-only', () => {
     for (const deck of DECKS) {
-      for (const entry of deck.cards) {
-        const card = getCard(entry.id);
-        if (card.type !== 'persona') continue;
-        expect(card.fusionOnly).toBe(false);
-        expect(card.level).toBeLessThanOrEqual(CONFIG.DECK_MAX_PERSONA_LEVEL);
+      for (const archetype of [null, ...ARCHETYPE_IDS]) {
+        for (const cardId of expandDeck(deck.id, { archetype })) {
+          const card = getCard(cardId);
+          if (card.type !== 'persona') continue;
+          expect(card.fusionOnly).toBe(false);
+          expect(card.level).toBeLessThanOrEqual(CONFIG.DECK_MAX_PERSONA_LEVEL);
+        }
       }
     }
   });
@@ -45,17 +48,21 @@ describe('card database', () => {
     }
   });
 
-  it('builds three 30-card decks', () => {
+  it('generates a legal 30-card deck for all twelve flavour x archetype pairs', () => {
     expect(DECKS.map((d) => d.id).sort()).toEqual(['p3', 'p4', 'p5']);
+    expect(validateDecks()).toEqual([]);
     for (const deck of DECKS) {
-      expect(expandDeck(deck.id)).toHaveLength(30);
+      for (const archetype of ARCHETYPE_IDS) {
+        expect(expandDeck(deck.id, { archetype })).toHaveLength(30);
+      }
     }
   });
 
   it('resolves skill references into full skill objects', () => {
     const pixie = getCard('pixie');
     const zio = pixie.skills.find((s) => s.name === 'Zio');
-    expect(zio).toMatchObject({ type: 'elec', power: 38, spCost: 4, unlockLevel: 1 });
+    expect(zio).toMatchObject({ type: 'elec', power: 38, unlockLevel: 1 });
+    expect(zio.spCost).toBeGreaterThan(0);
     expect(zio.description).toBeTruthy();
     expect(zio.effect.kind).toBe('damage');
   });

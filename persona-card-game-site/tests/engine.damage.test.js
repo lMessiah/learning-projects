@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeDamage, instakillChance, affinityOf, CONFIG } from '../src/engine/index.js';
+import { computeDamage, executeMultiplier, affinityOf, CONFIG } from '../src/engine/index.js';
+import { SKILLS } from '../src/data/cards.js';
 import { fakePersona } from './helpers.js';
 
 // Jack Frost: weak to fire, resists ice. Used as the defender throughout.
@@ -118,19 +119,50 @@ describe('multipliers', () => {
   });
 });
 
-describe('instant kill chance', () => {
-  it('doubles on a weakness and halves on a resist or a guard', () => {
-    // Angel is weak to dark, resists light.
-    const angel = fakePersona('angel');
-    expect(instakillChance({ defender: angel, damageType: 'dark', baseChance: 0.3 }).chance).toBeCloseTo(0.6);
-    expect(instakillChance({ defender: angel, damageType: 'light', baseChance: 0.3 }).chance).toBeCloseTo(0.15);
+describe('execute riders', () => {
+  const KNOCKDOWN = { when: 'knockedDown' };
+  const LOW_HP = { when: 'lowHp', threshold: 0.4 };
 
-    const guarded = fakePersona('angel', { guarding: true });
-    expect(instakillChance({ defender: guarded, damageType: 'dark', baseChance: 0.3 }).chance).toBeCloseTo(0.3);
+  it('is inert without a rider', () => {
+    expect(executeMultiplier(fakePersona('angel', { knockedDown: true }), undefined)).toBe(1);
+    expect(executeMultiplier(fakePersona('angel'), null)).toBe(1);
   });
 
-  it('clamps the chance to [0, 1]', () => {
+  it('pays out against a knocked-down target and nothing else', () => {
+    expect(executeMultiplier(fakePersona('angel'), KNOCKDOWN)).toBe(1);
+    expect(executeMultiplier(fakePersona('angel', { knockedDown: true }), KNOCKDOWN)).toBe(CONFIG.EXECUTE_MULT);
+  });
+
+  it('pays out strictly below the HP threshold', () => {
     const angel = fakePersona('angel');
-    expect(instakillChance({ defender: angel, damageType: 'dark', baseChance: 0.9 }).chance).toBe(1);
+    const at = (hp) => executeMultiplier({ ...angel, hp, maxHp: 100 }, LOW_HP);
+    expect(at(41)).toBe(1);
+    expect(at(40)).toBe(1); // exactly 40% is not below it
+    expect(at(39)).toBe(CONFIG.EXECUTE_MULT);
+    expect(at(1)).toBe(CONFIG.EXECUTE_MULT);
+  });
+
+  it('leaves the two conditions independent', () => {
+    // A knocked-down but healthy target is nothing to Mudo, and a dying but
+    // standing one is nothing to Hama.
+    const downed = fakePersona('angel', { knockedDown: true, hp: 100, maxHp: 100 });
+    const dying = fakePersona('angel', { hp: 5, maxHp: 100 });
+    expect(executeMultiplier(downed, LOW_HP)).toBe(1);
+    expect(executeMultiplier(dying, KNOCKDOWN)).toBe(1);
+  });
+
+  it('leaves no skill in the database with a random chance to KO', () => {
+    for (const [id, skill] of Object.entries(SKILLS)) {
+      expect(skill.effect.kind, `${id} is still an instakill`).not.toBe('instakill');
+      expect(skill.effect.chance, `${id} still carries a bare chance roll`).toBeUndefined();
+    }
+  });
+
+  it('prints the odds of every ailment rider on the card', () => {
+    for (const [id, skill] of Object.entries(SKILLS)) {
+      if (!skill.effect.ailmentChance) continue;
+      const printed = `${Math.round(skill.effect.ailmentChance * 100)}%`;
+      expect(skill.description, `${id} does not state its ailment chance`).toContain(printed);
+    }
   });
 });

@@ -19,15 +19,20 @@ import {
   personaSkills,
   opponentOf,
   playableLevelCap,
+  getLegalActions,
+  affinitiesOf,
+  twistSacrifice,
 } from '../../engine/index.js';
-import { getCard, getPersona, PERSONAS } from '../../data/cards.js';
+import { getCard, getPersona, getShowtime, PERSONAS } from '../../data/cards.js';
 import { renderCard } from '../cardView.js';
 import { arcanaStyle, typeIcon, typeLabel } from '../arcana.js';
 import { makeInspectable, openCardDetail, hideTooltip, fullPersonaCard, fullHandCard } from './inspect.js';
-import { diffStates, playEffects } from './anim.js';
+import { diffStates, playEffects, statusTokens, cssDurationVars } from './anim.js';
 import { renderFusionPanel, hasSatisfiableFusion } from './fusionPanel.js';
 import { getSettings, animationScale, autoEndDelay } from '../settings.js';
 import { renderRulesContent } from '../rules.js';
+import { renderTips, analyseMatch, STRATEGY_TIPS, GENERAL_TIPS } from '../tips.js';
+import { renderMatchStats } from '../matchStats.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -67,12 +72,21 @@ export function mountBoard(root, options) {
   const viewerOf = typeof options.viewer === 'function' ? options.viewer : () => options.viewer;
 
   // Transient interaction state, cleared whenever the game state changes.
-  let ui = { targeting: null, modal: null, fusion: null };
+  // `resultTab` deliberately sits outside the group that `act` resets: which
+  // half of the end-of-match screen you were reading is not part of a move.
+  let ui = { targeting: null, modal: null, fusion: null, gallows: null, resultTab: 'summary' };
   let previousState = null;
   let pendingEffects = null;
   let autoEndTimer = null;
+  // Survives re-renders so the log keeps its place while you read it.
+  const logScroll = { pinned: true, top: 0 };
 
   const screen = el('div', 'board-screen');
+  // The base durations come from the one table in anim.js; the stylesheet only
+  // divides them by --anim-scale. Stamped once, since they never change.
+  for (const [name, value] of Object.entries(cssDurationVars())) {
+    screen.style.setProperty(name, value);
+  }
   root.innerHTML = '';
   root.appendChild(screen);
   // Board mode hands the viewport over to the match: no page scrolling.
@@ -95,21 +109,35 @@ export function mountBoard(root, options) {
     screen.classList.toggle('board-screen--no-anim', scale === 0);
     screen.appendChild(renderTop(state, { ...options, setUi }, viewer));
 
+    // Resigning is offered whenever the match is live — including on your
+    // opponent's turn, which is exactly when you are most likely to want it.
+    const logOptions = {
+      onResign: state.winner === null ? () => setUi({ modal: resignModal(viewer) }) : null,
+    };
+
     if (state.phase === 'starterSelect') {
       const wrap = el('div', 'board-main board-main--single');
       wrap.appendChild(renderStarterSelect(state, viewer, act));
-      wrap.appendChild(renderLog(state));
+      wrap.appendChild(renderLog(state, logScroll, logOptions));
       screen.appendChild(wrap);
+      // The resign dialog is reachable from here too, so modals have to render
+      // before this early return, not only on the play screen.
+      if (ui.modal) screen.appendChild(ui.modal(state, { ui, act, setUi, viewer }));
       return;
     }
 
     const main = el('div', 'board-main');
     main.appendChild(renderPlayArea(state, viewer, controller, ui, act, setUi, settings));
-    main.appendChild(renderLog(state));
+    main.appendChild(renderLog(state, logScroll, logOptions));
     screen.appendChild(main);
 
+    // Full Analysis floats OVER the board rather than being inserted into it —
+    // an inline panel would shove every tile down the moment it appeared.
+    const peek = renderPeek(state, viewer);
+    if (peek) screen.appendChild(peek);
+
     if (ui.modal) screen.appendChild(ui.modal(state, { ui, act, setUi, viewer }));
-    if (state.winner !== null) screen.appendChild(renderGameOver(state, viewer, options));
+    if (state.winner !== null) screen.appendChild(renderGameOver(state, viewer, options, ui, setUi));
 
     if (pendingEffects) {
       playEffects(screen, pendingEffects, scale);
@@ -131,11 +159,13 @@ export function mountBoard(root, options) {
     if (ui.modal || ui.targeting) return;
 
     const turn = state.turnState;
-    const oneMorePending = turn.oneMoreUsed && turn.actionsRemaining > 0;
+    const oneMorePending = turn.oneMoreActive;
     const batonPending = turn.personaChangesRemaining > CONFIG.PERSONA_CHANGES_PER_TURN;
     if (oneMorePending || batonPending) return;
 
-    const legal = controller.legalActions(viewer);
+    // Resign is legal on every turn and is never a reason to keep the turn
+    // open, so it does not count as "something else is still playable".
+    const legal = controller.legalActions(viewer).filter((a) => a.type !== 'RESIGN');
     const endTurn = legal.find((a) => a.type === 'END_TURN');
     if (!endTurn || endTurn.needsChoice) return; // a forced discard is a choice
     if (legal.length !== 1) return; // something else is still playable
@@ -152,7 +182,7 @@ export function mountBoard(root, options) {
   }
 
   function act(action) {
-    ui = { targeting: null, modal: null, fusion: null };
+    ui = { targeting: null, modal: null, fusion: null, gallows: null };
     try {
       controller.dispatch(action);
     } catch (error) {
@@ -165,7 +195,7 @@ export function mountBoard(root, options) {
   const unsubscribe = controller.subscribe((state) => {
     pendingEffects = diffStates(previousState, state);
     previousState = state;
-    ui = { targeting: null, modal: null, fusion: null };
+    ui = { targeting: null, modal: null, fusion: null, gallows: null };
     rerender();
   });
 
@@ -232,9 +262,19 @@ function renderStarterSelect(state, viewer, act) {
     el('p', 'starter-select__hint', 'This Persona joins you in addition to your 30-card deck. It is your opening active.')
   );
 
+  // Before you pick, all three pulse as valid targets. After you pick, the one
+  // you took wears the selected ring and the two you passed on dim out, so the
+  // waiting screen still says what you chose.
+  const takenId = chosen ? state.players[viewer].field[0]?.cardId : null;
+
   const row = el('div', 'starter-select__row');
   for (const cardId of state.starterOptions[viewer]) {
-    const card = renderCard(getCard(cardId), { showAllHidden: true });
+    const card = renderCard(getCard(cardId), {
+      showAllHidden: true,
+      targetable: !chosen,
+      selected: chosen && cardId === takenId,
+      disabled: chosen && cardId !== takenId,
+    });
     if (!chosen) {
       card.classList.add('card--clickable');
       card.addEventListener('click', () => act({ type: 'CHOOSE_STARTER', player: viewer, cardId }));
@@ -303,6 +343,29 @@ function renderSide(ctx, playerId, enemy) {
   return side;
 }
 
+/**
+ * Full Analysis: a look at the opponent's hand for the turn.
+ *
+ * The engine decides whether the cards are readable at all (redaction honours
+ * the effect); this only shows what it was handed. It is positioned over the
+ * board rather than inside it, so appearing and disappearing moves nothing.
+ */
+function renderPeek(state, viewer) {
+  if (!state.turnState?.peekHand || state.activePlayer !== viewer) return null;
+  const foe = state.players[opponentOf(viewer)];
+
+  const peek = el('div', 'peek');
+  peek.appendChild(el('span', 'peek__label', `${foe.name}'s hand — Full Analysis`));
+  const cards = el('div', 'peek__row');
+  for (const entry of foe.hand) {
+    if (!entry.cardId) continue; // still hidden: not this player's peek
+    cards.appendChild(el('span', 'peek__card', getCard(entry.cardId).name));
+  }
+  if (!cards.childElementCount) cards.appendChild(el('span', 'peek__card', 'Nothing to see'));
+  peek.appendChild(cards);
+  return peek;
+}
+
 function renderKoTally(player) {
   const wrap = el('div', 'ko-tally');
   wrap.title = `${player.name} has lost ${player.koCount} of ${CONFIG.KO_TARGET} Personas`;
@@ -338,21 +401,13 @@ function spBar(persona) {
   return bar;
 }
 
+/**
+ * The status pips. The token list is shared with anim.js, which needs to be
+ * able to redraw this row as it was a moment ago to fade out what expired.
+ */
 function statusDots(persona) {
   const wrap = el('div', 'tile__status');
-  for (const buff of persona.buffs) {
-    wrap.appendChild(
-      el('span', `dot dot--${buff.direction === 'up' ? 'buff' : 'debuff'}`,
-        `${buff.direction === 'up' ? '▲' : '▼'}${buff.stat === 'atk' ? 'A' : 'D'}${buff.turnsLeft}`)
-    );
-  }
-  for (const ailment of persona.ailments) {
-    wrap.appendChild(el('span', `dot dot--${ailment.type}`, ailment.type === 'burn' ? `🔥${ailment.turnsLeft}` : '⚡'));
-  }
-  for (const charge of persona.charges) {
-    wrap.appendChild(el('span', 'dot dot--charge', charge === 'charge' ? '💥' : '🌀'));
-  }
-  if (persona.guarding) wrap.appendChild(el('span', 'dot dot--guard', '🛡️'));
+  for (const token of statusTokens(persona)) wrap.appendChild(el('span', token.cls, token.text));
   return wrap;
 }
 
@@ -374,7 +429,10 @@ function boardTile(ctx, persona, { active }) {
   tile.style.setProperty('--arcana', style.color);
   if (persona.knockedDown) tile.classList.add('tile--down');
   if (persona.ko) tile.classList.add('tile--ko');
+  // While a prompt is open, everything that is NOT a legal target is dimmed —
+  // the pulsing ring says "these", the dimming says "not these".
   if (match) tile.classList.add('tile--targetable');
+  else if (targeting) tile.classList.add('tile--dimmed');
   if (own) tile.classList.add('tile--own');
 
   const head = el('div', 'tile__head');
@@ -438,16 +496,22 @@ function boardTile(ctx, persona, { active }) {
 
 /** Weaknesses/resists the viewer is allowed to see, as a compact strip. */
 function renderAffinityStrip(persona, own) {
-  const card = getPersona(persona.cardId);
+  // The instance, not the card: a rewritten Persona is no longer what it says.
+  const { weaknesses, resists } = affinitiesOf(persona);
   const revealed = new Set(persona.revealedTypes);
   const wrap = el('div', 'tile__affinity');
 
   const known = (type) => own || revealed.has(type);
   const shown = [
-    ...card.weaknesses.map((t) => ({ type: t, kind: 'weak' })),
-    ...card.resists.map((t) => ({ type: t, kind: 'resist' })),
+    ...weaknesses.map((t) => ({ type: t, kind: 'weak' })),
+    ...resists.map((t) => ({ type: t, kind: 'resist' })),
   ].filter((entry) => known(entry.type));
 
+  if (persona.rewritten) {
+    const flag = el('span', 'mini-chip mini-chip--rewritten', '↻');
+    flag.title = 'Rewritten — its printed weaknesses and resists no longer apply.';
+    wrap.appendChild(flag);
+  }
   if (!shown.length) {
     wrap.appendChild(el('span', 'mini-chip mini-chip--unknown', '? ? ?'));
     return wrap;
@@ -462,12 +526,17 @@ function renderAffinityStrip(persona, own) {
  * Middle strip
  * ------------------------------------------------------------------ */
 
+/**
+ * The strip between the two sides.
+ *
+ * DESIGN NOTE: this used to grow a full-width ONE MORE banner, which pushed
+ * every tile on the board down and back up again mid-turn. The announcement is
+ * now the transform-only splash from anim.js plus a chip in the strip below,
+ * and the strip itself has a fixed height so swapping between the allowance
+ * chips and a targeting prompt cannot move anything either.
+ */
 function renderMiddle(state, viewer, ui, yourTurn, setUi) {
   const mid = el('div', 'board-mid');
-
-  if (state.turnState && state.activePlayer === viewer && state.turnState.oneMoreUsed && state.turnState.actionsRemaining > 0) {
-    mid.appendChild(el('div', 'one-more', 'ONE MORE! Extra action + extra Persona change'));
-  }
 
   if (ui.targeting) {
     const prompt = el('div', 'prompt');
@@ -486,7 +555,17 @@ function renderMiddle(state, viewer, ui, yourTurn, setUi) {
     ]) {
       strip.appendChild(el('span', 'allowance', chip));
     }
-    if (turn.canTargetBench) strip.appendChild(el('span', 'allowance allowance--hot', 'Bench targetable'));
+    if (turn.oneMoreActive) {
+      strip.appendChild(
+        el(
+          'span',
+          'allowance allowance--onemore',
+          turn.oneMoresGranted > 1 ? `ONE MORE ×${turn.oneMoresGranted} — bench open` : 'ONE MORE — bench open'
+        )
+      );
+    } else if (turn.canTargetBench) {
+      strip.appendChild(el('span', 'allowance allowance--hot', 'Bench targetable'));
+    }
     mid.appendChild(strip);
   }
 
@@ -525,6 +604,33 @@ function renderSkillBar(ctx) {
   }
 
   bar.appendChild(list);
+
+  // A Showtime is not a skill — it belongs to the pair, not to whoever happens
+  // to be in the slot — so it sits after the skill list with its own styling.
+  const duos = new Map();
+  for (const action of legal) {
+    if (action.type !== 'SHOWTIME') continue;
+    if (!duos.has(action.showtimeId)) duos.set(action.showtimeId, []);
+    duos.get(action.showtimeId).push(action);
+  }
+  for (const [showtimeId, candidates] of duos) {
+    const showtime = getShowtime(showtimeId);
+    const node = el('button', 'skill-btn skill-btn--showtime');
+    node.type = 'button';
+    node.dataset.showtimeId = showtimeId;
+    node.title = `${showtime.description} Once per match.`;
+    node.appendChild(el('span', 'skill-btn__icon', '✦'));
+    const body = el('span', 'skill-btn__body');
+    body.appendChild(el('span', 'skill-btn__name', showtime.name));
+    body.appendChild(el('span', 'skill-btn__meta', showtime.pair.map((id) => getPersona(id).name).join(' & ')));
+    node.appendChild(body);
+    node.appendChild(el('span', 'skill-btn__cost', 'SHOWTIME'));
+    node.addEventListener('click', () =>
+      chooseTarget(candidates, `Choose a target for ${showtime.name}`, act, setUi, 'targetUid', settings)
+    );
+    list.appendChild(node);
+  }
+
   return bar;
 }
 
@@ -550,10 +656,26 @@ function skillButton(skill, candidates, act, setUi, enabled, title, settings) {
 /**
  * One legal way to play it -> just do it, unless the player has turned off
  * "auto-skip impossible choices" and wants to confirm even a forced target.
+ *
+ * The board-targeting overlay highlights tiles by looking each candidate's
+ * `key` up against a Persona uid. If the candidates do not actually carry that
+ * key — because the card asks for something that is not a Persona at all — the
+ * overlay would light nothing up and strand the player at a prompt with no
+ * valid answer. That was the Lesser Theurgy bug. Rather than trust every caller
+ * to remember, the guard lives here: a prompt that could not possibly be
+ * answered is never opened.
  */
 function chooseTarget(candidates, prompt, act, setUi, key = 'targetUid', settings = getSettings()) {
   if (!candidates.length) return;
   if (candidates.length === 1 && settings.autoSkipChoices !== false) return act(candidates[0]);
+
+  if (!candidates.every((a) => a[key] != null)) {
+    // Not reachable from any current card — playHandCard routes all of them —
+    // but a new effect shape must fail loudly rather than wedge a turn.
+    console.error('Board targeting asked for a key its candidates do not carry', { key, candidates });
+    return act(candidates[0]);
+  }
+
   setUi({ targeting: { candidates, key, prompt, onPick: (action) => act(action) } });
 }
 
@@ -612,7 +734,7 @@ function handTile(ctx, entry) {
     actions.push({
       label: card.type === 'persona' ? 'Play to the field' : `Play ${card.name}`,
       primary: true,
-      onPick: () => playHandCard(card, candidates, act, setUi, settings),
+      onPick: () => playHandCard(card, candidates, act, setUi, settings, { state, viewer }),
     });
   }
 
@@ -646,7 +768,65 @@ function whyUnplayable(state, viewer, card) {
 }
 
 /** SP Transfer needs two Personas, so it gets a two-step selection. */
-function playHandCard(card, candidates, act, setUi, settings) {
+function playHandCard(card, candidates, act, setUi, settings, { state, viewer } = {}) {
+  // Fortune's Draw asks for an Arcana, not a Persona on the board, so the
+  // board-targeting overlay has nothing to highlight — it gets a list instead.
+  if (card.effect?.kind === 'guaranteedDraw') {
+    if (candidates.length === 1 && settings.autoSkipChoices !== false) return act(candidates[0]);
+    return setUi({ modal: arcanaModal(card, candidates, act, setUi) });
+  }
+
+  // Providence lets you bin any subset of what it shows you. The legal-action
+  // list only carries the "throw away the k weakest" ladder (see legal.js), so
+  // the UI builds the real choice itself and dispatches whatever you picked.
+  if (card.effect?.kind === 'providence') {
+    return setUi({ modal: providenceModal(card, candidates[0], act, setUi) });
+  }
+
+  // Lesser Theurgy asks WHICH AILMENT, not which Persona — the target is always
+  // the enemy active. Its actions are keyed on `ailment`, so the board-targeting
+  // overlay has nothing to highlight and it needs a list of its own.
+  if (card.effect?.kind === 'inflict') {
+    if (candidates.length === 1 && settings.autoSkipChoices !== false) return act(candidates[0]);
+    return setUi({
+      modal: optionModal(card, candidates, act, setUi, {
+        prompt: 'Which ailment?',
+        label: (a) => AILMENT_LABELS[a.ailment] ?? a.ailment,
+        hint: (a) => AILMENT_HINTS[a.ailment] ?? '',
+      }),
+    });
+  }
+
+  // Twist of Fate asks for an ELEMENT. The list is already filtered to what is
+  // legal — nothing they resist, nothing they are already weak to — so the
+  // picker can never offer something the engine would then refuse.
+  if (card.effect?.kind === 'twistFate') {
+    const foe = getActive(state, opponentOf(viewer));
+    const given = foe ? twistSacrifice(foe) : null;
+    return setUi({
+      modal: optionModal(card, candidates, act, setUi, {
+        prompt: given
+          ? `Name the new weakness — ${nameOf(foe)} will give up ${typeLabel(given)} for it`
+          : 'Name the new weakness',
+        label: (a) => `${typeIcon(a.element)} ${typeLabel(a.element)}`,
+        hint: () => null,
+      }),
+    });
+  }
+
+  // Shuffle Time asks which of the cards it showed you to keep — also not a
+  // Persona on the board, and the same soft-lock without this.
+  if (card.effect?.kind === 'shuffleTime') {
+    if (candidates.length === 1 && settings.autoSkipChoices !== false) return act(candidates[0]);
+    return setUi({
+      modal: optionModal(card, candidates, act, setUi, {
+        prompt: 'Which one do you keep?',
+        label: (a) => getCard(a.keepCardId).name,
+        hint: (a) => cardKindLabel(getCard(a.keepCardId)),
+      }),
+    });
+  }
+
   if (card.effect?.kind === 'transferSp') {
     const sources = [...new Set(candidates.map((a) => a.fromUid))];
     if (sources.length <= 1) return chooseTarget(candidates, 'Move the SP to which Persona?', act, setUi, 'toUid', settings);
@@ -692,14 +872,38 @@ function renderActionBar(ctx) {
   const fusionBtn = button('🌀 Fusion', `btn fusion-btn${ready ? ' fusion-btn--ready' : ''}`,
     () => setUi({ modal: fusionModal(), fusion: { recipeId: null, pairIndex: null, inherit: [] } }), {
       disabled: !yourTurn,
-      title: ready ? 'A fusion is available' : 'Browse fusion recipes and see what each one needs',
+      title: ready
+        ? 'A fusion is available — it costs no action, so you can fuse and still attack'
+        : 'Browse fusion recipes and see what each one needs',
     });
   if (ready) fusionBtn.appendChild(el('span', 'fusion-btn__badge', '!'));
   bar.appendChild(fusionBtn);
 
+  // The Gallows: the small sibling of fusion, and reachable the same way.
+  const gallows = byType('GALLOWS');
+  const feast = gallows.some((a) => a.tier === 'feast');
+  const worthALevel = gallows.some((a) => a.nourishing);
+  const gallowsBtn = button(
+    '⚰️ Gallows',
+    `btn gallows-btn${worthALevel ? ' gallows-btn--ready' : ''}`,
+    () => setUi({ modal: gallowsModal(), gallows: { eaterUid: null } }),
+    {
+      disabled: !yourTurn || !gallows.length,
+      title: feast
+        ? `A feast is on: food at or above the eater's level is worth +${CONFIG.GALLOWS_FEAST_LEVELS} levels`
+        : worthALevel
+          ? `Feed a Persona to another of yours for +${CONFIG.GALLOWS_LEVELS} level`
+          : 'Bin a Persona the board has outgrown — no levels, but it heals and costs no action',
+    }
+  );
+  if (worthALevel) gallowsBtn.appendChild(el('span', 'fusion-btn__badge', '!'));
+  bar.appendChild(gallowsBtn);
+
   const endTurn = byType('END_TURN')[0];
-  // With auto-end off, hint that the turn is spent instead of ending it for them.
-  const onlyMoveLeft = yourTurn && legal.length === 1 && legal[0].type === 'END_TURN';
+  // With auto-end off, hint that the turn is spent instead of ending it for
+  // them. Resign is always on the list and is not a move, so it does not count.
+  const playable = legal.filter((a) => a.type !== 'RESIGN');
+  const onlyMoveLeft = yourTurn && playable.length === 1 && playable[0].type === 'END_TURN';
   const endClass = `btn btn--primary${onlyMoveLeft && !settings?.autoEndTurn ? ' btn--suggested' : ''}`;
   bar.appendChild(button('End turn ▸', endClass, () => {
     if (endTurn.needsChoice) setUi({ modal: discardModal(endTurn, act, setUi) });
@@ -743,6 +947,106 @@ function fusionModal() {
   };
 }
 
+/**
+ * The Gallows panel: pick who eats, then pick what it eats.
+ *
+ * Every option comes from `getLegalActions`, and each one already says whether
+ * the meal is worth a level or only the HP — so the panel never has to re-derive
+ * the rule, it only has to show it.
+ */
+const GALLOWS_TIER_TEXT = {
+  feast: 'at or above its level',
+  meal: `within ${CONFIG.COMEBACK_FARM_GAP} levels below it`,
+  junk: `more than ${CONFIG.COMEBACK_FARM_GAP} levels below it`,
+};
+
+/** What a chosen meal is worth, in words, before anything is committed. */
+function gallowsPayoff(option) {
+  if (option.tier === 'junk') {
+    return `+${Math.round(CONFIG.GALLOWS_JUNK_HEAL * 100)}% HP · free`;
+  }
+  return `+${option.levels} level${option.levels === 1 ? '' : 's'} · costs your action`;
+}
+
+function gallowsModal() {
+  return (state, { ui, act, setUi, viewer }) => {
+    const options = getLegalActions(state, viewer).filter((a) => a.type === 'GALLOWS');
+    const draft = ui.gallows || { eaterUid: null };
+
+    const body = el('div', 'modal__body');
+    body.appendChild(
+      el(
+        'p',
+        'modal__hint',
+        'Sacrifice one Persona to feed another. What you get back depends entirely on how the food compares ' +
+          'with the eater. A fed Persona is never a knockout, and only one Gallows per turn either way.'
+      )
+    );
+
+    // The three tiers, stated up front — the panel is where this rule is learnt.
+    const ladder = el('ul', 'gallows-tiers');
+    for (const [tier, gains] of [
+      ['feast', `+${CONFIG.GALLOWS_FEAST_LEVELS} levels, costs your action`],
+      ['meal', `+${CONFIG.GALLOWS_LEVELS} level, costs your action`],
+      ['junk', `no levels, +${Math.round(CONFIG.GALLOWS_JUNK_HEAL * 100)}% HP — and costs no action`],
+    ]) {
+      const row = el('li', `gallows-tier gallows-tier--${tier}`);
+      row.appendChild(el('span', 'gallows-tier__name', tier === 'junk' ? 'Junk' : tier === 'meal' ? 'Meal' : 'Feast'));
+      row.appendChild(el('span', 'gallows-tier__when', `Food ${GALLOWS_TIER_TEXT[tier]}`));
+      row.appendChild(el('span', 'gallows-tier__gain', gains));
+      ladder.appendChild(row);
+    }
+    body.appendChild(ladder);
+
+    if (!options.length) {
+      body.appendChild(el('p', 'modal__hint', 'Nothing to feed, or nothing to feed it to.'));
+      return modalShell('The Gallows', body, () => setUi({ modal: null, gallows: null }));
+    }
+
+    const eaters = [...new Set(options.map((a) => a.eaterUid))];
+    body.appendChild(el('h4', 'gallows__heading', 'Who eats?'));
+    const eaterRow = el('div', 'gallows__row');
+    for (const uid of eaters) {
+      const persona = state.players[viewer].field.find((p) => p.uid === uid);
+      const label = `${nameOf(persona)} · Lv ${persona.level}`;
+      const node = button(label, `btn btn--small${draft.eaterUid === uid ? ' btn--on' : ''}`, () =>
+        setUi({ gallows: { eaterUid: uid } })
+      );
+      eaterRow.appendChild(node);
+    }
+    body.appendChild(eaterRow);
+
+    if (draft.eaterUid) {
+      // Best tier first, so the strongest meal is never buried in the list.
+      const rank = { feast: 0, meal: 1, junk: 2 };
+      const meals = options
+        .filter((a) => a.eaterUid === draft.eaterUid)
+        .sort((a, b) => rank[a.tier] - rank[b.tier]);
+
+      body.appendChild(el('h4', 'gallows__heading', 'And what does it eat?'));
+      const mealRow = el('div', 'gallows__row gallows__row--meals');
+      for (const option of meals) {
+        const card = getPersona(option.foodCardId);
+        const from = option.food.zone === 'hand' ? 'hand' : 'field';
+        const node = button(
+          '',
+          `btn btn--small gallows-meal gallows-meal--${option.tier}${option.tier === 'feast' ? ' btn--suggested' : ''}`,
+          () => act(option),
+          { title: `${option.tier.toUpperCase()} — ${gallowsPayoff(option)}` }
+        );
+        node.dataset.tier = option.tier;
+        node.appendChild(el('span', 'gallows-meal__name', `${card.name} (${from})`));
+        node.appendChild(el('span', 'gallows-meal__tier', option.tier === 'junk' ? 'Junk' : option.tier === 'meal' ? 'Meal' : 'Feast'));
+        node.appendChild(el('span', 'gallows-meal__gain', gallowsPayoff(option)));
+        mealRow.appendChild(node);
+      }
+      body.appendChild(mealRow);
+    }
+
+    return modalShell('The Gallows', body, () => setUi({ modal: null, gallows: null }));
+  };
+}
+
 /** Read-only recipe reference, reachable from the in-match menu. */
 function recipeReferenceModal() {
   return (state, { setUi, viewer }) => {
@@ -766,21 +1070,169 @@ function rulesModal() {
   };
 }
 
-/** In-match menu: reference material and the way out. */
-function gameMenuModal(onExit) {
+/** Every tip in the game, playstyle plans first. */
+function tipsModal() {
   return (state, { setUi }) => {
+    const body = el('div', 'modal__body');
+    body.appendChild(
+      el('p', 'modal__hint', 'Six plans that actually work, then the rules of thumb behind them.')
+    );
+    body.appendChild(renderTips(STRATEGY_TIPS, { heading: 'Ways to win' }));
+    body.appendChild(renderTips(GENERAL_TIPS, { heading: 'Rules of thumb' }));
+    return modalShell('Tips', body, () => setUi({ modal: null }));
+  };
+}
+
+/** In-match menu: reference material and the two ways out. */
+function gameMenuModal(onExit) {
+  return (state, { setUi, viewer }) => {
     const body = el('div', 'modal__body');
     body.appendChild(el('p', 'modal__hint', 'The match stays exactly where it is while this is open.'));
 
     const list = el('div', 'menu-list');
     list.appendChild(button('📖 Rules & FAQ', 'btn', () => setUi({ modal: rulesModal() })));
+    list.appendChild(button('💡 Tips', 'btn', () => setUi({ modal: tipsModal() })));
     list.appendChild(button('🌀 Fusion recipes', 'btn', () => setUi({ modal: recipeReferenceModal() })));
+    if (state.winner === null) {
+      list.appendChild(button('🏳️ Resign the match', 'btn', () => setUi({ modal: resignModal(viewer) })));
+    }
     // Deliberately NOT a link to the Settings route: routing away destroys the
     // match. Everything you need mid-match is available here as a modal.
     list.appendChild(button('← Quit to main menu', 'btn btn--ghost', onExit));
     body.appendChild(list);
 
     return modalShell('Menu', body, () => setUi({ modal: null }));
+  };
+}
+
+/**
+ * Resigning is irreversible and reachable from two places, so it always goes
+ * through this confirmation — and the confirm button is never the one your
+ * finger is already resting on.
+ */
+function resignModal(viewer) {
+  return (state, { act, setUi }) => {
+    const body = el('div', 'modal__body');
+    body.appendChild(
+      el(
+        'p',
+        'modal__hint',
+        `Resigning ends the match right now and hands the win to ${state.players[opponentOf(viewer)].name}. There is no undo.`
+      )
+    );
+
+    const list = el('div', 'menu-list');
+    list.appendChild(button('Keep playing', 'btn btn--primary', () => setUi({ modal: null })));
+    list.appendChild(
+      button('🏳️ Yes, resign', 'btn btn--danger', () => act({ type: 'RESIGN', player: viewer }))
+    );
+    body.appendChild(list);
+
+    return modalShell('Resign the match?', body, () => setUi({ modal: null }));
+  };
+}
+
+const AILMENT_LABELS = { burn: '🔥 Burn', shock: '⚡ Shock' };
+const AILMENT_HINTS = {
+  burn: `${CONFIG.BURN_DAMAGE} damage at the end of each of its turns, and sets up a fire/wind Technical`,
+  shock: 'It loses its next turn, takes more damage, and sets up a physical Technical right now',
+};
+
+const cardKindLabel = (card) =>
+  card.type === 'persona' ? `Lv ${card.level} · ${card.arcana}` : card.type === 'item' ? 'Item' : 'Special';
+
+/**
+ * A card that needs a choice which is NOT a Persona on the board.
+ *
+ * These are the ones that used to strand the player: the legal actions are
+ * keyed on something else entirely (`ailment`, `keepIndex`), so the targeting
+ * overlay had no tile to highlight and no way to answer the prompt. They get a
+ * list — with a Cancel that costs nothing, because nothing has been dispatched
+ * until one of these buttons is pressed.
+ */
+function optionModal(card, candidates, act, setUi, { prompt, label, hint }) {
+  return () => {
+    const body = el('div', 'modal__body');
+    body.appendChild(el('p', 'modal__hint', card.description));
+    body.appendChild(el('h4', 'gallows__heading', prompt));
+
+    const row = el('div', 'option-choices');
+    for (const candidate of candidates) {
+      const node = button('', 'btn option-choice', () => act(candidate));
+      node.appendChild(el('span', 'option-choice__label', label(candidate)));
+      const detail = hint?.(candidate);
+      if (detail) node.appendChild(el('span', 'option-choice__hint', detail));
+      row.appendChild(node);
+    }
+    body.appendChild(row);
+    body.appendChild(button('Cancel', 'btn btn--ghost', () => setUi({ modal: null })));
+
+    return modalShell(card.name, body, () => setUi({ modal: null }));
+  };
+}
+
+/** Fortune's Draw: name an Arcana still sitting in your deck. */
+function arcanaModal(card, candidates, act, setUi) {
+  return () => {
+    const body = el('div', 'modal__body');
+    body.appendChild(el('p', 'modal__hint', card.description));
+
+    const row = el('div', 'arcana-choices');
+    for (const candidate of candidates) {
+      const style = arcanaStyle(candidate.arcana);
+      const node = button(`${style.symbol} ${candidate.arcana}`, 'btn arcana-choice', () => act(candidate));
+      node.style.setProperty('--arcana', style.color);
+      row.appendChild(node);
+    }
+    body.appendChild(row);
+
+    return modalShell(card.name, body, () => setUi({ modal: null }));
+  };
+}
+
+/**
+ * Providence: the top of your deck, laid out, with any number of them binnable.
+ * Everything you leave stays on top in the order it was already in, so the
+ * cards are shown left-to-right in draw order.
+ */
+function providenceModal(card, base, act, setUi) {
+  return () => {
+    const top = base.providenceTop ?? [];
+    const picked = new Set();
+
+    const body = el('div', 'modal__body');
+    body.appendChild(el('p', 'modal__hint', card.description));
+
+    const confirm = button('Confirm', 'btn btn--primary', () =>
+      act({ ...base, discardIndexes: [...picked].sort((a, b) => a - b) })
+    );
+    const summary = el('p', 'modal__hint providence__summary');
+    const refresh = () => {
+      summary.textContent = picked.size
+        ? `Discarding ${picked.size} — the other ${top.length - picked.size} stay on top, in order.`
+        : 'Keeping all of them. Click a card to throw it away.';
+    };
+    refresh();
+
+    const row = el('div', 'modal__cards');
+    top.forEach((cardId, index) => {
+      const node = renderCard(getCard(cardId), { compact: true, showAllHidden: true, targetable: true });
+      node.classList.add('card--clickable');
+      node.appendChild(el('span', 'providence__order', `${index + 1}`));
+      node.addEventListener('click', () => {
+        if (picked.has(index)) picked.delete(index);
+        else picked.add(index);
+        node.classList.toggle('card--discarding', picked.has(index));
+        refresh();
+      });
+      row.appendChild(node);
+    });
+
+    body.appendChild(row);
+    body.appendChild(summary);
+    body.appendChild(confirm);
+
+    return modalShell(card.name, body, () => setUi({ modal: null }));
   };
 }
 
@@ -798,15 +1250,25 @@ function discardModal(endTurn, act, setUi) {
       () => act({ type: 'END_TURN', player: endTurn.player, discard: [...picked] }));
     confirm.disabled = true;
 
+    const nodes = [];
     for (const entry of player.hand) {
-      const node = renderCard(getCard(entry.cardId), { compact: true, showAllHidden: true });
+      const node = renderCard(getCard(entry.cardId), { compact: true, showAllHidden: true, targetable: true });
       node.classList.add('card--clickable');
       node.addEventListener('click', () => {
         if (picked.has(entry.uid)) picked.delete(entry.uid);
         else if (picked.size < need) picked.add(entry.uid);
         node.classList.toggle('card--selected', picked.has(entry.uid));
         confirm.disabled = picked.size !== need;
+        // Once the quota is met, the cards you did not pick stop pulsing and
+        // dim — the only useful click left is on one of your own choices.
+        const full = picked.size === need;
+        for (const other of nodes) {
+          const chosen = other.classList.contains('card--selected');
+          other.classList.toggle('card--targetable', !chosen && !full);
+          other.classList.toggle('card--dimmed', !chosen && full);
+        }
       });
+      nodes.push(node);
       row.appendChild(node);
     }
     body.appendChild(row);
@@ -824,9 +1286,35 @@ function discardModal(endTurn, act, setUi) {
 // every action, so only the recent tail is kept in the DOM.
 const LOG_TAIL = 150;
 
-function renderLog(state) {
+// How close to the bottom still counts as "following along". Anything above
+// this and the reader is deliberately looking at something older, so the feed
+// stops yanking them back down.
+const LOG_PIN_SLACK = 24;
+
+/**
+ * The battle log: a scrolling feed of everything that happened, styled by kind.
+ *
+ * It lives in its own fixed-width grid column with its own scroll container, so
+ * however much it says it can never move a single pixel of the board. That is
+ * the entire reason it exists in this shape — the feedback that used to be
+ * shown as banners *inside* the board is now either a line in here or a
+ * transform-only overlay, and neither can reflow anything.
+ *
+ * `scroll` is owned by the mount and survives re-renders, so the log keeps
+ * following the newest entry unless the player has scrolled up to read.
+ */
+function renderLog(state, scroll, { onResign = null } = {}) {
   const panel = el('aside', 'log-panel');
-  panel.appendChild(el('h3', 'log-panel__title', 'Battle log'));
+  const head = el('div', 'log-panel__head');
+  head.appendChild(el('h3', 'log-panel__title', 'Battle log'));
+  if (onResign) {
+    head.appendChild(
+      button('🏳️ Resign', 'btn btn--ghost btn--small log-panel__resign', onResign, {
+        title: 'Concede the match to your opponent',
+      })
+    );
+  }
+  panel.appendChild(head);
 
   const list = el('div', 'log-panel__list');
   const hidden = Math.max(0, state.log.length - LOG_TAIL);
@@ -836,39 +1324,100 @@ function renderLog(state) {
   }
   panel.appendChild(list);
 
-  const pin = () => {
-    list.scrollTop = list.scrollHeight;
+  list.addEventListener('scroll', () => {
+    scroll.top = list.scrollTop;
+    scroll.pinned = list.scrollHeight - list.scrollTop - list.clientHeight <= LOG_PIN_SLACK;
+  });
+
+  const settle = () => {
+    if (scroll.pinned) list.scrollTop = list.scrollHeight;
+    else list.scrollTop = Math.min(scroll.top, list.scrollHeight);
   };
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(pin);
-  else pin();
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(settle);
+  else settle();
   return panel;
 }
 
-function renderGameOver(state, viewer, { onExit, onRematch, neutralResult }) {
+/**
+ * The whole battle log, start to finish, for the end-of-match screen.
+ *
+ * The sidebar keeps only the recent tail in the DOM because the board
+ * re-renders constantly; nothing re-renders after the match, so this shows the
+ * lot. It is the same feed with the same per-kind styling — a match you just
+ * lost is exactly when you want to scroll back and find out where it went.
+ */
+function renderFullLog(state) {
+  const wrap = el('div', 'result-log');
+  wrap.appendChild(
+    el('p', 'modal__hint', `Every one of the ${state.log.length} entries, from the opening draw to the last knockout.`)
+  );
+
+  const list = el('div', 'result-log__list');
+  for (const entry of state.log) {
+    list.appendChild(el('div', `log-entry log-entry--${entry.kind}`, entry.text));
+  }
+  wrap.appendChild(list);
+  return wrap;
+}
+
+function renderGameOver(state, viewer, { onExit, onRematch, neutralResult }, ui = {}, setUi = () => {}) {
   const won = state.winner === viewer;
+  const tab = ui.resultTab === 'log' ? 'log' : 'summary';
   const overlay = el('div', 'modal-overlay modal-overlay--result');
   const box = el('div', `modal result ${neutralResult || won ? 'result--win' : 'result--lose'}`);
 
   box.appendChild(el('h2', null, neutralResult ? `${state.players[state.winner].name} wins` : won ? 'Victory' : 'Defeat'));
+  const resignedBy = state.players[opponentOf(state.winner)].name;
   box.appendChild(el('p', 'result__reason', {
     'ko-target': `${state.players[won ? viewer : opponentOf(viewer)].name} knocked out ${CONFIG.KO_TARGET} Personas.`,
     'simultaneous-ko-hp': 'Simultaneous knockout — decided on remaining HP.',
     'sudden-death': 'Sudden death — decided by the next knockout.',
+    resign: neutralResult
+      ? `${resignedBy} resigned.`
+      : won
+        ? `${resignedBy} resigned — you win!`
+        : 'You resigned.',
   }[state.endReason] || 'The match is over.'));
 
-  const stats = el('div', 'result__stats');
-  for (const player of state.players) {
-    const row = el('div', 'result__row');
-    row.appendChild(el('span', null, player.name));
-    row.appendChild(el('span', null, `${player.koCount}/${CONFIG.KO_TARGET} lost`));
-    row.appendChild(el('span', null, `${livingField(state, player.id).length} standing`));
-    stats.appendChild(row);
+  // The result overlay sits on top of the board and blurs it, which used to
+  // take the battle log away at exactly the moment it is most worth reading.
+  // It gets its own view here instead.
+  const tabs = el('div', 'result-tabs');
+  for (const [id, label] of [['summary', 'Summary'], ['log', `Battle log (${state.log.length})`]]) {
+    const node = button(label, `btn btn--small result-tab${tab === id ? ' result-tab--on' : ''}`, () =>
+      setUi({ resultTab: id })
+    );
+    node.dataset.tab = id;
+    tabs.appendChild(node);
   }
-  box.appendChild(stats);
+  box.appendChild(tabs);
+
+  if (tab === 'log') {
+    box.appendChild(renderFullLog(state));
+  } else {
+    const standing = el('div', 'result__stats');
+    for (const player of state.players) {
+      const row = el('div', 'result__row');
+      row.appendChild(el('span', null, player.name));
+      row.appendChild(el('span', null, `${player.koCount}/${CONFIG.KO_TARGET} lost`));
+      row.appendChild(el('span', null, `${livingField(state, player.id).length} standing`));
+      standing.appendChild(row);
+    }
+    box.appendChild(standing);
+
+    // Losing is the moment advice is worth reading. Tips are off for the neutral
+    // hot-seat result, where "you" is ambiguous — the scoreboard is not, because
+    // it never says "you" in the first place.
+    if (!neutralResult && !won && state.players[viewer]?.stats) {
+      box.appendChild(renderTips(analyseMatch(state, viewer), { heading: 'What to try next time' }));
+    }
+
+    box.appendChild(renderMatchStats(state));
+  }
 
   const actions = el('div', 'result__actions');
-  if (onRematch) actions.appendChild(button('Rematch', 'btn btn--primary', onRematch));
-  actions.appendChild(button('Back to menu', 'btn', onExit));
+  if (onRematch) actions.appendChild(button('▶ Play again', 'btn btn--primary', onRematch));
+  actions.appendChild(button('Main menu', 'btn', onExit));
   box.appendChild(actions);
 
   overlay.appendChild(box);

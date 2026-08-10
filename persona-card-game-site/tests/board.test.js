@@ -486,7 +486,7 @@ describe('fusion and specials in the UI', () => {
       .toMatch(/uses your action/);
   });
 
-  it('performs the fusion with the chosen inherited skills and spends the action', () => {
+  it('performs the fusion with the chosen inherited skills, and leaves the action intact', () => {
     readyFusion();
     const chosen = fuseThrough();
 
@@ -496,7 +496,8 @@ describe('fusion and specials in the UI', () => {
     expect(result.level).toBe(38);
     expect(result.inheritedSkills).toEqual(chosen);
     expect(state.players[0].koCount).toBe(0); // sacrifices are not KOs
-    expect(state.turnState.actionsRemaining).toBe(0);
+    expect(state.turnState.actionsRemaining).toBe(CONFIG.ACTIONS_PER_TURN); // fusion is free
+    expect(state.turnState.fusionsPerformed).toBe(1);
   });
 
   it('gives the fusion result the active slot when the active was sacrificed', () => {

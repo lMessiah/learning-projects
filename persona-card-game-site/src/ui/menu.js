@@ -1,6 +1,6 @@
 /**
  * Main menu — three boxes: Against Bot, Local Multiplayer, Settings.
- * The Card Gallery (Phase 1) hangs off the side as a reference link.
+ * The Card Gallery hangs off the side as a reference link.
  */
 import { getProfileName, setProfileName } from './profile.js';
 
@@ -11,7 +11,6 @@ const BOXES = [
     label: 'Against Bot',
     desc: 'Take on the AI across four difficulties: Easy, Medium, Brutal and Chaos.',
     route: '#/bot',
-    phase: 'Phase 3',
     enabled: true,
   },
   {
@@ -20,7 +19,6 @@ const BOXES = [
     label: 'Local Multiplayer',
     desc: 'Hot-seat on one device, with a pass-the-device screen so hands stay hidden.',
     route: '#/local',
-    phase: 'Phase 4',
     enabled: true,
   },
   {
@@ -29,7 +27,6 @@ const BOXES = [
     label: 'Online Match',
     desc: 'Play someone on another machine, browser to browser. No server, no account.',
     route: '#/online',
-    phase: 'Online',
     enabled: true,
   },
   {
@@ -38,7 +35,6 @@ const BOXES = [
     label: 'Settings',
     desc: 'Sound, animation speed, board theme and profile reset.',
     route: '#/settings',
-    phase: 'Phase 6',
     enabled: true,
   },
 ];
@@ -56,7 +52,7 @@ export function renderMenu(root) {
   const topbar = el('div', 'topbar');
   const titleWrap = el('div');
   titleWrap.appendChild(el('h1', 'topbar__title', 'Persona Card Game'));
-  titleWrap.appendChild(el('div', 'topbar__sub', 'Unofficial fan project · Alpha'));
+  titleWrap.appendChild(el('div', 'topbar__sub', 'Unofficial fan project · Beta'));
   topbar.appendChild(titleWrap);
   topbar.appendChild(el('div', 'topbar__spacer'));
 
@@ -78,7 +74,7 @@ export function renderMenu(root) {
     const btn = el('button', 'menu__box');
     btn.type = 'button';
     if (!box.enabled) btn.disabled = true;
-    btn.appendChild(el('span', 'menu__phase', box.enabled ? 'Ready' : `${box.phase} — coming next`));
+    btn.appendChild(el('span', 'menu__status', box.enabled ? 'Ready' : 'Coming soon'));
     btn.appendChild(el('span', 'menu__icon', box.icon));
     btn.appendChild(el('span', 'menu__label', box.label));
     btn.appendChild(el('span', 'menu__desc', box.desc));
@@ -95,7 +91,7 @@ export function renderMenu(root) {
     window.location.hash = '#/gallery';
   });
   aside.appendChild(gallery);
-  aside.appendChild(el('span', null, 'Phase 1 deliverable — inspect every card in the database.'));
+  aside.appendChild(el('span', null, 'Inspect every card in the database — Personas, Items, Specials and fusion recipes.'));
   root.appendChild(aside);
 
   root.appendChild(

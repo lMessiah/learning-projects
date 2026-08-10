@@ -212,11 +212,9 @@ body.board-mode #app {
 .tile--active { width: 210px; min-height: 118px; }
 .tile--bench { width: 104px; min-height: 62px; padding: 5px 6px; }
 
+/* The lift only; the hover ring comes from select.css. */
 .tile:hover,
-.tile:focus-visible {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--arcana);
-}
+.tile:focus-visible { transform: translateY(-2px); }
 
 .tile__head {
   display: grid;
@@ -247,6 +245,7 @@ body.board-mode #app {
 }
 
 .tile__bar {
+  position: relative;
   height: 6px;
   border-radius: 999px;
   background: #26262e;
@@ -259,7 +258,28 @@ body.board-mode #app {
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, #ff5566, #e01b32);
-  transition: width 0.3s ease;
+  transition: width calc(var(--dur-bar-fill, 600ms) / var(--anim-scale)) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The chunk just lost: a "ghost" segment left over the gap the fill vacated,
+ * which fades a beat later. Absolutely positioned inside a track that already
+ * has a fixed height, so it adds nothing to any layout. */
+.tile__ghost {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+  animation: ghost-fade calc(var(--dur-bar-ghost, 900ms) / var(--anim-scale)) ease-out forwards;
+}
+
+/* The same idea in reverse: a heal lights up the chunk that arrived. */
+.tile__ghost--gain { background: color-mix(in srgb, var(--ok) 85%, #fff); }
+
+@keyframes ghost-fade {
+  0%, 35% { opacity: 0.85; }
+  100% { opacity: 0; }
 }
 
 .tile__fill--low { background: linear-gradient(90deg, #ffb03a, #e0533a); }
@@ -277,6 +297,27 @@ body.board-mode #app {
   display: flex;
   flex-wrap: wrap;
   gap: 3px;
+}
+
+.tile__status { position: relative; }
+
+/* A copy of the status row as it was a moment ago, laid over the live one so a
+ * pip that expired can fade out where it stood. Absolute, so it holds no space
+ * of its own; the pips that survived are invisible spacers keeping the
+ * positions honest. */
+.tile__status--ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.dot--expiring { animation: dot-expire calc(var(--dur-status-fade, 800ms) / var(--anim-scale)) ease-out forwards; }
+
+@keyframes dot-expire {
+  0% { opacity: 1; transform: scale(1); }
+  40% { opacity: 0.8; transform: scale(1.1); filter: grayscale(1); }
+  100% { opacity: 0; transform: scale(0.7); filter: grayscale(1); }
 }
 
 .mini-chip {
@@ -332,40 +373,20 @@ body.board-mode #app {
 .tile--down:hover { transform: rotate(90deg) scale(0.86); }
 .tile--ko { opacity: 0.5; filter: grayscale(0.8); }
 
-.tile--targetable {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 2px var(--gold);
-  animation: target-pulse calc(1.1s / var(--anim-scale)) ease-in-out infinite;
-}
-
-@keyframes target-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px var(--gold); }
-  50% { box-shadow: 0 0 0 2px var(--gold), 0 0 20px rgba(240, 194, 67, 0.55); }
-}
+/* `.tile--targetable` and every other selection state live in select.css. */
 
 /* ---------- Middle strip ---------- */
 
+/* Fixed height, not min-height: the strip swaps between allowance chips and a
+ * targeting prompt mid-turn, and neither may move the board by a pixel. */
 .board-mid {
   display: flex;
   flex-direction: column;
   gap: 6px;
   align-items: center;
   justify-content: center;
-  min-height: 30px;
-}
-
-.one-more {
-  width: 100%;
-  text-align: center;
-  font-family: var(--font-display);
-  font-size: 16px;
-  letter-spacing: 0.1em;
-  padding: 6px;
-  border-radius: var(--radius);
-  color: #fff;
-  background: linear-gradient(100deg, var(--accent-dark), var(--accent) 55%, #ff5f73);
-  box-shadow: 0 0 22px var(--accent-glow);
-  transform: skewX(-3deg);
+  height: 34px;
+  overflow: hidden;
 }
 
 .prompt {
@@ -395,6 +416,21 @@ body.board-mode #app {
 }
 
 .allowance--hot { border-color: var(--gold); color: var(--gold); }
+
+/* One More lives here now instead of as a banner that shoved the board around.
+ * Only the glow animates, so nothing about it can change a layout box. */
+.allowance--onemore {
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  background: linear-gradient(100deg, var(--accent-dark), var(--accent) 60%, #ff5f73);
+  animation: onemore-chip calc(1.1s / var(--anim-scale)) ease-in-out infinite;
+}
+
+@keyframes onemore-chip {
+  0%, 100% { box-shadow: 0 0 8px var(--accent-glow); }
+  50% { box-shadow: 0 0 20px var(--accent-glow); }
+}
 
 /* ---------- Skill bar ---------- */
 
@@ -518,13 +554,12 @@ body.board-mode #app {
   transition: transform 0.14s ease, box-shadow 0.14s ease;
 }
 
-.hand-tile:hover,
-.hand-tile:focus-visible {
+/* The lift only; the hover ring comes from select.css. */
+.hand-tile:not(.hand-tile--disabled):hover,
+.hand-tile:not(.hand-tile--disabled):focus-visible {
   transform: translateY(-5px);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--arcana);
 }
 
-.hand-tile--disabled { opacity: 0.44; filter: grayscale(0.45); }
 .hand-tile__symbol { font-size: 18px; }
 
 .hand-tile__name {
@@ -570,16 +605,38 @@ body.board-mode #app {
   overflow: hidden;
 }
 
-.log-panel__title {
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  padding: 9px 12px;
+.log-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 12px;
   border-bottom: 1px solid var(--line);
   background: linear-gradient(100deg, rgba(224, 27, 50, 0.28), transparent);
 }
 
+.log-panel__title {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  margin-right: auto;
+}
+
+.log-panel__resign {
+  flex: none;
+  padding: 3px 8px;
+  font-size: 10px;
+  opacity: 0.65;
+}
+
+.log-panel__resign:hover {
+  opacity: 1;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .log-panel__list {
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 8px 12px;
   display: flex;
   flex-direction: column;
@@ -593,6 +650,9 @@ body.board-mode #app {
   color: var(--ink-dim);
   padding: 2px 0 2px 8px;
   border-left: 2px solid #2a2a33;
+  /* A card name is never longer than the column, but nothing here may ever be
+   * allowed to widen the panel and squeeze the board. */
+  overflow-wrap: anywhere;
 }
 
 .log-entry--turn {
@@ -614,6 +674,13 @@ body.board-mode #app {
 .log-entry--levelup { border-left-color: var(--gold); color: #fff1c4; }
 .log-entry--fusion { border-left-color: #d64f9e; color: #ffd6f0; }
 .log-entry--special { border-left-color: var(--accent); color: #ffd2d8; }
+.log-entry--technical { border-left-color: #ff8c1a; color: #ffd39a; font-weight: 700; }
+.log-entry--showtime { border-left-color: #ff4fd8; color: #ffd0f6; font-weight: 700; }
+.log-entry--gallows { border-left-color: #8f7bd6; color: #ded4ff; }
+.log-entry--endure { border-left-color: var(--ok); color: #d8ffe9; font-weight: 700; }
+.log-entry--draw { border-left-color: #4aa3df; color: #cfe7fb; }
+.log-entry--guard { border-left-color: #6c9bd6; color: #d4e5ff; }
+.log-entry--resign { border-left-color: var(--accent); color: #ffb9c3; font-weight: 700; }
 .log-entry--system { border-left-color: var(--ink-faint); color: var(--ink); }
 
 /* ---------- Inspection: tooltip + detail overlay ---------- */
@@ -689,7 +756,7 @@ body.board-mode #app {
 
 .is-acting {
   box-shadow: 0 0 0 2px var(--accent), 0 0 22px var(--accent-glow) !important;
-  animation: acting-glow calc(0.6s / var(--anim-scale)) ease-out;
+  animation: acting-glow calc(var(--dur-acting, 600ms) / var(--anim-scale)) ease-out;
 }
 
 @keyframes acting-glow {
@@ -698,7 +765,7 @@ body.board-mode #app {
 }
 
 .is-hit {
-  animation: shake calc(0.42s / var(--anim-scale)) cubic-bezier(0.36, 0.07, 0.19, 0.97);
+  animation: shake calc(var(--dur-hit, 420ms) / var(--anim-scale)) cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
 
 @keyframes shake {
@@ -713,7 +780,7 @@ body.board-mode #app {
 
 /* A knocked-down tile is already rotated; shake it in place instead. */
 .tile--down.is-hit {
-  animation: shake-down calc(0.42s / var(--anim-scale)) cubic-bezier(0.36, 0.07, 0.19, 0.97);
+  animation: shake-down calc(var(--dur-hit, 420ms) / var(--anim-scale)) cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
 
 @keyframes shake-down {
@@ -722,7 +789,7 @@ body.board-mode #app {
   75% { transform: rotate(90deg) scale(0.82) translateX(5px); }
 }
 
-.is-healed { animation: heal-flash calc(0.5s / var(--anim-scale)) ease-out; }
+.is-healed { animation: heal-flash calc(var(--dur-heal, 500ms) / var(--anim-scale)) ease-out; }
 
 @keyframes heal-flash {
   0% { box-shadow: 0 0 0 0 rgba(63, 208, 138, 0.9); }
@@ -730,7 +797,7 @@ body.board-mode #app {
 }
 
 /* Knockdown: animate the turn to sideways rather than snapping. */
-.is-going-down { animation: knock-down calc(0.55s / var(--anim-scale)) cubic-bezier(0.34, 1.3, 0.64, 1); }
+.is-going-down { animation: knock-down calc(var(--dur-knockdown, 400ms) / var(--anim-scale)) cubic-bezier(0.34, 1.3, 0.64, 1); }
 
 @keyframes knock-down {
   0% { transform: rotate(0deg) scale(1); }
@@ -738,18 +805,51 @@ body.board-mode #app {
   100% { transform: rotate(90deg) scale(0.82); }
 }
 
-.is-ko { animation: ko-fade calc(0.7s / var(--anim-scale)) ease-out; }
+.is-ko { animation: ko-fade calc(var(--dur-ko, 700ms) / var(--anim-scale)) ease-out; }
 
 @keyframes ko-fade {
   0% { filter: brightness(2.6) grayscale(0); transform: scale(1.06); }
   100% { filter: brightness(1) grayscale(0.8); transform: scale(1); }
 }
 
-.is-status-changed .dot { animation: dot-pulse calc(0.8s / var(--anim-scale)) ease-in-out 2; }
+/* Standing back up at the start of your turn is the reverse of going down. */
+.is-standing-up { animation: stand-up calc(var(--dur-stand-up, 400ms) / var(--anim-scale)) cubic-bezier(0.34, 1.3, 0.64, 1); }
 
-@keyframes dot-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.35); filter: brightness(1.6); }
+@keyframes stand-up {
+  0% { transform: rotate(90deg) scale(0.82); }
+  60% { transform: rotate(-8deg) scale(1.05); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+/* Endure: a hard white flash and a held breath. */
+.is-enduring { animation: endure-flash calc(var(--dur-endure, 900ms) / var(--anim-scale)) ease-out; }
+
+@keyframes endure-flash {
+  0% { filter: brightness(3.4); transform: scale(1.08); }
+  30% { filter: brightness(1.2); transform: scale(0.97); }
+  60% { filter: brightness(2); }
+  100% { filter: brightness(1); transform: scale(1); }
+}
+
+/* Buff and ailment icons pop in with a little bounce; the ones on their way out
+ * simply fade, so an expiry never reads as a new effect. */
+.is-status-changed .dot { animation: dot-pop calc(var(--dur-status-pop, 500ms) / var(--anim-scale)) cubic-bezier(0.34, 1.6, 0.64, 1); }
+
+@keyframes dot-pop {
+  0% { transform: scale(0.2); opacity: 0; }
+  55% { transform: scale(1.35); opacity: 1; filter: brightness(1.6); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* A brief, small board twitch on a weakness or a Technical. 3px, ~150ms,
+ * transform only — it cannot move anything, only appear to. */
+.is-shaking { animation: board-shake calc(var(--dur-shake, 150ms) / var(--anim-scale)) ease-in-out 1; }
+
+@keyframes board-shake {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-3px, 1px); }
+  50% { transform: translate(3px, -1px); }
+  75% { transform: translate(-2px, 0); }
 }
 
 .float-num {
@@ -760,7 +860,7 @@ body.board-mode #app {
   font-size: 26px;
   letter-spacing: 0.02em;
   transform: translate(-50%, 0);
-  animation: float-up calc(0.9s / var(--anim-scale)) ease-out forwards;
+  animation: float-up calc(var(--dur-float-num, 900ms) / var(--anim-scale)) ease-out forwards;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
 }
 
@@ -792,7 +892,24 @@ body.board-mode #app {
   color: #fff;
   background: linear-gradient(100deg, #f0a91e, #e0533a);
   box-shadow: 0 0 34px rgba(240, 169, 30, 0.6);
-  animation: splash-pop calc(0.9s / var(--anim-scale)) ease-out forwards;
+  animation: splash-pop calc(var(--dur-splash-weak, 900ms) / var(--anim-scale)) ease-out forwards;
+}
+
+.splash--technical {
+  font-size: 34px;
+  color: #fff;
+  background: linear-gradient(100deg, #ff8c1a, #d64f00);
+  box-shadow: 0 0 34px rgba(255, 140, 26, 0.6);
+  animation: splash-pop calc(var(--dur-splash-technical, 1100ms) / var(--anim-scale)) ease-out forwards;
+  top: 32%;
+}
+
+.splash--showtime {
+  font-size: 40px;
+  color: #fff;
+  background: linear-gradient(100deg, #ff4fd8, #8f2bd6 60%, #4aa3df);
+  box-shadow: 0 0 44px rgba(255, 79, 216, 0.6);
+  animation: splash-pop calc(var(--dur-splash-showtime, 1400ms) / var(--anim-scale)) ease-out forwards;
 }
 
 .splash--onemore {
@@ -800,7 +917,7 @@ body.board-mode #app {
   color: #fff;
   background: linear-gradient(100deg, var(--accent-dark), var(--accent) 55%, #ff5f73);
   box-shadow: 0 0 46px var(--accent-glow);
-  animation: splash-pop calc(1.3s / var(--anim-scale)) ease-out forwards;
+  animation: splash-pop calc(var(--dur-splash-one-more, 1300ms) / var(--anim-scale)) ease-out forwards;
 }
 
 @keyframes splash-pop {
@@ -811,11 +928,193 @@ body.board-mode #app {
   100% { opacity: 0; transform: translate(-50%, -70%) skewX(-8deg) scale(1); }
 }
 
+/* ---------- The Velvet Room: fusion and the Gallows ----------
+ *
+ * Deliberately blue whatever theme is showing. This is the one moment in a
+ * match that belongs to the Velvet Room rather than to the deck you picked, and
+ * a Take-Your-Heart-red fusion would read as just another attack.
+ *
+ * Entirely transform/opacity, entirely `position: fixed`, entirely
+ * pointer-events: none — it plays OVER the board and touches nothing.
+ */
+.velvet {
+  --velvet: #2f4fd8;
+  --velvet-light: #8fb8ff;
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 46%, rgba(30, 44, 120, 0.55), rgba(4, 6, 20, 0.82) 70%);
+  animation: velvet-veil calc(var(--dur-fusion, 2750ms) / var(--anim-scale)) ease-out forwards;
+}
+
+.velvet--gallows { animation-duration: calc(var(--dur-gallows, 1200ms) / var(--anim-scale)); }
+
+@keyframes velvet-veil {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.velvet__stage {
+  position: relative;
+  width: min(460px, 80vw);
+  height: 220px;
+  display: grid;
+  place-items: center;
+}
+
+/* The sacrifices: they slide in from either side, tilt toward each other, and
+ * dissolve at the moment the glow blooms. */
+.velvet__parent {
+  position: absolute;
+  padding: 14px 18px;
+  min-width: 120px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: #eaf1ff;
+  border: 1px solid var(--velvet-light);
+  border-radius: 8px;
+  background: linear-gradient(160deg, #16255e, #0a1030);
+  box-shadow: 0 0 24px rgba(47, 79, 216, 0.6);
+}
+
+.velvet__parent--a { animation: velvet-parent-a calc(var(--dur-fusion, 2750ms) / var(--anim-scale)) cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+.velvet__parent--b { animation: velvet-parent-b calc(var(--dur-fusion, 2750ms) / var(--anim-scale)) cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+.velvet__parent--food { animation: velvet-parent-a calc(var(--dur-gallows, 1200ms) / var(--anim-scale)) cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+
+@keyframes velvet-parent-a {
+  0% { opacity: 0; transform: translateX(-260px) rotate(-14deg) scale(0.8); }
+  22% { opacity: 1; transform: translateX(-95px) rotate(-10deg) scale(1); }
+  46% { opacity: 1; transform: translateX(-26px) rotate(-22deg) scale(0.96); }
+  62% { opacity: 0; transform: translateX(0) rotate(-30deg) scale(0.6); filter: brightness(3); }
+  100% { opacity: 0; transform: translateX(0) rotate(-30deg) scale(0.6); }
+}
+
+@keyframes velvet-parent-b {
+  0% { opacity: 0; transform: translateX(260px) rotate(14deg) scale(0.8); }
+  22% { opacity: 1; transform: translateX(95px) rotate(10deg) scale(1); }
+  46% { opacity: 1; transform: translateX(26px) rotate(22deg) scale(0.96); }
+  62% { opacity: 0; transform: translateX(0) rotate(30deg) scale(0.6); filter: brightness(3); }
+  100% { opacity: 0; transform: translateX(0) rotate(30deg) scale(0.6); }
+}
+
+.velvet__glow {
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff 0%, var(--velvet-light) 28%, rgba(47, 79, 216, 0) 70%);
+  opacity: 0;
+  animation: velvet-glow calc(var(--dur-fusion, 2750ms) / var(--anim-scale)) ease-out forwards;
+}
+
+.velvet--gallows .velvet__glow { animation-duration: calc(var(--dur-gallows, 1200ms) / var(--anim-scale)); }
+
+@keyframes velvet-glow {
+  0%, 45% { opacity: 0; transform: scale(0.2); }
+  62% { opacity: 1; transform: scale(1.15); }
+  80% { opacity: 0.25; transform: scale(1.4); }
+  100% { opacity: 0; transform: scale(1.5); }
+}
+
+/* Light particles, fanned deterministically so every fusion is the same ritual. */
+.velvet__particles { position: absolute; inset: 0; display: grid; place-items: center; }
+
+.velvet__particle {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--velvet-light);
+  box-shadow: 0 0 10px var(--velvet-light);
+  opacity: 0;
+  transform: rotate(var(--angle)) translateY(0);
+  animation: velvet-particle calc(var(--dur-fusion, 2750ms) / var(--anim-scale)) ease-out var(--delay) forwards;
+}
+
+.velvet__particle--gallows { animation-duration: calc(var(--dur-gallows, 1200ms) / var(--anim-scale)); }
+
+@keyframes velvet-particle {
+  0%, 48% { opacity: 0; transform: rotate(var(--angle)) translateY(0) scale(0.4); }
+  62% { opacity: 1; transform: rotate(var(--angle)) translateY(-40px) scale(1); }
+  100% { opacity: 0; transform: rotate(var(--angle)) translateY(-115px) scale(0.2); }
+}
+
+/* The result rises out of the glow. */
+.velvet__result {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 26px;
+  border: 1px solid #fff;
+  border-radius: 10px;
+  background: linear-gradient(160deg, #22347a, #0b1132);
+  box-shadow: 0 0 46px rgba(143, 184, 255, 0.75);
+  opacity: 0;
+  animation: velvet-result calc(var(--dur-fusion, 2750ms) / var(--anim-scale)) cubic-bezier(0.2, 1.3, 0.4, 1) forwards;
+}
+
+.velvet--gallows .velvet__result { animation-duration: calc(var(--dur-gallows, 1200ms) / var(--anim-scale)); }
+
+@keyframes velvet-result {
+  0%, 58% { opacity: 0; transform: scale(0.3); }
+  74% { opacity: 1; transform: scale(1.12); }
+  84% { transform: scale(1); }
+  92% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1) translateY(-12px); }
+}
+
+.velvet__result-name {
+  font-family: var(--font-display);
+  font-size: 24px;
+  letter-spacing: 0.06em;
+  color: #fff;
+}
+
+.velvet__result-level {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--velvet-light);
+}
+
+/* The inherited passive and skills flash once, after the result has landed. */
+.velvet__gains { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin-top: 4px; }
+
+.velvet__gain {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--velvet-light);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: #eaf1ff;
+  opacity: 0;
+  animation: velvet-gain calc(var(--dur-fusion, 2750ms) / var(--anim-scale)) ease-out forwards;
+}
+
+.velvet__gain--passive { border-color: var(--gold); color: var(--gold); }
+
+@keyframes velvet-gain {
+  0%, 78% { opacity: 0; transform: scale(0.8); }
+  86% { opacity: 1; transform: scale(1.2); filter: brightness(2); }
+  92% { opacity: 1; transform: scale(1); filter: brightness(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .is-hit, .is-healed, .is-going-down, .is-ko, .is-acting,
-  .float-num, .splash, .tile--targetable, .is-status-changed .dot {
+  .is-hit, .is-healed, .is-going-down, .is-standing-up, .is-ko, .is-acting,
+  .is-enduring, .is-shaking, .float-num, .splash, .tile--targetable,
+  .is-status-changed .dot, .tile__ghost, .velvet, .velvet * {
     animation: none !important;
   }
+  .velvet { display: none; }
 }
 
 /* ---------- Modals ---------- */
@@ -853,6 +1152,17 @@ body.board-mode #app {
 
 .modal__body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
 .modal__hint { margin: 0; font-size: 12px; line-height: 1.55; color: var(--ink-dim); }
+
+.fusion-warn {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--warn, #d08a2a);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warn, #d08a2a) 14%, transparent);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .modal__cards { display: flex; flex-wrap: wrap; gap: 10px; }
 
 .fusion-row {
@@ -897,7 +1207,7 @@ body.board-mode #app {
 
 .modal-overlay--result { z-index: 60; }
 
-.result { width: min(520px, 100%); padding: 28px; text-align: center; }
+.result { width: min(680px, 100%); padding: 28px; text-align: center; }
 .result h2 { font-size: 42px; letter-spacing: 0.08em; }
 .result--win { border-top-color: var(--gold); }
 .result--win h2 { color: var(--gold); text-shadow: 0 0 24px rgba(240, 194, 67, 0.5); }
@@ -917,6 +1227,136 @@ body.board-mode #app {
 }
 
 .result__actions { display: flex; gap: 10px; justify-content: center; }
+
+/* ---------- The end-of-match battle log ----------
+ *
+ * The result overlay blurs the board behind it, which took the sidebar log away
+ * at the moment it is most worth reading. It gets a view of its own instead,
+ * holding the WHOLE feed rather than the sidebar's recent tail.
+ */
+.result-tabs {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.result-tab--on {
+  border-color: var(--sel-on);
+  color: var(--ink);
+}
+
+.result-log { text-align: left; }
+
+.result-log__list {
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  margin-bottom: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #101014;
+}
+
+/* ---------- Post-match scoreboard ---------- */
+
+.stats {
+  text-align: left;
+  margin-bottom: 22px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.stats__heading {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin: 14px 0 4px;
+}
+
+.stats__meta { font-size: 11px; color: var(--ink-faint); margin-bottom: 10px; }
+
+.stats__columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 560px) {
+  .stats__columns { grid-template-columns: minmax(0, 1fr); }
+}
+
+.stats-col {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #16161c;
+  min-width: 0;
+}
+
+.stats-col__name {
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.stats-col__ko { font-size: 10.5px; color: var(--ink-faint); margin-bottom: 8px; }
+
+.stats-table {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  margin: 0;
+  font-size: 11.5px;
+}
+
+.stats-table__label { color: var(--ink-dim); margin: 0; }
+.stats-table__value { color: var(--ink); text-align: right; margin: 0; font-variant-numeric: tabular-nums; }
+
+.stats-col__note {
+  margin-top: 8px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--ink-dim);
+  overflow-wrap: anywhere;
+}
+
+.stats-col__note--mvp { color: var(--gold); }
+
+.ko-timeline__list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.ko-timeline__item {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--ink-dim);
+  padding: 3px 8px;
+  border-left: 2px solid var(--line);
+  background: #16161c;
+  border-radius: 0 4px 4px 0;
+}
+
+.ko-timeline__item--p0 { border-left-color: var(--accent); }
+.ko-timeline__item--p1 { border-left-color: #6c6f9c; }
+.ko-timeline__turn { color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.ko-timeline__who { color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.ko-timeline__by { color: var(--ink-faint); font-size: 10px; }
 
 /* ---------- Starter select ---------- */
 
@@ -941,11 +1381,8 @@ body.board-mode #app {
 
 .starter-select__row { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
 
-.starter-select__row .card--clickable { cursor: pointer; }
-.starter-select__row .card--clickable:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 16px 34px var(--accent-glow);
-}
+/* The lift only; the ring comes from select.css. */
+.starter-select__row .card--clickable:hover { transform: translateY(-6px); }
 
 /* ---------- Setup screen ---------- */
 
@@ -975,19 +1412,18 @@ body.board-mode #app {
 
 .setup-card:hover { transform: translateY(-3px); border-left-color: var(--accent); }
 
-.setup-card--on {
-  border-color: var(--accent);
-  border-left-color: var(--accent);
-  box-shadow: 0 10px 28px var(--accent-glow);
-}
+/* Ring and glow come from select.css; only the accented left edge is local. */
+.setup-card--on { border-left-color: var(--sel-on); }
 
 .setup-card__icon { font-size: 26px; }
 .setup-card__title { font-family: var(--font-display); font-size: 20px; text-transform: uppercase; }
 .setup-card__tag { font-size: 9px; letter-spacing: 0.16em; color: var(--ink-faint); }
 .setup-card__desc { font-size: 12px; color: var(--ink-dim); line-height: 1.5; }
 
-.setup-card--brutal.setup-card--on { border-color: var(--gold); box-shadow: 0 10px 28px rgba(240, 194, 67, 0.3); }
-.setup-card--chaos.setup-card--on { border-color: #9b4fd1; box-shadow: 0 10px 28px rgba(155, 79, 209, 0.35); }
+/* The two loud difficulties recolour the selection ring rather than replacing
+ * it — retinting the token keeps them inside the one system. */
+.setup-card--brutal.setup-card--on { --sel-on: var(--gold); }
+.setup-card--chaos.setup-card--on { --sel-on: #9b4fd1; }
 
 .setup__note { font-size: 12px; color: var(--ink-faint); line-height: 1.6; }
 .setup__start { align-self: flex-start; padding: 14px 34px; font-size: 15px; }
@@ -1007,7 +1443,7 @@ body.board-mode #app {
   color: #ffd2d8;
   font-size: 13px;
   box-shadow: var(--shadow);
-  animation: toast-in 0.2s ease-out;
+  animation: toast-in calc(0.2s / var(--anim-scale, 1)) ease-out;
 }
 
 @keyframes toast-in {
@@ -1231,13 +1667,12 @@ body.board-mode #app {
   background: #16161c;
 }
 
+/* A ready recipe is a valid target; a blocked one is the invalid state. Both
+ * rings come from select.css — only the tinted background is local. */
 .fusion-recipe--ready {
-  border-color: var(--gold);
   border-left-color: var(--arcana);
-  background: linear-gradient(100deg, rgba(240, 194, 67, 0.1), #16161c 60%);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--sel-target) 12%, transparent), #16161c 60%);
 }
-
-.fusion-recipe--blocked { opacity: 0.62; }
 
 .fusion-recipe__head {
   display: grid;
@@ -1363,12 +1798,7 @@ body.board-mode #app {
   transition: border-color 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
 }
 
-.setting-card:hover { transform: translateY(-2px); border-color: var(--accent); }
-
-.setting-card--on {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent), 0 8px 22px var(--accent-glow);
-}
+.setting-card:hover { transform: translateY(-2px); }
 
 .setting-card__title { font-weight: 700; font-size: 13px; }
 .setting-card__desc { font-size: 11.5px; color: var(--ink-dim); line-height: 1.45; }
@@ -1718,3 +2148,252 @@ body.board-mode #app {
 
 .short-code-input:focus { outline: none; border-color: var(--accent); }
 .seat-name--wide { max-width: 460px; }
+
+/* ---------- Full Analysis peek + Fortune's Draw arcana picker ---------- */
+
+/* Floats OVER the board. It appears and disappears mid-turn, so it must not be
+ * part of any layout flow the tiles are also in. */
+.peek {
+  position: absolute;
+  z-index: 35;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(560px, 80%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px dashed var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 16%, #0b0b0d);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.peek__label {
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.peek__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.peek__card {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  font-size: 10.5px;
+  color: var(--ink-dim);
+}
+
+.arcana-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------- Providence ---------- */
+
+.providence__order {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+.providence__summary { margin: 8px 0; }
+
+/* The "choose a thing that is not a Persona" picker: ailments, deck cards. */
+.option-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.option-choice {
+  display: grid;
+  gap: 3px;
+  flex: 1 1 200px;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 10px 12px;
+}
+
+.option-choice__label { font-weight: 700; font-size: 13px; }
+.option-choice__hint { font-size: 10.5px; font-weight: 400; color: var(--ink-dim); line-height: 1.4; }
+
+.arcana-choice {
+  border-color: color-mix(in srgb, var(--arcana) 60%, transparent);
+  color: var(--arcana);
+}
+
+/* ---------- Tips ---------- */
+
+.tips {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  text-align: left;
+}
+
+.tips__heading {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.tip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ink-faint);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.tip--contextual {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel));
+}
+
+.tip__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.tip__text {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+.tips--rotating {
+  margin-top: 18px;
+  min-height: 74px;
+}
+
+/* ---------- Showtime button ---------- */
+
+.skill-btn--showtime {
+  border-color: #ff4fd8;
+  background: linear-gradient(120deg, rgba(255, 79, 216, 0.18), rgba(74, 163, 223, 0.14));
+}
+
+.skill-btn--showtime .skill-btn__cost {
+  color: #ff9ceb;
+  letter-spacing: 0.08em;
+}
+
+.skill-btn--showtime:hover:not(:disabled) {
+  border-color: #ffb0ee;
+  box-shadow: 0 0 16px rgba(255, 79, 216, 0.45);
+}
+
+/* ---------- The Gallows ---------- */
+
+.gallows-btn--ready {
+  border-color: #8f7bd6;
+  color: #ded4ff;
+}
+
+.gallows__heading {
+  margin: 12px 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.gallows__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The three tiers, spelled out at the top of the panel. */
+.gallows-tiers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.gallows-tier {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border-left: 3px solid var(--line);
+  background: #15151a;
+  font-size: 11px;
+}
+
+.gallows-tier--feast { border-left-color: var(--gold); }
+.gallows-tier--meal { border-left-color: #8f7bd6; }
+.gallows-tier--junk { border-left-color: var(--ok); }
+
+.gallows-tier__name {
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+
+.gallows-tier--feast .gallows-tier__name { color: var(--gold); }
+.gallows-tier--meal .gallows-tier__name { color: #ded4ff; }
+.gallows-tier--junk .gallows-tier__name { color: var(--ok); }
+
+.gallows-tier__when { color: var(--ink-dim); }
+.gallows-tier__gain { color: var(--ink-faint); text-align: right; }
+
+/* Each candidate meal previews its own tier before you commit to it. */
+.gallows__row--meals { flex-direction: column; align-items: stretch; }
+
+.gallows-meal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 10px;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.gallows-meal__name { font-weight: 700; overflow-wrap: anywhere; }
+
+.gallows-meal__tier {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.gallows-meal__gain { font-size: 10px; color: var(--ink-dim); white-space: nowrap; }
+
+.gallows-meal--feast .gallows-meal__tier { color: var(--gold); }
+.gallows-meal--meal .gallows-meal__tier { color: #ded4ff; }
+.gallows-meal--junk .gallows-meal__tier { color: var(--ok); }
+
+/* The compact board strip flags a rewritten chart with a single glyph — there
+ * is no room for a sentence, and the full card is one hover away. */
+.mini-chip--rewritten {
+  border-color: var(--gold);
+  color: var(--gold);
+  font-weight: 700;
+}
