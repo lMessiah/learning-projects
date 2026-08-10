@@ -57,8 +57,6 @@ export const SPECIALS = raw.specials.map((s) => ({ ...s, usesAction: Boolean(s.u
 export const FUSION_RECIPES = raw.fusionRecipes;
 export const DECKS = raw.decks;
 export const STARTER_POOL = raw.starterPool;
-/** Duo attacks, unlocked by fielding both halves of a pair. */
-export const SHOWTIMES = raw.showtimes ?? [];
 
 /** Every card of every type, in one flat list. */
 export const ALL_CARDS = [...PERSONAS, ...ITEMS, ...SPECIALS];
@@ -82,23 +80,6 @@ deepFreeze(FUSION_RECIPES);
 deepFreeze(DECKS);
 deepFreeze(STARTER_POOL);
 deepFreeze(SKILLS);
-deepFreeze(SHOWTIMES);
-
-const SHOWTIME_BY_ID = new Map(SHOWTIMES.map((s) => [s.id, s]));
-
-export function getShowtime(id) {
-  return SHOWTIME_BY_ID.get(id) || null;
-}
-
-/** Every duo a given Persona card is half of. */
-export function showtimesFor(cardId) {
-  return SHOWTIMES.filter((s) => s.pair.includes(cardId));
-}
-
-/** The card ids this Persona can call on for a Showtime. */
-export function duoPartnersOf(cardId) {
-  return showtimesFor(cardId).map((s) => s.pair.find((id) => id !== cardId));
-}
 
 /** Look up any card (persona/item/special) by id. Throws on typos. */
 export function getCard(id) {
@@ -242,38 +223,13 @@ export function validateDatabase() {
   // be called from here without a cycle. `validateAll()` runs both.
 
   // A Skill Card may only ever name a real entry in the skill library, which is
-  // what makes "no passives, no Showtimes" structural rather than a convention.
+  // what makes "no passives" structural rather than a convention.
   for (const card of [...ITEMS, ...SPECIALS]) {
     if (card.effect?.kind !== 'teachSkill') continue;
     if (!SKILLS[card.effect.skillId]) {
       errors.push(`${card.name}: teaches unknown skill "${card.effect.skillId}"`);
     }
     if (card.deckGroup !== 'skill-card') errors.push(`${card.name}: a Skill Card must carry deckGroup "skill-card"`);
-  }
-
-  const showtimeIds = new Set();
-  for (const showtime of SHOWTIMES) {
-    if (showtimeIds.has(showtime.id)) errors.push(`Duplicate showtime id: ${showtime.id}`);
-    showtimeIds.add(showtime.id);
-    if (showtime.pair?.length !== 2) {
-      errors.push(`Showtime ${showtime.id}: needs exactly 2 partners`);
-      continue;
-    }
-    if (showtime.pair[0] === showtime.pair[1]) errors.push(`Showtime ${showtime.id}: a Persona cannot duo with itself`);
-    for (const id of showtime.pair) {
-      if (!BY_ID.has(id) || getCard(id).type !== 'persona') {
-        errors.push(`Showtime ${showtime.id}: "${id}" is not a Persona`);
-      }
-    }
-  }
-  // `duoPartners` on a card is a mirror of the table above, so a card can never
-  // advertise a duo the engine does not know how to run.
-  for (const persona of PERSONAS) {
-    const expected = [...duoPartnersOf(persona.id)].sort();
-    const printed = [...(persona.duoPartners ?? [])].sort();
-    if (expected.join(',') !== printed.join(',')) {
-      errors.push(`${persona.name}: duoPartners [${printed}] does not match the showtime table [${expected}]`);
-    }
   }
 
   for (const id of STARTER_POOL) {

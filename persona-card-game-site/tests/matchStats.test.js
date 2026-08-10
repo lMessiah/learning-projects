@@ -214,7 +214,6 @@ describe('rendering', () => {
       'Technicals',
       'Fusions',
       'Gallows',
-      'Showtimes',
       'Cards drawn',
       'Cards played',
       'SP spent',

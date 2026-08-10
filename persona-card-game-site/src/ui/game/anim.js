@@ -47,7 +47,6 @@ export const DURATIONS = Object.freeze({
   countUp: 500, // how long it takes to count up to its value (JS only)
   splashWeak: 900,
   splashTechnical: 1100,
-  splashShowtime: 1400,
   splashOneMore: 1300,
   fusion: 2750,
   gallows: 1200,
@@ -141,7 +140,6 @@ export function diffStates(prev, next) {
     oneMore: false,
     weakness: false,
     technical: false,
-    showtime: null,
     fusion: null,
     gallows: null,
     acting: null,
@@ -188,7 +186,6 @@ export function diffStates(prev, next) {
     if (entry.id <= lastId) continue;
     if (entry.kind === 'onemore') effects.oneMore = true;
     if (entry.kind === 'technical') effects.technical = true;
-    if (entry.kind === 'showtime') effects.showtime = entry.text;
     if (entry.kind === 'fusion' && entry.data) effects.fusion = entry.data;
     if (entry.kind === 'gallows' && entry.data) effects.gallows = entry.data;
     if (entry.kind === 'attack' && entry.text.includes('Weakness!')) effects.weakness = true;
@@ -468,7 +465,6 @@ export function playEffects(host, effects, scale = 1) {
 
   if (effects.weakness) splash(host, 'splash--weak', 'WEAK!', ms('splashWeak'));
   if (effects.technical) splash(host, 'splash--technical', 'TECHNICAL!', ms('splashTechnical'));
-  if (effects.showtime) splash(host, 'splash--showtime', 'SHOWTIME!', ms('splashShowtime'));
   if (effects.oneMore) splash(host, 'splash--onemore', 'ONE MORE!', ms('splashOneMore'));
 
   // The two long ceremonies. Both are skippable — see makeSkippable.

@@ -1,4 +1,4 @@
-# Persona Card Game (Unofficial Beta)
+# Persona Card Game (Unofficial, Patch 3)
 
 A browser card game inspired by the **mechanics** of ATLUS's Persona series, played as a TCG.
 Fan project — not affiliated with or endorsed by ATLUS or SEGA. **All card art is placeholder
@@ -80,7 +80,7 @@ from a small button beside the log, always behind a confirmation, and online it
 travels as an ordinary action for the host to apply.
 
 Every match — win, loss or resignation — ends on a scoreboard: damage dealt and
-taken, One Mores, Technicals, fusions, Gallows, Showtimes, cards drawn and
+taken, One Mores, Technicals, fusions, Gallows, cards drawn and
 played, SP spent, the biggest single hit with the skill that threw it, the full
 knockout timeline, and an MVP Persona per side.
 
@@ -98,7 +98,7 @@ All of these are config constants in `src/engine/config.js`.
 | --- | --- |
 | Draw | 1 (plus 1 more if you pass) |
 | SP regen | 3, **to the active Persona only** — the bench regains nothing |
-| Action | 1 — attack, skill, Showtime, guard, a Feast/Meal at the Gallows, or pass |
+| Action | 1 — attack, skill, guard, a Feast/Meal at the Gallows, or pass |
 | **Fusions** | **1** — free, like an Item or a Special |
 | **Item cards** | **1** |
 | **Special cards** | **1** (counted separately from Items) |
@@ -217,22 +217,6 @@ every 2 turns up to `DRAW_SCALE_CAP` (20). It is a re-weighting rather than a
 filter, so a deck of nothing but openers still draws normally — it just stops
 turn 27 feeling like turn 3. Explicit draw manipulation always overrides it.
 
-### Showtime
-
-Five pairs of Personas have a **Showtime**: a duo attack that unlocks the moment
-both halves are on your field and on their feet. It costs your action, it does
-not matter which of the two is active, and each pair fires **once per match**. A
-card that is half of a duo names its partner in `duoPartners`, mirrored from the
-`showtimes` table in cards.json.
-
-| Duo | Pair | Flavour |
-| --- | --- | --- |
-| Evening Elegy | Orpheus + Apsaras | P3 |
-| Truth Unveiled | Izanagi + Ara Mitama | P4 |
-| Curtain Call | Arsène + Jack-o'-Lantern | P5 |
-| Hee-Ho Hop | Pixie + Jack Frost | common |
-| Frozen Rebellion | Jack Frost + Black Frost | needs a fusion |
-
 ### Draw manipulation
 
 Four Specials reserve or reshape what you draw, all deterministic through the
@@ -265,9 +249,37 @@ A Persona card may print at most one passive, and most print none. Passives are
 always-on or auto-triggered — never an activated choice, never a legal action.
 They are declared as hooks in `src/engine/passives.js`: `onKnockdownAttempt`,
 `onDamageTaken`, `onFatalDamage`, `onDamageDealt`, `onSkillUsed`, `onTurnStart`,
-`onFusionMaterial`, plus damage-multiplier and One-More-chain hooks. A fusion may inherit a parent's passive **instead of**
-one of its skills; the result carries at most one, and overwriting a native
-passive takes an explicit confirmation.
+`onFusionMaterial`, plus damage-multiplier and One-More-chain hooks.
+
+**Any** passive can be moved onto another Persona — there is no approved list.
+What limits it is that there are exactly two channels, and both are expensive:
+a **fusion** takes one skill *or* that parent's passive from each parent, and
+the **Gallows on its feast tier only** (food grown to the eater's own level) can
+hand over the food's passive instead of one of its skills. A meal or a junk
+disposal never moves one. A Persona carries at most one passive, so inheriting
+over an existing one **replaces** it, and both channels demand an explicit
+confirmation before that happens.
+
+### Field presence
+
+An empty field is a **legal tactical state**, not evidence of losing. Holding
+Personas back as fusion or Gallows fodder, or waiting for the play ceiling to
+reach the card you actually want, is intended play — nothing forces a Persona
+out of your hand, and being boardless never pays a comeback benefit.
+
+The one consequence is a clock. You get `EMPTY_FIELD_LOSS_TURNS` (3) **full
+turns**, each with its own draw phase, starting with an empty field; beginning a
+fourth loses the match outright. Playing any Persona, by any route, resets it.
+
+While the clock runs, every draw is **hard-filtered to Persona cards** for as
+long as the deck holds one. That filter is the timer's only side effect: it
+changes *what* you draw, never *how many*. Draw quantity is Underdog Draw's
+business and draw quality is Momentum's, and both read the KO tally alone.
+
+The mirror of the rule: end your turn with your **opponent's** field empty and
+your next draw phase deals you one extra card, drawn uniformly. Banked rather
+than paid on the spot, because a card handed over at the end of your own turn
+arrives when there is nothing left to do with it.
 
 ### Comeback mechanics
 
@@ -290,8 +302,19 @@ next to the skill name on the card.
 A **Skill Card** is an Item that permanently teaches its printed skill to one of
 your field Personas for the rest of the match — the way you patch a hole in your
 board's element coverage without waiting for a level. It can only ever name an
-entry in `skillLibrary`, so it can never teach a passive or a Showtime, and
+entry in `skillLibrary`, so it can never teach a passive, and
 `deckGroup: "skill-card"` caps them at two per deck between them.
+
+**Traesto** is the tactical retreat: one per deck, rare, and it uses your
+action. It pulls one of your field Personas back into your hand as the *same
+body* — level, learned and inherited skills, passive and SP all survive, held on
+the hand entry as a `persona` blob. What it sheds is the fight: ailments, buffs
+and debuffs go, and HP comes back in full. Putting it down again ignores the
+play-level ceiling, because the ceiling exists to stop you dropping a card you
+have not earned and this one was on your field a moment ago. If the retreating
+Persona was your active, one of your bench steps up for free. It is never a
+knockout, and retreating your last Persona is legal — you simply start the
+empty-field clock.
 
 **Drain skills** are skills, not affinities — there is no drain or repel
 reaction anywhere in the game. **Life Drain** takes **20% of the target's
@@ -336,7 +359,7 @@ Fusion is exempt from the gap: it is already paid for with two sacrificed Person
 and a combined-level requirement, and the recipes form a ladder — mid tier (28–40)
 then high tier (46–64).
 
-## What's in the beta
+## What's in Patch 3
 
 Everything below is built, wired to the UI and covered by tests.
 
@@ -344,10 +367,10 @@ Everything below is built, wired to the UI and covered by tests.
 | --- | --- |
 | **Modes** | Vs Bot (Easy / Medium / Brutal / Chaos), local hot-seat with a pass-the-device gate, and peer-to-peer online play with no server or account |
 | **Combat** | Weakness → knockdown → One More, Technicals off Burn and Shock, Guard, buffs and debuffs, Charge and Concentrate, execute riders, no random knockouts anywhere |
-| **The board** | Fusion (free, 1/turn), the three-tier Gallows, Showtime duo attacks, 8 passives, Baton Pass, bench targeting |
-| **Cards** | Generated decks from 3 flavours × 4 archetypes, flavour exclusives, Skill Cards, drains, draw manipulation, affinity rewrites, Twist of Fate |
+| **The board** | Fusion (free, 1/turn), the three-tier Gallows with skill and passive inheritance, 9 fully transferable passives, Baton Pass, bench targeting, the empty-field clock |
+| **Cards** | Generated decks from 3 flavours × 4 archetypes, flavour exclusives, Skill Cards, drains, draw manipulation, affinity rewrites, Twist of Fate, Traesto |
 | **Around the match** | Battle log sidebar and a full post-match log tab, resignation, post-match scoreboard with a knockout timeline and MVP, contextual post-loss tips, a full Rules and FAQ screen |
-| **Presentation** | Three themes, one selection-highlight system across every picker, a full battle animation pass, a skippable Velvet-Room fusion sequence, animation-speed and play-assist settings |
+| **Presentation** | Three themes, one selection-highlight system across every picker, a full battle animation pass, a skippable Velvet-Room fusion sequence, a skippable victory/defeat outro, animation-speed and play-assist settings |
 | **Not in it** | No shop, no deck building, no between-match progression, no audio, no saved games |
 
 ## Online multiplayer

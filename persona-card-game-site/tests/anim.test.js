@@ -407,7 +407,6 @@ describe('nothing it adds can move the board', () => {
       '.float-num',
       '.splash--weak',
       '.splash--technical',
-      '.splash--showtime',
       '.splash--onemore',
       '.tile__ghost',
       '.velvet',

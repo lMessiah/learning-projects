@@ -203,3 +203,114 @@ describe('chaining', () => {
     expect(() => applyAction(state, zio(0, benchUid(state)))).not.toThrow();
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * Prevention
+ * ------------------------------------------------------------------ */
+
+/**
+ * A weakness hit and a knockdown are not the same event, and the difference
+ * only shows when something stops the knockdown. Every prevention below must
+ * cost the attacker the One More as well — the grant keys off the knockdown,
+ * never off the weakness.
+ */
+describe('a prevented knockdown pays out nothing', () => {
+  /** Zio into Ara Mitama (Stalwart, weak to elec) at a chosen HP fraction. */
+  const stalwart = (hpFraction) => {
+    const state = setupMatch();
+    setField(state, 0, [{ cardId: 'omoikane', active: true }]); // knows Zio, no passive
+    setField(state, 1, [{ cardId: 'ara-mitama', active: true, maxHp: 900, hp: Math.round(900 * hpFraction) }]);
+    return state;
+  };
+
+  it('Stalwart above half HP: no knockdown, and no One More either', () => {
+    let state = stalwart(0.9);
+    expect(passiveOf(activeOf(state, 1))).toBe('stalwart');
+
+    state = applyAction(state, zio());
+
+    // The hit still landed and still read as a weakness — only the knockdown died.
+    expect(activeOf(state, 1).hp).toBeLessThan(810);
+    expect(activeOf(state, 1).knockedDown).toBe(false);
+    expect(state.turnState.oneMoresGranted).toBe(0);
+    expect(state.turnState.actionsRemaining).toBe(0);
+    expect(state.log.some((l) => /Stalwart/.test(l.text))).toBe(true);
+  });
+
+  it('the same hit below half HP grants both', () => {
+    let state = stalwart(0.3);
+    state = applyAction(state, zio());
+
+    expect(activeOf(state, 1).knockedDown).toBe(true);
+    expect(state.turnState.oneMoresGranted).toBe(1);
+    expect(state.turnState.actionsRemaining).toBe(1);
+  });
+
+  it('Guard: no knockdown, no One More', () => {
+    let state = setupMatch();
+    setField(state, 0, [{ cardId: 'omoikane', active: true }]);
+    setField(state, 1, [{ cardId: 'apsaras', active: true, hp: 900, maxHp: 900 }]);
+    state = applyAction(state, { type: 'END_TURN', player: 0, discard: [] });
+    state = applyAction(state, { type: 'GUARD', player: 1 });
+    state = applyAction(state, { type: 'END_TURN', player: 1, discard: [] });
+
+    state = applyAction(state, zio());
+
+    expect(activeOf(state, 1).knockedDown).toBe(false);
+    expect(state.turnState.oneMoresGranted).toBe(0);
+  });
+
+  it('Moonless Gown: nothing reached it, so nothing is owed', () => {
+    let state = setupMatch();
+    setField(state, 0, [{ cardId: 'omoikane', active: true }]);
+    setField(state, 1, [{ cardId: 'apsaras', active: true, hp: 900, maxHp: 900 }]);
+    setHand(state, 1, ['moonless-gown']);
+    state = applyAction(state, { type: 'END_TURN', player: 0, discard: [] });
+    state = applyAction(state, {
+      type: 'PLAY_SPECIAL',
+      player: 1,
+      handUid: handUidOf(state, 1, 'moonless-gown'),
+    });
+    state = applyAction(state, { type: 'END_TURN', player: 1, discard: [] });
+    expect(activeOf(state, 1).warded).toBe(true);
+
+    state = applyAction(state, zio());
+
+    expect(activeOf(state, 1).hp).toBe(900);
+    expect(activeOf(state, 1).knockedDown).toBe(false);
+    expect(state.turnState.oneMoresGranted).toBe(0);
+  });
+
+  it('a Shock Technical is held to the same gate', () => {
+    // Shock + a physical hit is a Technical knockdown, which is a separate
+    // route into the same event — and Stalwart closes it just as firmly.
+    let state = setupMatch();
+    setField(state, 0, [{ cardId: 'ara-mitama', active: true }]); // knows Bash (phys)
+    setField(state, 1, [{ cardId: 'ara-mitama', active: true, maxHp: 900, hp: 810 }]);
+    state.players[1].field[0].ailments = [{ type: 'shock', turnsLeft: 3 }];
+
+    state = applyAction(state, { type: 'USE_SKILL', player: 0, skillId: 'bash' });
+
+    expect(state.log.some((l) => l.kind === 'technical')).toBe(true);
+    expect(activeOf(state, 1).knockedDown).toBe(false);
+    expect(state.turnState.oneMoresGranted).toBe(0);
+  });
+
+  it('the same Technical below half HP does grant one', () => {
+    let state = setupMatch();
+    setField(state, 0, [{ cardId: 'ara-mitama', active: true }]);
+    setField(state, 1, [{ cardId: 'ara-mitama', active: true, maxHp: 900, hp: 300 }]);
+    state.players[1].field[0].ailments = [{ type: 'shock', turnsLeft: 3 }];
+
+    state = applyAction(state, { type: 'USE_SKILL', player: 0, skillId: 'bash' });
+
+    expect(activeOf(state, 1).knockedDown).toBe(true);
+    expect(state.turnState.oneMoresGranted).toBe(1);
+  });
+
+  it('scores no knockdown stat for a prevented one', () => {
+    let state = stalwart(0.9);
+    state = applyAction(state, zio());
+    expect(state.players[0].stats.knockdowns).toBe(0);
+  });
+});

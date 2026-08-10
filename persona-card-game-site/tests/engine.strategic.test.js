@@ -278,7 +278,7 @@ describe('card text matches behaviour', () => {
       'damage', 'grant', 'transferSp', 'dispel', 'charge',
       'guaranteedDraw', 'growth', 'forceSwitch', 'reveal', 'peekHand', 'recall', 'swapHpSp', 'mimic',
       'phantomStrike', 'shuffleTime', 'evolve', 'darkHour', 'ward',
-      'fateFetch', 'providence', 'inflict', 'rewriteAffinities', 'twistFate',
+      'fateFetch', 'providence', 'inflict', 'rewriteAffinities', 'twistFate', 'retreat',
     ]);
     for (const card of SPECIALS) expect(known.has(card.effect.kind), `${card.name}`).toBe(true);
   });

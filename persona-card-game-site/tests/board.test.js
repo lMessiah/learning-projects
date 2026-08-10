@@ -336,7 +336,10 @@ describe('visual feedback', () => {
 
     expect($('.splash--weak')).toBeTruthy();
     expect($('.splash--onemore')).toBeTruthy();
-    expect($('.one-more')).toBeTruthy(); // the persistent banner too
+    // ...and the chip that stays up while the One More is unspent. (It is a
+    // chip and not a banner on purpose: a full-width banner moved every tile
+    // on the board. See renderMiddle.)
+    expect($('.allowance--onemore')).toBeTruthy();
   });
 
   it('animates the knockdown rotation', () => {
@@ -435,7 +438,7 @@ describe('fusion and specials in the UI', () => {
     readyFusion();
     const hot = $$('.action-bar .btn').find((b) => b.textContent.includes('Fusion'));
     expect(hot.classList.contains('fusion-btn--ready')).toBe(true);
-    expect(hot.querySelector('.fusion-btn__badge')).toBeTruthy();
+    expect(hot.querySelector('.btn__badge')).toBeTruthy();
   });
 
   it('lists every recipe, with reasons on the ones you cannot make', () => {

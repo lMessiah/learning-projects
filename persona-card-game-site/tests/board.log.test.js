@@ -126,6 +126,9 @@ describe('the log after the match', () => {
     controller.dispatch({ type: 'GUARD', player: 0 });
     controller.dispatch({ type: 'RESIGN', player: 1 });
     expect(controller.getState().winner).toBe(0);
+    // Click past the end-of-match outro; the scoreboard is what this file is about.
+    const outro = $('.match-outro');
+    if (outro) outro.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     return controller;
   }
 

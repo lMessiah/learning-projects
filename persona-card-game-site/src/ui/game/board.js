@@ -22,8 +22,12 @@ import {
   getLegalActions,
   affinitiesOf,
   twistSacrifice,
+  comboMultiplier,
+  emptyFieldStage,
+  emptyFieldTurnsLeft,
+  passiveDefinition,
 } from '../../engine/index.js';
-import { getCard, getPersona, getShowtime, PERSONAS } from '../../data/cards.js';
+import { getCard, getPersona, PERSONAS } from '../../data/cards.js';
 import { renderCard } from '../cardView.js';
 import { arcanaStyle, typeIcon, typeLabel } from '../arcana.js';
 import { makeInspectable, openCardDetail, hideTooltip, fullPersonaCard, fullHandCard } from './inspect.js';
@@ -32,7 +36,7 @@ import { renderFusionPanel, hasSatisfiableFusion } from './fusionPanel.js';
 import { getSettings, animationScale, autoEndDelay } from '../settings.js';
 import { renderRulesContent } from '../rules.js';
 import { renderTips, analyseMatch, STRATEGY_TIPS, GENERAL_TIPS } from '../tips.js';
-import { renderMatchStats } from '../matchStats.js';
+import { renderMatchStats, mvpOf } from '../matchStats.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -47,6 +51,22 @@ function button(label, className, onClick, { disabled = false, title = '' } = {}
   node.disabled = disabled;
   if (title) node.title = title;
   if (!disabled) node.addEventListener('click', onClick);
+  return node;
+}
+
+/**
+ * Pins a corner badge to a button.
+ *
+ * The badge is absolutely positioned, which means it anchors to the nearest
+ * POSITIONED ancestor rather than to the button — so a badge added to a button
+ * that is not itself `position: relative` escapes the action bar entirely and
+ * lands in the corner of `.board-screen`. Adding the marker class and the badge
+ * in one place is the only way to make that impossible to get wrong the next
+ * time a button earns a badge.
+ */
+function badgeButton(node, text = '!') {
+  node.classList.add('btn--badged');
+  node.appendChild(el('span', 'btn__badge', text));
   return node;
 }
 
@@ -74,10 +94,18 @@ export function mountBoard(root, options) {
   // Transient interaction state, cleared whenever the game state changes.
   // `resultTab` deliberately sits outside the group that `act` resets: which
   // half of the end-of-match screen you were reading is not part of a move.
-  let ui = { targeting: null, modal: null, fusion: null, gallows: null, resultTab: 'summary' };
+  // `outroDone` starts true so that MOUNTING onto a finished match — a reload,
+  // a spectator joining late — shows the scoreboard immediately. The outro is a
+  // reaction to the match ending in front of you, not a property of a finished
+  // state, so only the subscription below arms it.
+  let ui = { targeting: null, modal: null, fusion: null, gallows: null, outroDone: true, resultTab: 'summary' };
   let previousState = null;
   let pendingEffects = null;
   let autoEndTimer = null;
+  // The end-of-match outro's auto-advance. Cleared on every re-render for the
+  // same reason autoEndTimer is: a timer that outlives the node it belongs to
+  // would fire into a board that has already moved on.
+  let outroTimer = null;
   // Survives re-renders so the log keeps its place while you read it.
   const logScroll = { pinned: true, top: 0 };
 
@@ -102,6 +130,10 @@ export function mountBoard(root, options) {
     if (autoEndTimer !== null) {
       clearTimeout(autoEndTimer);
       autoEndTimer = null;
+    }
+    if (outroTimer !== null) {
+      clearTimeout(outroTimer);
+      outroTimer = null;
     }
     screen.innerHTML = '';
     // 0 would divide by zero in the CSS durations, so park it very high instead.
@@ -137,7 +169,27 @@ export function mountBoard(root, options) {
     if (peek) screen.appendChild(peek);
 
     if (ui.modal) screen.appendChild(ui.modal(state, { ui, act, setUi, viewer }));
-    if (state.winner !== null) screen.appendChild(renderGameOver(state, viewer, options, ui, setUi));
+
+    // DESIGN NOTE: there is deliberately no "your field is empty, play one of
+    // these" prompt. An empty field is a legal state a player may choose to be
+    // in — holding Personas back as fusion or Gallows fodder, or waiting for
+    // the level cap to reach the card they actually want to land. The countdown
+    // in the header is the whole of the enforcement, and it is loud enough.
+
+    // The end of a match gets a beat of its own before the numbers arrive. The
+    // outro is skipped outright when animations are off, and a click anywhere on
+    // it cuts to the scoreboard.
+    if (state.winner !== null) {
+      if (scale === 0 || ui.outroDone) {
+        screen.appendChild(renderGameOver(state, viewer, options, ui, setUi));
+      } else {
+        const { node, duration } = matchOutro(state, viewer, options);
+        const finish = () => setUi({ outroDone: true });
+        node.addEventListener('click', finish);
+        outroTimer = setTimeout(finish, Math.round(duration / scale));
+        screen.appendChild(node);
+      }
+    }
 
     if (pendingEffects) {
       playEffects(screen, pendingEffects, scale);
@@ -182,7 +234,7 @@ export function mountBoard(root, options) {
   }
 
   function act(action) {
-    ui = { targeting: null, modal: null, fusion: null, gallows: null };
+    ui = { targeting: null, modal: null, fusion: null, gallows: null, outroDone: true };
     try {
       controller.dispatch(action);
     } catch (error) {
@@ -194,8 +246,11 @@ export function mountBoard(root, options) {
 
   const unsubscribe = controller.subscribe((state) => {
     pendingEffects = diffStates(previousState, state);
+    // The one transition the outro exists for: the match was live a moment ago
+    // and is not any more.
+    const justEnded = Boolean(previousState) && previousState.winner === null && state.winner !== null;
     previousState = state;
-    ui = { targeting: null, modal: null, fusion: null, gallows: null };
+    ui = { targeting: null, modal: null, fusion: null, gallows: null, outroDone: !justEnded };
     rerender();
   });
 
@@ -207,6 +262,7 @@ export function mountBoard(root, options) {
     unsubscribe();
     hideTooltip();
     if (autoEndTimer !== null) clearTimeout(autoEndTimer);
+    if (outroTimer !== null) clearTimeout(outroTimer);
     document.body.classList.remove('board-mode');
     root.innerHTML = '';
   };
@@ -320,6 +376,11 @@ function renderSide(ctx, playerId, enemy) {
   const meta = `Deck ${player.deck.length} · Hand ${player.hand.length}` +
     (player.fatigue ? ` · Fatigue x${player.fatigue}` : '');
   header.appendChild(el('span', 'side__meta', meta));
+  // The empty-field countdown. Public information — an empty board is the most
+  // visible thing on it — so it is drawn on whichever side is on the clock,
+  // for both players to see.
+  const timer = renderFieldTimer(state, playerId);
+  if (timer) header.appendChild(timer);
   side.appendChild(header);
 
   const body = el('div', 'side__body');
@@ -364,6 +425,35 @@ function renderPeek(state, viewer) {
   if (!cards.childElementCount) cards.appendChild(el('span', 'peek__card', 'Nothing to see'));
   peek.appendChild(cards);
   return peek;
+}
+
+/**
+ * The empty-field countdown: how many turns this player has left to put a
+ * Persona down before the match is decided without a single further knockout.
+ *
+ * Returns null when the timer is not running, which is almost always — it is a
+ * loud element precisely because it should be rare.
+ */
+function renderFieldTimer(state, playerId) {
+  const stage = emptyFieldStage(state, playerId);
+  if (stage <= 0) return null;
+  const left = emptyFieldTurnsLeft(state, playerId);
+
+  const wrap = el('div', `field-timer${left <= 1 ? ' field-timer--critical' : ''}`);
+  wrap.title =
+    `${state.players[playerId].name} has started ${stage} turn${stage === 1 ? '' : 's'} in a row with an empty field. ` +
+    `Starting a ${CONFIG.EMPTY_FIELD_LOSS_TURNS + 1}th loses the match. Playing any Persona clears it. ` +
+    'While the clock runs, every draw is a Persona for as long as the deck has one.';
+  wrap.appendChild(el('span', 'field-timer__label', 'Empty field'));
+
+  // One pip per turn of the allowance, filling up as they are spent.
+  const pips = el('div', 'field-timer__pips');
+  for (let i = 0; i < CONFIG.EMPTY_FIELD_LOSS_TURNS; i++) {
+    pips.appendChild(el('span', `pip${i < stage ? ' pip--on' : ''}`));
+  }
+  wrap.appendChild(pips);
+  wrap.appendChild(el('span', 'field-timer__count', left > 1 ? `${left} turns left` : 'last chance'));
+  return wrap;
 }
 
 function renderKoTally(player) {
@@ -566,6 +656,16 @@ function renderMiddle(state, viewer, ui, yourTurn, setUi) {
     } else if (turn.canTargetBench) {
       strip.appendChild(el('span', 'allowance allowance--hot', 'Bench targetable'));
     }
+    // The knockdown combo, priced the same way the damage formula prices it.
+    if (turn.comboStacks > 0) {
+      const chip = el(
+        'span',
+        'allowance allowance--combo',
+        `Combo ×${turn.comboStacks} · +${Math.round((comboMultiplier(state) - 1) * 100)}% damage`
+      );
+      chip.title = 'Every knockdown you score this turn makes the rest of the turn hit harder. It resets when the turn ends.';
+      strip.appendChild(chip);
+    }
     mid.appendChild(strip);
   }
 
@@ -604,32 +704,6 @@ function renderSkillBar(ctx) {
   }
 
   bar.appendChild(list);
-
-  // A Showtime is not a skill — it belongs to the pair, not to whoever happens
-  // to be in the slot — so it sits after the skill list with its own styling.
-  const duos = new Map();
-  for (const action of legal) {
-    if (action.type !== 'SHOWTIME') continue;
-    if (!duos.has(action.showtimeId)) duos.set(action.showtimeId, []);
-    duos.get(action.showtimeId).push(action);
-  }
-  for (const [showtimeId, candidates] of duos) {
-    const showtime = getShowtime(showtimeId);
-    const node = el('button', 'skill-btn skill-btn--showtime');
-    node.type = 'button';
-    node.dataset.showtimeId = showtimeId;
-    node.title = `${showtime.description} Once per match.`;
-    node.appendChild(el('span', 'skill-btn__icon', '✦'));
-    const body = el('span', 'skill-btn__body');
-    body.appendChild(el('span', 'skill-btn__name', showtime.name));
-    body.appendChild(el('span', 'skill-btn__meta', showtime.pair.map((id) => getPersona(id).name).join(' & ')));
-    node.appendChild(body);
-    node.appendChild(el('span', 'skill-btn__cost', 'SHOWTIME'));
-    node.addEventListener('click', () =>
-      chooseTarget(candidates, `Choose a target for ${showtime.name}`, act, setUi, 'targetUid', settings)
-    );
-    list.appendChild(node);
-  }
 
   return bar;
 }
@@ -827,6 +901,26 @@ function playHandCard(card, candidates, act, setUi, settings, { state, viewer } 
     });
   }
 
+  // Traesto asks two board questions in a row: who comes back, and — only if
+  // that was the active Persona and the bench has more than one answer — who
+  // steps into the slot it left. The second picker is skipped whenever the
+  // engine's default is the only legal answer, so the common case stays a
+  // single click.
+  if (card.effect?.kind === 'retreat') {
+    return setUi({
+      targeting: {
+        candidates,
+        key: 'targetUid',
+        prompt: 'Pull which Persona back to your hand?',
+        onPick: (picked) => {
+          if (!picked.needsChoice) return act(picked);
+          const options = picked.promoteOptions.map((option) => ({ ...picked, promoteUid: option.uid }));
+          chooseTarget(options, 'Who steps up to take the slot?', act, setUi, 'promoteUid', settings);
+        },
+      },
+    });
+  }
+
   if (card.effect?.kind === 'transferSp') {
     const sources = [...new Set(candidates.map((a) => a.fromUid))];
     if (sources.length <= 1) return chooseTarget(candidates, 'Move the SP to which Persona?', act, setUi, 'toUid', settings);
@@ -876,7 +970,7 @@ function renderActionBar(ctx) {
         ? 'A fusion is available — it costs no action, so you can fuse and still attack'
         : 'Browse fusion recipes and see what each one needs',
     });
-  if (ready) fusionBtn.appendChild(el('span', 'fusion-btn__badge', '!'));
+  if (ready) badgeButton(fusionBtn);
   bar.appendChild(fusionBtn);
 
   // The Gallows: the small sibling of fusion, and reachable the same way.
@@ -886,7 +980,7 @@ function renderActionBar(ctx) {
   const gallowsBtn = button(
     '⚰️ Gallows',
     `btn gallows-btn${worthALevel ? ' gallows-btn--ready' : ''}`,
-    () => setUi({ modal: gallowsModal(), gallows: { eaterUid: null } }),
+    () => setUi({ modal: gallowsModal(), gallows: { eaterUid: null, foodKey: null, inherit: undefined } }),
     {
       disabled: !yourTurn || !gallows.length,
       title: feast
@@ -896,7 +990,7 @@ function renderActionBar(ctx) {
           : 'Bin a Persona the board has outgrown — no levels, but it heals and costs no action',
     }
   );
-  if (worthALevel) gallowsBtn.appendChild(el('span', 'fusion-btn__badge', '!'));
+  if (worthALevel) badgeButton(gallowsBtn);
   bar.appendChild(gallowsBtn);
 
   const endTurn = byType('END_TURN')[0];
@@ -965,13 +1059,121 @@ function gallowsPayoff(option) {
   if (option.tier === 'junk') {
     return `+${Math.round(CONFIG.GALLOWS_JUNK_HEAL * 100)}% HP · free`;
   }
-  return `+${option.levels} level${option.levels === 1 ? '' : 's'} · costs your action`;
+  const bump = option.statBump ? ` · +${option.statBumpAmount} ${option.statBump}` : '';
+  return `+${option.levels} level${option.levels === 1 ? '' : 's'}${bump} · costs your action`;
+}
+
+const foodKey = (option) => `${option.food.zone}:${option.food.uid}`;
+
+/**
+ * The confirm step: exactly what this sacrifice buys, spelled out, plus the one
+ * choice the engine cannot make for you — which skill (if any) to keep.
+ *
+ * Everything shown is read straight off the legal action. The engine already
+ * decided the tier, the levels, whether a skill can be inherited and which stat
+ * a feast raises; the panel only has to say so.
+ */
+function gallowsConfirm(option, eater, draft, { act, setUi }) {
+  const box = el('div', 'gallows-confirm');
+  const foodName = getPersona(option.foodCardId).name;
+  box.appendChild(
+    el('h4', 'gallows__heading', `${foodName} → ${nameOf(eater)}`)
+  );
+
+  const lines = el('ul', 'gallows-confirm__lines');
+  const line = (label, value) => {
+    const row = el('li', 'gallows-confirm__line');
+    row.appendChild(el('span', 'gallows-confirm__label', label));
+    row.appendChild(el('span', 'gallows-confirm__value', value));
+    lines.appendChild(row);
+  };
+
+  line('Tier', option.tier === 'junk' ? 'Junk' : option.tier === 'meal' ? 'Meal' : 'Feast');
+  line(
+    'Levels',
+    option.levels ? `+${option.levels} (Lv ${eater.level} → ${eater.level + option.levels})` : 'none'
+  );
+  if (option.tier === 'junk') line('Heals', `+${option.heal} HP`);
+  line(
+    'Stat',
+    option.statBump ? `+${option.statBumpAmount} ${option.statBump}, permanently` : 'unchanged'
+  );
+  line('Costs', option.usesAction ? 'your action' : 'nothing');
+  line(
+    'Inherits',
+    option.canInherit
+      ? option.inheritOptions.length
+        ? 'pick one, below'
+        : 'nothing left to learn'
+      : 'junk food teaches nothing'
+  );
+  line(
+    'Passive',
+    option.canInheritPassive
+      ? option.inheritOptions.some((o) => o.kind === 'passive')
+        ? 'can be taken instead of a skill'
+        : 'nothing to take'
+      : 'only a feast can move one'
+  );
+  box.appendChild(lines);
+
+  // `undefined` means "the player has not touched this yet", which is not the
+  // same as choosing to keep nothing — so the engine's default stands until
+  // they say otherwise.
+  const chosen = draft.inherit === undefined ? option.inherit : draft.inherit;
+  const chosenOption = option.inheritOptions.find((o) => o.id === chosen) ?? null;
+  // Taking a passive over one the eater already has needs saying out loud, and
+  // the engine refuses the action without the confirmation flag.
+  const replacing =
+    chosenOption?.kind === 'passive' && option.eaterPassive && option.eaterPassive !== chosenOption.passiveId;
+
+  if (option.canInherit && option.inheritOptions.length) {
+    const picker = el('div', 'gallows__row gallows__row--skills');
+    const choose = (id) => setUi({ gallows: { ...draft, inherit: id } });
+    picker.appendChild(button('Take nothing', `btn btn--small${chosen ? '' : ' btn--on'}`, () => choose(null)));
+    for (const entry of option.inheritOptions) {
+      const label = entry.kind === 'passive' ? `${entry.name} (passive)` : entry.name;
+      picker.appendChild(
+        button(label, `btn btn--small${chosen === entry.id ? ' btn--on' : ''}`, () => choose(entry.id))
+      );
+    }
+    box.appendChild(picker);
+  }
+
+  if (replacing) {
+    box.appendChild(
+      el(
+        'p',
+        'gallows-confirm__warning',
+        `${nameOf(eater)} will LOSE ${passiveDefinition(option.eaterPassive)?.name ?? option.eaterPassive} — ` +
+          'a Persona carries only one passive.'
+      )
+    );
+  }
+
+  const buttons = el('div', 'gallows__row gallows__row--confirm');
+  buttons.appendChild(
+    button(replacing ? 'Feed it and replace the passive' : 'Feed it', 'btn btn--primary', () =>
+      act({
+        ...option,
+        inherit: option.canInherit ? chosen ?? null : null,
+        replacePassive: replacing,
+      })
+    )
+  );
+  buttons.appendChild(
+    button('Pick something else', 'btn btn--ghost', () =>
+      setUi({ gallows: { eaterUid: draft.eaterUid, foodKey: null, inherit: undefined } })
+    )
+  );
+  box.appendChild(buttons);
+  return box;
 }
 
 function gallowsModal() {
   return (state, { ui, act, setUi, viewer }) => {
     const options = getLegalActions(state, viewer).filter((a) => a.type === 'GALLOWS');
-    const draft = ui.gallows || { eaterUid: null };
+    const draft = ui.gallows || { eaterUid: null, foodKey: null, inherit: undefined };
 
     const body = el('div', 'modal__body');
     body.appendChild(
@@ -979,16 +1181,17 @@ function gallowsModal() {
         'p',
         'modal__hint',
         'Sacrifice one Persona to feed another. What you get back depends entirely on how the food compares ' +
-          'with the eater. A fed Persona is never a knockout, and only one Gallows per turn either way.'
+          'with the eater. A fed Persona is never a knockout. One nourishing meal and one free junk ' +
+          'disposal per turn — they are counted separately.'
       )
     );
 
     // The three tiers, stated up front — the panel is where this rule is learnt.
     const ladder = el('ul', 'gallows-tiers');
     for (const [tier, gains] of [
-      ['feast', `+${CONFIG.GALLOWS_FEAST_LEVELS} levels, costs your action`],
-      ['meal', `+${CONFIG.GALLOWS_LEVELS} level, costs your action`],
-      ['junk', `no levels, +${Math.round(CONFIG.GALLOWS_JUNK_HEAL * 100)}% HP — and costs no action`],
+      ['feast', `+${CONFIG.GALLOWS_FEAST_LEVELS} levels, a skill, +${CONFIG.GALLOWS_STAT_BUMP} stat — costs your action`],
+      ['meal', `+${CONFIG.GALLOWS_LEVELS} level and a skill — costs your action`],
+      ['junk', `no levels, no skill, +${Math.round(CONFIG.GALLOWS_JUNK_HEAL * 100)}% HP — and costs no action`],
     ]) {
       const row = el('li', `gallows-tier gallows-tier--${tier}`);
       row.appendChild(el('span', 'gallows-tier__name', tier === 'junk' ? 'Junk' : tier === 'meal' ? 'Meal' : 'Feast'));
@@ -1010,7 +1213,7 @@ function gallowsModal() {
       const persona = state.players[viewer].field.find((p) => p.uid === uid);
       const label = `${nameOf(persona)} · Lv ${persona.level}`;
       const node = button(label, `btn btn--small${draft.eaterUid === uid ? ' btn--on' : ''}`, () =>
-        setUi({ gallows: { eaterUid: uid } })
+        setUi({ gallows: { eaterUid: uid, foodKey: null, inherit: undefined } })
       );
       eaterRow.appendChild(node);
     }
@@ -1028,10 +1231,15 @@ function gallowsModal() {
       for (const option of meals) {
         const card = getPersona(option.foodCardId);
         const from = option.food.zone === 'hand' ? 'hand' : 'field';
+        const chosen = draft.foodKey === foodKey(option);
         const node = button(
           '',
-          `btn btn--small gallows-meal gallows-meal--${option.tier}${option.tier === 'feast' ? ' btn--suggested' : ''}`,
-          () => act(option),
+          `btn btn--small gallows-meal gallows-meal--${option.tier}${chosen ? ' btn--on' : ''}${
+            option.tier === 'feast' && !draft.foodKey ? ' btn--suggested' : ''
+          }`,
+          // Picking a meal no longer commits it: the confirm step below spells
+          // out exactly what lands before anything is eaten.
+          () => setUi({ gallows: { eaterUid: draft.eaterUid, foodKey: foodKey(option), inherit: undefined } }),
           { title: `${option.tier.toUpperCase()} — ${gallowsPayoff(option)}` }
         );
         node.dataset.tier = option.tier;
@@ -1041,6 +1249,12 @@ function gallowsModal() {
         mealRow.appendChild(node);
       }
       body.appendChild(mealRow);
+
+      const picked = meals.find((option) => foodKey(option) === draft.foodKey);
+      if (picked) {
+        const eater = state.players[viewer].field.find((p) => p.uid === draft.eaterUid);
+        body.appendChild(gallowsConfirm(picked, eater, draft, { act, setUi }));
+      }
     }
 
     return modalShell('The Gallows', body, () => setUi({ modal: null, gallows: null }));
@@ -1360,6 +1574,75 @@ function renderFullLog(state) {
   return wrap;
 }
 
+/**
+ * The end-of-match flourish, shown for one beat before the scoreboard.
+ *
+ * Entirely CSS: the only JavaScript here is choosing which of two variants to
+ * build and which card to put in the middle. Every animation is declared in
+ * board.css against `--anim-scale`, so the animation-speed setting governs it
+ * exactly as it governs everything else, and "Off" skips the outro outright
+ * (see the caller) rather than playing it instantly.
+ *
+ * Two variants and no third: you either won or you did not. A resigner sees the
+ * defeat side and the player they resigned to sees the victory side, because
+ * both read `state.winner` against their own seat — nothing about resignation
+ * needs a special case. Hot-seat is the one exception: with both players at one
+ * screen there is no "you", so it announces the winner by name.
+ *
+ * @returns {{node: HTMLElement, duration: number}} `duration` is in unscaled ms;
+ *          the caller divides it by the animation scale, the same as the CSS.
+ */
+function matchOutro(state, viewer, { neutralResult } = {}) {
+  const neutral = Boolean(neutralResult);
+  const won = neutral || state.winner === viewer;
+  const node = el('div', `match-outro match-outro--${won ? 'win' : 'lose'}`);
+  node.appendChild(el('div', 'match-outro__scrim'));
+  // The desaturation sweep is a single element that wipes across the darkened
+  // board. Victory has no equivalent — it has the particles instead.
+  if (!won) node.appendChild(el('div', 'match-outro__sweep'));
+
+  const stage = el('div', 'match-outro__stage');
+
+  // The Persona that carried the match, front and centre. On a defeat it is the
+  // winner's, which is the honest answer to "what beat me".
+  const mvp = mvpOf(state, won && !neutral ? viewer : state.winner);
+  if (mvp) {
+    const card = el('div', 'match-outro__card');
+    card.appendChild(renderCard(getPersona(mvp.persona.cardId), { level: mvp.persona.level }));
+    if (won) card.appendChild(el('div', 'match-outro__shine'));
+    stage.appendChild(card);
+  }
+
+  const banner = el('div', 'match-outro__banner');
+  banner.appendChild(
+    el('span', 'match-outro__word', neutral ? state.players[state.winner].name.toUpperCase() : won ? 'VICTORY' : 'DEFEAT')
+  );
+  if (mvp) {
+    banner.appendChild(
+      el('span', 'match-outro__mvp', `${getPersona(mvp.persona.cardId).name} — ${mvp.damage} damage, ${mvp.kos} KO${mvp.kos === 1 ? '' : 's'}`)
+    );
+  }
+  stage.appendChild(banner);
+
+  if (won) {
+    // Twelve particles, thrown outward on angles set inline so the stylesheet
+    // does not need twelve near-identical keyframe blocks. Themed by the same
+    // CSS variables as the rest of the board, so each deck's burst is its own.
+    const burst = el('div', 'match-outro__particles');
+    for (let i = 0; i < 12; i++) {
+      const spark = el('span', 'match-outro__spark');
+      spark.style.setProperty('--angle', `${i * 30}deg`);
+      spark.style.setProperty('--delay', `${i * 40}ms`);
+      burst.appendChild(spark);
+    }
+    stage.appendChild(burst);
+  }
+
+  node.appendChild(stage);
+  node.appendChild(el('p', 'match-outro__hint', 'Click to skip'));
+  return { node, duration: 2600 };
+}
+
 function renderGameOver(state, viewer, { onExit, onRematch, neutralResult }, ui = {}, setUi = () => {}) {
   const won = state.winner === viewer;
   const tab = ui.resultTab === 'log' ? 'log' : 'summary';
@@ -1372,6 +1655,7 @@ function renderGameOver(state, viewer, { onExit, onRematch, neutralResult }, ui 
     'ko-target': `${state.players[won ? viewer : opponentOf(viewer)].name} knocked out ${CONFIG.KO_TARGET} Personas.`,
     'simultaneous-ko-hp': 'Simultaneous knockout — decided on remaining HP.',
     'sudden-death': 'Sudden death — decided by the next knockout.',
+    'empty-field': `${state.players[opponentOf(state.winner)].name} spent ${CONFIG.EMPTY_FIELD_LOSS_TURNS} turns with an empty field.`,
     resign: neutralResult
       ? `${resignedBy} resigned.`
       : won

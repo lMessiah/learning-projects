@@ -24,11 +24,13 @@ import {
   mimicableSkill,
   affinitiesFullyRevealed,
   affinitiesOf,
-  availableShowtimes,
   deckTop,
   gallowsMeal,
+  gallowsBumpStat,
+  gallowsInheritOptions,
+  handPersonaLevel,
 } from './state.js';
-import { passiveOf, printedPassive, koDeficit, PASSIVE_CHOICE_PREFIX } from './passives.js';
+import { passiveOf, printedPassive, passiveDefinition, koDeficit, PASSIVE_CHOICE_PREFIX } from './passives.js';
 import { twistableElements } from './effects.js';
 
 /**
@@ -182,6 +184,12 @@ function effectIsUseful(state, playerId, effect) {
       return own.some((a) => a.sp > 0) && own.some((b) => b.sp < b.maxSp) && own.length >= 2;
     }
 
+    // Traesto needs a body to pull back and somewhere to put it. Retreating
+    // your LAST Persona is deliberately still legal — an empty field is a
+    // position a player may choose, and the clock is the only consequence.
+    case 'retreat':
+      return livingField(state, playerId).length > 0 && state.players[playerId].hand.length < CONFIG.HAND_LIMIT + 1;
+
     // Worth casting even at a full pool: taking it off them is half the value.
     case 'drainSp':
       return Boolean(getActive(state, playerId)) && enemyTargets(state, playerId).some((p) => p.sp > 0);
@@ -322,6 +330,27 @@ function cardActions(state, playerId, entry, card, actionType) {
     return out;
   }
 
+  // Traesto asks two questions at once: who leaves, and — if that was the
+  // active Persona — who steps into the empty slot. The promotion is free, so
+  // the second question only exists when there is more than one answer.
+  if (card.effect.kind === 'retreat') {
+    const own = livingField(state, playerId);
+    return own.map((target) => {
+      const isActive = target.uid === state.players[playerId].activeUid;
+      const bench = isActive ? own.filter((p) => p.uid !== target.uid && !p.knockedDown) : [];
+      // Healthiest body first: stepping up into the slot the retreat opened is
+      // a defensive move, so the default is the one most able to take a hit.
+      const ranked = [...bench].sort((a, b) => b.hp / b.maxHp - a.hp / a.maxHp);
+      return {
+        ...base,
+        targetUid: target.uid,
+        promoteOptions: ranked.map((p) => ({ uid: p.uid, cardId: p.cardId })),
+        promoteUid: ranked.length ? ranked[0].uid : null,
+        needsChoice: ranked.length > 1,
+      };
+    });
+  }
+
   const choices = effectChoices(state, playerId, card.effect);
   if (choices) return choices.map((choice) => ({ ...base, ...choice }));
 
@@ -356,15 +385,22 @@ export function fusionCandidates(state, playerId) {
       .filter((entry) => getCard(entry.cardId).type === 'persona')
       .map((entry) => {
         const card = getPersona(entry.cardId);
+        // A Persona pulled back by Traesto is still that Persona: it feeds a
+        // fusion at the level it reached and offers the skills it can cast, not
+        // the ones its printed level had unlocked.
+        const level = handPersonaLevel(entry);
         return {
           zone: 'hand',
           uid: entry.uid,
           cardId: card.id,
           name: card.name,
-          level: card.level,
+          level,
           arcana: card.arcana,
-          skills: card.skills.filter((s) => s.unlockLevel <= card.level),
-          passive: printedPassive(card.id),
+          skills: entry.persona
+            ? personaSkills(state, entry.persona)
+            : card.skills.filter((s) => s.unlockLevel <= card.level),
+          passive: entry.persona ? passiveOf(entry.persona) : printedPassive(card.id),
+          persona: entry.persona ?? null,
           isActive: false,
         };
       }),
@@ -512,20 +548,6 @@ function fusionActions(state, playerId) {
   return out;
 }
 
-/** Duo attacks that are unlocked, unspent and would actually do something. */
-export function showtimeActions(state, playerId) {
-  if ((state.turnState?.actionsRemaining ?? 0) <= 0) return [];
-  const out = [];
-  for (const showtime of availableShowtimes(state, playerId)) {
-    if (!effectIsUseful(state, playerId, showtime.effect)) continue;
-    const base = { type: 'SHOWTIME', player: playerId, showtimeId: showtime.id, name: showtime.name };
-    const targets = effectTargets(state, playerId, showtime.effect);
-    if (!targets) out.push(base);
-    else for (const target of targets) out.push({ ...base, targetUid: target.uid });
-  }
-  return out;
-}
-
 /**
  * Every (eater, food) pairing the Gallows would accept right now.
  *
@@ -535,7 +557,11 @@ export function showtimeActions(state, playerId) {
 export function gallowsActions(state, playerId) {
   const turn = state.turnState;
   if (!turn) return [];
-  if (turn.gallowsUsed >= CONFIG.GALLOWS_PER_TURN) return [];
+  // Separate rations: a nourishing meal and a junk disposal are counted apart,
+  // so running out of one still leaves the other.
+  const paidLeft = turn.gallowsUsed < CONFIG.GALLOWS_PER_TURN;
+  const junkLeft = (turn.gallowsJunkUsed ?? 0) < CONFIG.GALLOWS_JUNK_PER_TURN;
+  if (!paidLeft && !junkLeft) return [];
 
   const eaters = livingField(state, playerId);
   if (!eaters.length) return [];
@@ -544,8 +570,9 @@ export function gallowsActions(state, playerId) {
   // and junk needs food further than COMEBACK_FARM_GAP beneath its eater. Rule
   // that out on two numbers before building the cross product: this runs on
   // every getLegalActions call, and the bot makes thousands of them per match.
-  const spentAction = turn.actionsRemaining <= 0;
+  const spentAction = turn.actionsRemaining <= 0 || !paidLeft;
   if (spentAction) {
+    if (!junkLeft) return [];
     const tallestEater = Math.max(...eaters.map((p) => p.level));
     const smallestMeal = Math.min(
       ...eaters.map((p) => p.level),
@@ -558,15 +585,25 @@ export function gallowsActions(state, playerId) {
   }
 
   const meals = [
-    ...eaters.map((p) => ({ zone: 'field', uid: p.uid, cardId: p.cardId, level: p.level, passive: passiveOf(p) })),
+    ...eaters.map((p) => ({
+      zone: 'field',
+      uid: p.uid,
+      cardId: p.cardId,
+      level: p.level,
+      passive: passiveOf(p),
+      persona: p,
+    })),
     ...state.players[playerId].hand
       .filter((entry) => getCard(entry.cardId).type === 'persona')
       .map((entry) => ({
         zone: 'hand',
         uid: entry.uid,
         cardId: entry.cardId,
-        level: getPersona(entry.cardId).level,
-        passive: printedPassive(entry.cardId),
+        // A Persona pulled back by Traesto is priced at the body it is, not the
+        // card on its face — and it brings its own passive with it.
+        level: handPersonaLevel(entry),
+        passive: entry.persona ? passiveOf(entry.persona) : printedPassive(entry.cardId),
+        persona: entry.persona ?? null,
       })),
   ];
 
@@ -575,9 +612,23 @@ export function gallowsActions(state, playerId) {
     for (const meal of meals) {
       if (meal.zone === 'field' && meal.uid === eater.uid) continue;
       const worth = gallowsMeal(eater.level, meal.level, meal.passive, eater.maxHp);
-      // The top two tiers cost the action, so they need one to spend. Junk
-      // disposal is free and stays on the list even on a spent turn.
-      if (worth.usesAction && turn.actionsRemaining <= 0) continue;
+      // The top two tiers cost the action, so they need one to spend AND their
+      // own ration. Junk disposal is free and keeps its own.
+      if (worth.usesAction && (turn.actionsRemaining <= 0 || !paidLeft)) continue;
+      if (!worth.usesAction && !junkLeft) continue;
+      // Passives move ONLY on the top tier, and only through this one channel.
+      // The display name is filled in here because passives.js is this module's
+      // dependency, not state.js's.
+      const inheritOptions = worth.canInherit
+        ? gallowsInheritOptions(state, meal, eater, { passives: worth.canInheritPassive }).map((option) =>
+            option.kind === 'passive'
+              ? { ...option, name: passiveDefinition(option.passiveId)?.name ?? option.passiveId }
+              : option
+          )
+        : [];
+      // Taking a passive over one the eater already has is a real loss, so it
+      // needs the same explicit confirmation fusion demands.
+      const skillOptions = inheritOptions.filter((option) => option.kind !== 'passive');
       out.push({
         type: 'GALLOWS',
         player: playerId,
@@ -592,6 +643,23 @@ export function gallowsActions(state, playerId) {
         heal: worth.heal,
         usesAction: worth.usesAction,
         nourishing: worth.nourishing,
+        // The nourishing tiers may pass on one skill; the feast also leaves a
+        // permanent mark. Both ride along so the confirm dialog can preview the
+        // exact outcome without deriving any of it a second time.
+        canInherit: worth.canInherit,
+        canInheritPassive: worth.canInheritPassive,
+        inheritOptions,
+        // What the eater would be giving up if a passive is taken over the top.
+        eaterPassive: passiveOf(eater),
+        statBump: worth.statBump ? gallowsBumpStat(eater.cardId) : null,
+        statBumpAmount: worth.statBump,
+        // The default is the food's LAST unlocked SKILL — printed order climbs
+        // with unlock level, so that is its strongest. Taking a skill costs
+        // nothing, so "take the best one" is the sensible default. A passive is
+        // never the default even when it is on offer: it can overwrite what the
+        // eater already has, and that is a decision, not a freebie.
+        inherit: skillOptions.length ? skillOptions[skillOptions.length - 1].id : null,
+        needsChoice: inheritOptions.length > 0,
       });
     }
   }
@@ -621,7 +689,7 @@ export function getLegalActions(state, playerId) {
   if (hasFieldRoom(state, playerId)) {
     for (const entry of player.hand) {
       // Gated by the power curve as well as the field cap.
-      if (getCard(entry.cardId).type === 'persona' && canPlayPersonaCard(state, playerId, entry.cardId)) {
+      if (getCard(entry.cardId).type === 'persona' && canPlayPersonaCard(state, playerId, entry.cardId, entry)) {
         actions.push({ type: 'PLAY_PERSONA', player: playerId, handUid: entry.uid, cardId: entry.cardId });
       }
     }
@@ -692,7 +760,6 @@ export function getLegalActions(state, playerId) {
       }
 
       actions.push({ type: 'GUARD', player: playerId });
-      actions.push(...showtimeActions(state, playerId));
     }
 
     // Pass is always available — it is the guaranteed escape from any lock.

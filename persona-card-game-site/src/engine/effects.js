@@ -22,6 +22,9 @@ import {
   personaSkills,
   hasAilment,
   affinitiesOf,
+  emptyFieldStage,
+  comboMultiplier,
+  canPlayPersonaCard,
 } from './state.js';
 import {
   preventsKnockdown,
@@ -43,7 +46,7 @@ const nameOf = (persona) => getPersona(persona.cardId).name;
  * Draw n cards. Running the deck dry shuffles the discard back in and adds a
  * stacking Fatigue counter; with both piles empty, the draw simply fizzles.
  */
-export function drawCards(state, playerId, n) {
+export function drawCards(state, playerId, n, opts = {}) {
   const player = state.players[playerId];
   const drawn = [];
   for (let i = 0; i < n; i++) {
@@ -65,7 +68,7 @@ export function drawCards(state, playerId, n) {
         'fatigue'
       );
     }
-    const index = pickDrawIndex(state, player);
+    const index = pickDrawIndex(state, player, opts);
     const [cardId] = player.deck.splice(index, 1);
     const entry = { uid: `c${state.nextUid++}`, cardId };
     player.hand.push(entry);
@@ -107,25 +110,33 @@ function recordDrawAgainstFloor(state, playerId, cardId) {
 /**
  * Which card comes off the deck.
  *
- * Normally the top one. Three things bend that, all of them deterministic
- * through the seeded RNG so an online match stays reproducible:
+ * Normally the top one. Four things bend that, all of them deterministic
+ * through the seeded RNG so an online match stays reproducible. They are listed
+ * here in PRIORITY ORDER, and that order is the rule:
  *
- *  - a **pending draw** (Fortune's Draw and friends) claims a specific card and
- *    is consumed whether or not one was found — explicit draw manipulation
- *    always wins over any of the weighting below;
- *  - **Momentum Draw** weights the whole deck toward stronger cards while the
- *    player is behind on the KO tally, scaling with the deficit;
- *  - the **draw-level floor** pushes down Personas that have fallen behind the
- *    turn count, so a long match stops dealing openers.
+ *  1. a **pending draw** (Fortune's Draw and friends) claims a specific card and
+ *     is consumed whether or not one was found — explicit draw manipulation
+ *     always wins over any of the weighting below;
+ *  2. the **empty-field bias** bends the deck toward Personas while a player has
+ *     no board at all, escalating with the loss timer;
+ *  3. **Momentum Draw** weights the whole deck toward stronger cards while the
+ *     player is behind on the KO tally, scaling with the deficit;
+ *  4. the **draw-level floor** pushes down Personas that have fallen behind the
+ *     turn count, so a long match stops dealing openers.
+ *
+ * 2 and 3 do not stack: a player with no board needs a body, not the best card
+ * in the deck, so while the bias is running it REPLACES the momentum weighting
+ * rather than multiplying with it. The floor is orthogonal — it is about which
+ * Persona, not whether one — so it applies throughout.
  *
  * With none of them in play every weight is 1, i.e. the plain top-of-deck draw.
  */
-function pickDrawIndex(state, player) {
+function pickDrawIndex(state, player, opts = {}) {
   if (player.pendingDraw) {
     const resolved = resolvePendingDraw(state, player);
     if (resolved !== -1) return resolved;
   }
-  return weightedDrawIndex(state, player);
+  return weightedDrawIndex(state, player, opts);
 }
 
 /**
@@ -174,25 +185,95 @@ export function answersAnyType(card, types) {
   return skillsAtLevel(card, card.level).some((skill) => types.includes(skill.type));
 }
 
-function weightedDrawIndex(state, player) {
+/**
+ * Momentum Draw: how hard the deck is bent toward quality for a player this far
+ * behind on the KO tally.
+ *
+ *   bonus(N) = MOMENTUM_CAP x (1 - MOMENTUM_DECAY^N),  N >= MOMENTUM_MIN_DEFICIT
+ *
+ * DESIGN NOTE: the curve is concave and hard-capped, and that is the whole
+ * point. It front-loads its help at -2 (0.84 of the cap) and flattens almost
+ * immediately — -3 is worth 0.94, -5 is worth 0.99 — so deliberately trading
+ * knockouts for momentum ("bagging") buys essentially nothing past -2. A bagger
+ * has to hold precisely at a small deficit to profit, which is a knife-edge the
+ * opponent can flip at any moment by simply not taking the next knockout. The
+ * old linear curve rewarded falling further behind without limit, which is the
+ * exact opposite incentive.
+ *
+ * Below MOMENTUM_MIN_DEFICIT the bonus is zero and draws are uniform: one bad
+ * exchange is not a comeback, and it should not feel like one.
+ */
+export function momentumBonus(deficit) {
+  if (deficit < CONFIG.MOMENTUM_MIN_DEFICIT) return 0;
+  return CONFIG.MOMENTUM_CAP * (1 - CONFIG.MOMENTUM_DECAY ** deficit);
+}
 
-  const deficit = koDeficit(state, player.id);
-  const floor = drawLevelFloor(state);
-  if ((deficit <= 0 && floor <= 0) || player.deck.length <= 1) return 0;
+/**
+ * The quality Momentum Draw prices a card at.
+ *
+ * DESIGN NOTE: a Persona you cannot legally play is worth nothing to you this
+ * turn however good it is on paper, so it is priced as JUNK while its printed
+ * level is above your play ceiling. Without this, being far behind pulled your
+ * deck toward exactly the enormous Personas your small board could not put
+ * down — the mechanic meant to help you would fill your hand with bricks, and
+ * a player could farm that on purpose by keeping the ceiling low. Items and
+ * Specials are playable at any board state, so their quality is untouched.
+ */
+function drawQuality(state, playerId, cardId) {
+  const card = getCard(cardId);
+  if (card.type === 'persona' && !canPlayPersonaCard(state, playerId, cardId)) return 0;
+  return cardQuality(cardId);
+}
+
+/**
+ * Is this player's draw currently hard-filtered to Persona cards?
+ *
+ * True exactly while the empty-field timer is running and their board is still
+ * bare. This is the ONLY effect the empty-field state itself has on drawing:
+ * it changes what comes off the deck, never how much (that is Underdog Draw,
+ * which reads the KO deficit) and never how the remaining candidates are
+ * weighted against each other (that is Momentum, same story).
+ *
+ * DESIGN NOTE: an empty field is a legal tactical state, not evidence of
+ * losing, so it must not pay out like a deficit. The filter is not a reward —
+ * it is the guarantee that a timer death is always a deck that had no Persona
+ * to give, never a shuffle that looked the other way.
+ */
+export function emptyFieldDrawFilter(state, playerId) {
+  if (emptyFieldStage(state, playerId) <= 0) return false;
+  return livingField(state, playerId).length === 0; // board may have come back mid-turn
+}
+
+function weightedDrawIndex(state, player, opts = {}) {
+  // `uniform` is the empty-opponent-field bonus card: no quality bias at all,
+  // just a card. The Persona filter still applies, because that is a property
+  // of the drawing player's own board rather than a quality preference.
+  const filtered = emptyFieldDrawFilter(state, player.id);
+  const bonus = opts.uniform ? 0 : momentumBonus(koDeficit(state, player.id));
+  const floor = opts.uniform ? 0 : drawLevelFloor(state);
+  if ((bonus <= 0 && floor <= 0 && !filtered) || player.deck.length <= 1) return 0;
+
+  // With no Persona left in the deck the filter has nothing to offer, so it
+  // stands down rather than zeroing every weight.
+  const personaOnly = filtered && player.deck.some((cardId) => getCard(cardId).type === 'persona');
 
   const weights = player.deck.map((cardId) => {
-    let weight = 1 + Math.max(0, deficit) * CONFIG.COMEBACK_MOMENTUM_FACTOR * cardQuality(cardId);
-    if (floor > 0) {
-      const card = getCard(cardId);
+    const card = getCard(cardId);
+    const isPersona = card.type === 'persona';
+
+    let weight;
+    if (personaOnly) weight = isPersona ? 1 + bonus * drawQuality(state, player.id, cardId) : 0;
+    else weight = 1 + bonus * drawQuality(state, player.id, cardId);
+
+    if (floor > 0 && isPersona && card.level < floor) {
       // Only Persona cards have a level to fall behind. Items and Specials are
       // useful at any point in a match, so the floor leaves them alone.
-      if (card.type === 'persona' && card.level < floor) {
-        weight /= 1 + (floor - card.level) * CONFIG.DRAW_SCALE_PENALTY;
-      }
+      weight /= 1 + (floor - card.level) * CONFIG.DRAW_SCALE_PENALTY;
     }
     return weight;
   });
   const total = weights.reduce((sum, w) => sum + w, 0);
+  if (total <= 0) return 0;
   const [roll, rng] = nextFloat(state.rng);
   state.rng = rng;
 
@@ -254,6 +335,9 @@ export function revivePersona(state, persona, hpPercent) {
   pushLog(state, `${nameOf(persona)} was revived with ${persona.hp} HP and a full SP pool.`, 'heal');
   // A revived Persona returns to the bench; if the owner has no active, it steps up.
   promoteActiveIfEmpty(state, persona.owner);
+  // A body is a body: a revival answers the empty-field timer exactly as a card
+  // played from hand does.
+  notePersonaEnteredField(state, persona.owner);
 }
 
 /* ------------------------------------------------------------------ *
@@ -560,6 +644,65 @@ function recordBiggestHit(state, attacker, defender, dealt, sourceName) {
   };
 }
 
+/**
+ * Put a standing Persona on its back — the ONE place a knockdown happens.
+ *
+ * Everything that stops a knockdown is listed here, in one `if` chain, and the
+ * function's return value is the single fact the rest of the engine reads:
+ * `true` means a standing Persona was actually knocked down. The One More grant
+ * and the combo counter both key off THAT, never off the weakness hit that led
+ * to it — which is the rule that used to be got wrong, because "a weakness hit"
+ * and "a knockdown" look the same right up until something prevents one.
+ *
+ * @returns {boolean} whether a knockdown actually occurred
+ */
+function attemptKnockdown(state, attacker, defender, { qualifies, dealt }) {
+  if (!qualifies) return false;
+
+  // A Moonless Gown means nothing reached it, so nothing can put it down. This
+  // is the same rule as Guard and Stalwart wearing a different coat: no damage
+  // arrived, so no knockdown, and therefore no One More either.
+  if (defender.warded || dealt <= 0) {
+    pushLog(state, `${nameOf(defender)} was never touched, and stays on its feet.`, 'knockdown');
+    return false;
+  }
+  if (defender.guarding) {
+    pushLog(state, `${nameOf(defender)} guarded and stayed on its feet.`, 'attack');
+    return false;
+  }
+  if (preventsKnockdown(defender)) {
+    pushLog(state, `${nameOf(defender)} shrugged it off and stayed standing. (Stalwart)`, 'knockdown');
+    return false;
+  }
+  // Already down: there is no second knockdown to score off it.
+  if (defender.knockedDown) return false;
+
+  defender.knockedDown = true;
+  bumpStat(state, attacker.owner, 'knockdowns');
+  pushLog(state, `${nameOf(defender)} is knocked down!`, 'knockdown');
+
+  // The combo builds for the rest of the acting player's turn. Counted after
+  // the hit that scored it has already resolved, so a knockdown never boosts
+  // the blow that caused it.
+  if (state.turnState && attacker.owner === state.activePlayer) {
+    state.turnState.comboStacks += 1;
+    const stacks = state.turnState.comboStacks;
+    bumpStat(state, attacker.owner, 'comboStacksTotal');
+    const stats = state.players[attacker.owner].stats;
+    if (stats && stacks > stats.comboMax) stats.comboMax = stacks;
+    if (stacks >= 2) {
+      pushLog(
+        state,
+        `Combo x${stacks}! Everything else this turn hits for +${Math.round(
+          stacks * CONFIG.COMBO_DAMAGE_STEP * 100
+        )}%.`,
+        'combo'
+      );
+    }
+  }
+  return true;
+}
+
 const TECHNICAL_FLAVOUR = Object.freeze({
   burn: 'The blow fans the flames —',
   shock: 'The blow lands through the current —',
@@ -609,6 +752,11 @@ export function resolveAttack(
   const preview = computeDamage({ attacker, defender, power, damageType, category, flat });
   const phantomHit = phantomArmed && preview.weak;
 
+  // The knockdown combo belongs to the turn, so it only pays the side whose
+  // turn it is. A Counter reflection goes through applyDamage and never gets
+  // here, which is exactly right: you do not combo off your own defence.
+  const comboMult = attacker.owner === state.activePlayer ? comboMultiplier(state) : 1;
+
   // Execute (Hama / Mudo) and Technical are both read off the defender BEFORE
   // the hit lands, so what you can see on the board is what you get.
   const execute = executeMultiplier(defender, effect.execute);
@@ -625,6 +773,7 @@ export function resolveAttack(
     // stacking with it — they are the same idea, and x1.5 twice on top of a
     // free knockdown is not a combo, it is a coin flip that ends the game.
     ignoreShockBonus: technical === 'shock',
+    comboMult,
     passiveMult:
       passiveDamageMultiplier(state, attacker) *
       darkHour *
@@ -648,6 +797,12 @@ export function resolveAttack(
   bumpStat(state, attacker.owner, 'attacks');
   recordTypeUsed(state, attacker.owner, damageType);
   if (result.weak) bumpStat(state, attacker.owner, 'weaknessHits');
+  // How much of this hit the combo is responsible for, for the balance
+  // simulator. Derived from the multiplier rather than recomputed, so it can
+  // never drift away from what the damage formula actually did.
+  if (comboMult > 1 && dealt > 0) {
+    bumpStat(state, attacker.owner, 'comboDamageBonus', Math.round(dealt * (1 - 1 / comboMult)));
+  }
   if (dealt >= defender.maxHp * 0.25) bumpStat(state, defender.owner, 'heavyHitsTaken');
   recordBiggestHit(state, attacker, defender, dealt, sourceName);
 
@@ -676,21 +831,11 @@ export function resolveAttack(
   if (dealt > 0 && revealsAllAffinities(attacker, defender)) revealAllTypes(state, defender);
 
   // Weakness knocks the target down, and so does a Shock Technical — hitting a
-  // twitching Persona with something solid puts it on the floor. Guarding
-  // prevents it, and so does Stalwart while the defender is still healthy.
-  let knockedDown = false;
-  if ((result.weak || technical === 'shock') && !ko) {
-    if (defender.guarding) {
-      pushLog(state, `${nameOf(defender)} guarded and stayed on its feet.`, 'attack');
-    } else if (preventsKnockdown(defender)) {
-      pushLog(state, `${nameOf(defender)} shrugged it off and stayed standing. (Stalwart)`, 'knockdown');
-    } else if (!defender.knockedDown) {
-      defender.knockedDown = true;
-      knockedDown = true;
-      bumpStat(state, attacker.owner, 'knockdowns');
-      pushLog(state, `${nameOf(defender)} is knocked down!`, 'knockdown');
-    }
-  }
+  // twitching Persona with something solid puts it on the floor.
+  const knockedDown = attemptKnockdown(state, attacker, defender, {
+    qualifies: (result.weak || technical === 'shock') && !ko,
+    dealt,
+  });
 
   // Counter: a physical hit on a standing holder comes back at the attacker.
   // Reflected damage is applied directly, so it can never counter a counter and
@@ -921,18 +1066,152 @@ export function runStartOfTurn(state, playerId) {
   const active = getActiveOf(state, playerId);
   if (active) restoreSpQuietly(active, spRegenFor(active, CONFIG.SP_REGEN_PER_TURN));
 
+  // Before the draw, so an empty board filters the cards it is about to be
+  // dealt — and so the fourth empty turn-start ends the match without dealing
+  // a hand nobody will ever play.
+  tickEmptyFieldTimer(state, playerId);
+  if (state.winner !== null) return state;
+
   drawCards(state, playerId, drawCountFor(state, playerId));
+
+  // The bonus card banked by catching the opponent boardless. Drawn separately
+  // and uniformly: it is a reward for board control, not a comeback lever, so
+  // it does not get to be quality-weighted on top of being free.
+  const owed = player.pendingBonusDraws ?? 0;
+  if (owed > 0) {
+    player.pendingBonusDraws = 0;
+    pushLog(state, `${player.name} presses the advantage — an extra card for the empty board opposite.`, 'draw');
+    drawCards(state, playerId, owed, { uniform: true });
+  }
   return state;
 }
 
 /**
  * Underdog Draw: a player far enough behind on the KO tally draws more each
  * turn. Inert at parity or ahead, so it only ever shortens a losing streak.
+ *
+ * It reads the KO deficit and NOTHING ELSE. An empty field used to grant it
+ * outright, which was a mistake: an empty field is a state a player may choose,
+ * so paying for it turned "hold your Personas in hand" into a draw engine. The
+ * timer's Persona filter is the whole of what being boardless does.
  */
 export function drawCountFor(state, playerId) {
   return koDeficit(state, playerId) >= CONFIG.COMEBACK_UNDERDOG_DEFICIT
     ? CONFIG.COMEBACK_UNDERDOG_DRAW
     : CONFIG.DRAW_PER_TURN;
+}
+
+/* ------------------------------------------------------------------ *
+ * Field presence
+ * ------------------------------------------------------------------ */
+
+/**
+ * Advance (or clear) a player's empty-field timer at the start of their turn,
+ * and end the match if this is one empty turn too many.
+ *
+ * The count is exact and the player can read it off the board: three full
+ * turns, each with its own draw phase, are yours to spend empty. Starting a
+ * FOURTH consecutive empty turn is the loss, evaluated here before the draw so
+ * nobody is dealt a hand they will not get to use.
+ *
+ *   turn-start 1  "3 turns remain"
+ *   turn-start 2  "2 turns remain"
+ *   turn-start 3  "Last chance"
+ *   turn-start 4  the match ends
+ *
+ * Every one of those three draw phases is filtered to Personas while the deck
+ * has one, so the clock only ever kills a player who genuinely had nothing.
+ */
+function tickEmptyFieldTimer(state, playerId) {
+  const player = state.players[playerId];
+  if (livingField(state, playerId).length > 0) {
+    player.emptyFieldTurns = 0;
+    return;
+  }
+
+  const stage = (player.emptyFieldTurns ?? 0) + 1;
+  player.emptyFieldTurns = stage;
+
+  if (stage > CONFIG.EMPTY_FIELD_LOSS_TURNS) {
+    checkEmptyFieldLoss(state, playerId);
+    return;
+  }
+
+  // The discard counts: it is reshuffled back in the moment the deck runs dry.
+  // Said on every timer turn rather than once, because it is the difference
+  // between "draw and you are fine" and "this is over unless you act".
+  const anyPersona = [...player.deck, ...player.discard].some((cardId) => getCard(cardId).type === 'persona');
+  if (!anyPersona) {
+    pushLog(
+      state,
+      `No Personas remain in ${player.name}'s deck. Nothing is coming — play one from hand or the match is lost.`,
+      'danger'
+    );
+  }
+
+  const left = CONFIG.EMPTY_FIELD_LOSS_TURNS - stage + 1;
+  pushLog(
+    state,
+    left > 1
+      ? `${player.name}'s resolve fades... ${left} turns remain to put a Persona on the field.`
+      : `Last chance — ${player.name} must play a Persona or fall.`,
+    'danger'
+  );
+}
+
+/**
+ * A Persona reached the field: the timer is answered, whatever put it there.
+ *
+ * Called from every route onto the board — played from hand, fused, revived —
+ * rather than from PLAY_PERSONA alone, because the rule is about having a board
+ * and not about which card did it.
+ */
+export function notePersonaEnteredField(state, playerId) {
+  const player = state.players[playerId];
+  if (!player.emptyFieldTurns) return;
+  player.emptyFieldTurns = 0;
+  pushLog(state, `${player.name} has a Persona on the field again — their resolve holds.`, 'system');
+}
+
+/**
+ * The loss itself: the player is starting a turn one past the allowance with
+ * nothing on the field. Called from the timer tick, before the draw.
+ */
+export function checkEmptyFieldLoss(state, playerId) {
+  if (state.winner !== null) return state;
+  const player = state.players[playerId];
+  if ((player.emptyFieldTurns ?? 0) <= CONFIG.EMPTY_FIELD_LOSS_TURNS) return state;
+  if (livingField(state, playerId).length > 0) return state;
+
+  pushLog(state, `${player.name} has no Personas left to stand for them.`, 'danger');
+  return endGame(state, opponentOf(playerId), 'empty-field');
+}
+
+/**
+ * The reward for wiping a board: end your turn with nothing living opposite you
+ * and your NEXT draw phase deals you an extra card.
+ *
+ * DESIGN NOTE: banked rather than paid on the spot. Cards handed over at the
+ * end of your own turn arrive when there is nothing left to do with them; the
+ * same card at the top of your next turn is a card you can actually play. The
+ * bonus card is drawn uniformly (see weightedDrawIndex) — this is payment for
+ * board control, and board control does not need quality weighting on top.
+ *
+ * It does not stack past one: the mechanic rewards wiping a board, not standing
+ * over it, and a second empty turn opposite you is already paying you in the
+ * only currency that matters, which is the opponent's clock.
+ */
+export function rewardEmptyOpponentField(state, playerId) {
+  const foeId = opponentOf(playerId);
+  if (livingField(state, foeId).length > 0) return state;
+  if (state.winner !== null) return state;
+
+  const player = state.players[playerId];
+  if ((player.pendingBonusDraws ?? 0) >= 1) return state;
+  player.pendingBonusDraws = 1;
+  pushLog(state, 'Your opponent stands defenseless — you seize the advantage.', 'draw');
+  bumpStat(state, playerId, 'emptyFieldRewardDraws');
+  return state;
 }
 
 /**
@@ -989,6 +1268,11 @@ export function runEndOfTurn(state, playerId) {
         return false;
       });
   }
+
+  // Your own empty board is the timer's business and is settled at the START of
+  // your turn; all that is left here is the mirror — an empty board opposite
+  // you banks a card for your next draw phase.
+  rewardEmptyOpponentField(state, playerId);
 
   return state;
 }

@@ -6,7 +6,7 @@
  * UI or the bot surface immediately instead of corrupting a match.
  */
 import { CONFIG, skillCategory } from './config.js';
-import { getCard, getPersona, getShowtime, getSkillDefinition, FUSION_RECIPES } from '../data/cards.js';
+import { getCard, getPersona, getSkillDefinition, FUSION_RECIPES } from '../data/cards.js';
 import {
   cloneState,
   createPersonaInstance,
@@ -23,14 +23,16 @@ import {
   getSkill,
   hasAilment,
   handCard,
+  handPersonaLevel,
   canTargetBench,
   remainingPersonaArcana,
   mimicableSkill,
   affinitiesFullyRevealed,
   affinitiesOf,
-  availableShowtimes,
   bumpStat,
   gallowsMeal,
+  gallowsBumpStat,
+  gallowsInheritOptions,
 } from './state.js';
 import { fusionAvailable } from './legal.js';
 import {
@@ -68,6 +70,7 @@ import {
   twistFate,
   twistableElements,
   canAffordBestSkill,
+  notePersonaEnteredField,
   nameOf,
 } from './effects.js';
 
@@ -622,6 +625,58 @@ function applyEffect(state, playerId, effect, action, sourceName) {
       return { kind: 'swapFree' };
     }
 
+    /**
+     * Traesto — the tactical retreat.
+     *
+     * The Persona comes back as the SAME BODY, not as a fresh copy of its card:
+     * the hand entry carries the instance, so the level it fought its way to,
+     * every skill it learned or inherited, and its passive all survive. That is
+     * the whole point of the card, and it is why the entry has a `persona` blob
+     * rather than only a `cardId`.
+     *
+     * What it sheds is the field state — buffs, debuffs, ailments — because none
+     * of that describes the Persona, it describes the fight it was in. HP comes
+     * back in full for the same reason a Persona entering play arrives whole.
+     * SP is deliberately untouched: SP is the one resource the game meters, and
+     * a free full refill through the hand would be a hole straight through it.
+     */
+    case 'retreat': {
+      const player = state.players[playerId];
+      const target = requireOwnPersona(state, playerId, action.targetUid);
+      const wasActive = target.uid === player.activeUid;
+
+      player.field = player.field.filter((p) => p.uid !== target.uid);
+      if (wasActive) player.activeUid = null;
+
+      // Field state is left behind; identity comes home.
+      target.hp = target.maxHp;
+      target.ailments = [];
+      target.buffs = [];
+      target.charges = [];
+      target.knockedDown = false;
+      target.guarding = false;
+      target.warded = false;
+
+      player.hand.push({ uid: `c${state.nextUid++}`, cardId: target.cardId, persona: target });
+      pushLog(state, `${nameOf(target)} retreats to fight another day!`, 'swap');
+
+      // A retreat is never a knockout: nothing here touches either KO tally.
+      if (wasActive) {
+        const bench = livingField(state, playerId).filter((p) => !p.knockedDown);
+        if (action.promoteUid) {
+          const stepping = bench.find((p) => p.uid === action.promoteUid);
+          if (!stepping) fail(`"${action.promoteUid}" cannot step up`);
+          player.activeUid = stepping.uid;
+          pushLog(state, `${nameOf(stepping)} steps up to take the slot.`, 'swap');
+        } else {
+          // No bench, or no choice offered: either the slot fills itself or the
+          // field is now empty, which is legal and starts the clock.
+          promoteActiveIfEmpty(state, playerId);
+        }
+      }
+      return { kind: 'retreat' };
+    }
+
     case 'shuffleTime': {
       const player = state.players[playerId];
       const look = Math.min(effect.look ?? CONFIG.SHUFFLE_TIME_LOOK, player.deck.length);
@@ -760,18 +815,28 @@ const handlers = {
     const { entry, card } = requireHandCard(state, action.player, action.handUid, 'persona');
     if (!hasFieldRoom(state, action.player)) fail(`field is full (max ${CONFIG.FIELD_CAP})`);
 
+    // A Persona pulled back by Traesto skips the ceiling entirely — it was on
+    // your field a moment ago, so there is nothing to earn. See
+    // canPlayPersonaCard, which is the one place that rule is decided.
+    const level = handPersonaLevel(entry);
     const cap = playableLevelCap(state, action.player);
-    if (card.level > cap) {
+    if (!entry.persona && level > cap) {
       fail(
-        `${card.name} is level ${card.level}; you cannot play above level ${cap} yet ` +
+        `${card.name} is level ${level}; you cannot play above level ${cap} yet ` +
           `(highest Persona on your field + ${CONFIG.PLAY_LEVEL_GAP})`
       );
     }
 
     const player = state.players[action.player];
     player.hand = player.hand.filter((c) => c.uid !== entry.uid);
-    // Arrives at full SP, like every other Persona entering play.
-    const persona = createPersonaInstance(state, card.id, action.player);
+    // A retreated Persona comes back as itself, SP and all — the ONE exception
+    // to "every Persona enters play at full SP" (see CONFIG). That rule exists
+    // so a card you paid for can act the turn it lands; this is not a purchase,
+    // it is your own body walking back on, and keeping its SP is exactly what
+    // stops Traesto from being a free refill on a two-turn cycle.
+    const persona = entry.persona
+      ? { ...entry.persona, owner: action.player }
+      : createPersonaInstance(state, card.id, action.player);
     player.field.push(persona);
     state.turnState.personasPlayed += 1;
     bumpStat(state, action.player, 'cardsPlayed');
@@ -782,6 +847,7 @@ const handlers = {
     } else {
       pushLog(state, `${player.name} put ${card.name} on the bench.`, 'play');
     }
+    notePersonaEnteredField(state, action.player);
     return state;
   },
 
@@ -971,7 +1037,16 @@ const handlers = {
     const parents = action.sacrifices.map((sac) => {
       if (sac.zone === 'hand') {
         const { entry, card } = requireHandCard(state, action.player, sac.uid, 'persona');
-        return { zone: 'hand', uid: entry.uid, cardId: card.id, level: card.level, arcana: card.arcana };
+        // A Persona pulled back by Traesto feeds the fusion as the body it is,
+        // so it brings its real level, its learned skills and its passive.
+        return {
+          zone: 'hand',
+          uid: entry.uid,
+          cardId: card.id,
+          level: handPersonaLevel(entry),
+          arcana: card.arcana,
+          persona: entry.persona ?? null,
+        };
       }
       const persona = requireOwnPersona(state, action.player, sac.uid);
       const card = getPersona(persona.cardId);
@@ -1089,32 +1164,7 @@ const handlers = {
     }
 
     state.turnState.fusionsPerformed += 1;
-    return state;
-  },
-
-  /**
-   * A Showtime: both halves of a duo, on the board and on their feet, hitting
-   * at once. Costs your action and is gone for the rest of the match.
-   */
-  SHOWTIME(state, action) {
-    requirePlaying(state, action);
-    requireAction(state);
-    const player = state.players[action.player];
-    const showtime = getShowtime(action.showtimeId) || fail(`unknown Showtime "${action.showtimeId}"`);
-    if (player.showtimesUsed.includes(showtime.id)) fail(`${showtime.name} has already been used this match`);
-    if (!availableShowtimes(state, action.player).some((s) => s.id === showtime.id)) {
-      fail(`${showtime.name} needs ${showtime.pair.map((id) => getPersona(id).name).join(' and ')} standing on your field`);
-    }
-
-    // The active Persona leads, so its Trickster passive (if any) governs the
-    // One More — exactly as it does for a Special.
-    const deliveredBy = getActive(state, action.player);
-    pushLog(state, `SHOWTIME! ${showtime.name} — ${showtime.pair.map((id) => getPersona(id).name).join(' & ')}!`, 'showtime');
-    const result = applyEffect(state, action.player, showtime.effect, action, showtime.name);
-
-    player.showtimesUsed.push(showtime.id);
-    bumpStat(state, action.player, 'showtimes');
-    consumeAction(state, result, deliveredBy);
+    notePersonaEnteredField(state, action.player);
     return state;
   },
 
@@ -1129,13 +1179,17 @@ const handlers = {
    *
    * Sacrificed Personas are never knockouts: this costs you a card, not a pip
    * on your opponent's tally.
+   *
+   * Both nourishing tiers may also pass on ONE thing of the player's choice
+   * (`action.inherit`, optional): a skill on either tier, or — on the FEAST
+   * tier alone — the food's passive instead, which replaces whatever the eater
+   * had (`action.replacePassive` confirms that). A feast also leaves a
+   * permanent +1 on whichever combat stat the eater grows fastest. Junk teaches
+   * nothing: there is nothing left to learn from something that far beneath you.
    */
   GALLOWS(state, action) {
     requirePlaying(state, action);
     const player = state.players[action.player];
-    if (state.turnState.gallowsUsed >= CONFIG.GALLOWS_PER_TURN) {
-      fail(`only ${CONFIG.GALLOWS_PER_TURN} Gallows sacrifice per turn`);
-    }
 
     const eater = requireOwnPersona(state, action.player, action.eaterUid);
     const food = action.food;
@@ -1147,20 +1201,62 @@ const handlers = {
     let level;
     let passive;
     let name;
+    let foodDescriptor;
     if (food.zone === 'hand') {
-      const { card } = requireHandCard(state, action.player, food.uid, 'persona');
-      ({ level, name } = card);
-      passive = printedPassive(card.id);
+      const { entry, card } = requireHandCard(state, action.player, food.uid, 'persona');
+      name = card.name;
+      // A Persona pulled back by Traesto is fed as the body it is: its real
+      // level decides the tier, and it offers the skills it can actually cast.
+      level = handPersonaLevel(entry);
+      passive = entry.persona ? passiveOf(entry.persona) : printedPassive(card.id);
+      foodDescriptor = entry.persona ? { persona: entry.persona } : { cardId: card.id };
     } else {
       if (food.uid === eater.uid) fail('a Persona cannot feed itself');
       const victim = requireOwnPersona(state, action.player, food.uid);
       level = victim.level;
       passive = passiveOf(victim);
       name = nameOf(victim);
+      foodDescriptor = { persona: victim };
     }
 
     const meal = gallowsMeal(eater.level, level, passive, eater.maxHp);
+    // Two separate rations — see CONFIG. A junk disposal never eats the meal
+    // you were saving your action for, and vice versa.
+    if (meal.usesAction) {
+      if (state.turnState.gallowsUsed >= CONFIG.GALLOWS_PER_TURN) {
+        fail(`only ${CONFIG.GALLOWS_PER_TURN} nourishing Gallows sacrifice per turn`);
+      }
+    } else if ((state.turnState.gallowsJunkUsed ?? 0) >= CONFIG.GALLOWS_JUNK_PER_TURN) {
+      fail(`only ${CONFIG.GALLOWS_JUNK_PER_TURN} junk Gallows disposal per turn`);
+    }
     if (meal.usesAction) requireAction(state);
+
+    // Validate the inheritance before anything is consumed, for the same reason.
+    // One choice: a skill, or — on the top tier only — the food's passive.
+    const inherit = action.inherit ?? null;
+    let inheritSkillId = null;
+    let inheritPassive = null;
+    if (inherit) {
+      if (!meal.canInherit) fail(`${name} is junk food — it has nothing left to teach`);
+      const options = gallowsInheritOptions(state, foodDescriptor, eater, { passives: meal.canInheritPassive });
+      const chosen = options.find((option) => option.id === inherit);
+      if (!chosen) fail(`${name} cannot pass on "${inherit}"`);
+
+      if (chosen.kind === 'passive') {
+        inheritPassive = chosen.passiveId;
+        // Overwriting a passive the eater already has is a real loss, so it
+        // takes the same explicit confirmation fusion demands.
+        const owned = passiveOf(eater);
+        if (owned && owned !== inheritPassive && !action.replacePassive) {
+          fail(
+            `${nameOf(eater)} already has ${passiveDefinition(owned)?.name ?? owned}; ` +
+              'confirm the replacement to inherit a passive over it'
+          );
+        }
+      } else {
+        inheritSkillId = chosen.id;
+      }
+    }
 
     // Committed: take the food off the board or out of the hand.
     if (food.zone === 'hand') {
@@ -1186,6 +1282,40 @@ const handlers = {
         pushLog(state, `${name} was its equal — ${nameOf(eater)} feasts.`, 'gallows');
       }
       levelUp(state, eater, meal.levels);
+
+      if (inheritSkillId) {
+        if (!eater.inheritedSkills.includes(inheritSkillId)) eater.inheritedSkills.push(inheritSkillId);
+        const skillName = getSkillDefinition(inheritSkillId)?.name ?? inheritSkillId;
+        pushLog(state, `${nameOf(eater)} inherited ${skillName} from ${name}.`, 'gallows');
+      }
+
+      // The top tier can hand over the food's whole nature instead of one of
+      // its tricks. Any passive in the game may move this way — the price is
+      // the gate, and the price is food grown to the eater's own level.
+      if (inheritPassive) {
+        const lost = passiveOf(eater);
+        eater.passive = inheritPassive;
+        const gainedName = passiveDefinition(inheritPassive)?.name ?? inheritPassive;
+        pushLog(
+          state,
+          lost && lost !== inheritPassive
+            ? `${nameOf(eater)} takes on ${name}'s ${gainedName}, losing ${passiveDefinition(lost)?.name ?? lost}.`
+            : `${nameOf(eater)} takes on ${name}'s ${gainedName}.`,
+          'gallows'
+        );
+      }
+
+      // A feast leaves a permanent mark: the body that ate something its own
+      // size grows into it. Applied after the level-up, so the two stack.
+      if (meal.statBump) {
+        const stat = gallowsBumpStat(eater.cardId);
+        eater[stat] += meal.statBump;
+        pushLog(
+          state,
+          `The meal settles — ${nameOf(eater)}'s ${stat} rises permanently by ${meal.statBump}.`,
+          'gallows'
+        );
+      }
     } else {
       pushLog(
         state,
@@ -1197,11 +1327,14 @@ const handlers = {
     }
 
     bumpStat(state, action.player, 'gallows');
+    bumpStat(state, action.player, meal.usesAction ? 'gallowsPaid' : 'gallowsJunk');
     promoteActiveIfEmpty(state, action.player);
-    // The once-per-turn cap covers all three tiers, so a free junk meal still
-    // closes the Gallows for the turn — it is tempo, not an engine.
-    state.turnState.gallowsUsed += 1;
-    if (meal.usesAction) spendAction(state);
+    if (meal.usesAction) {
+      state.turnState.gallowsUsed += 1;
+      spendAction(state);
+    } else {
+      state.turnState.gallowsJunkUsed = (state.turnState.gallowsJunkUsed ?? 0) + 1;
+    }
     return state;
   },
 

@@ -52,7 +52,7 @@ export function renderMenu(root) {
   const topbar = el('div', 'topbar');
   const titleWrap = el('div');
   titleWrap.appendChild(el('h1', 'topbar__title', 'Persona Card Game'));
-  titleWrap.appendChild(el('div', 'topbar__sub', 'Unofficial fan project · Beta'));
+  titleWrap.appendChild(el('div', 'topbar__sub', 'Unofficial fan project · Patch 3'));
   topbar.appendChild(titleWrap);
   topbar.appendChild(el('div', 'topbar__spacer'));
 

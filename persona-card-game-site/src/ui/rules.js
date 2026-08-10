@@ -5,7 +5,7 @@
  * retuning a constant updates the rules text instead of quietly contradicting
  * it. Rendered in Settings and from the in-match menu.
  */
-import { CONFIG, PASSIVE_LIST } from '../engine/index.js';
+import { CONFIG, PASSIVE_LIST, momentumBonus } from '../engine/index.js';
 import { FUSION_RECIPES } from '../data/cards.js';
 
 function el(tag, className, text) {
@@ -72,7 +72,7 @@ function renderHowToPlay() {
       [b(`Draw ${CONFIG.DRAW_PER_TURN}`), ' card. Your ', b('active'), ' Persona regains ', b(`${CONFIG.SP_REGEN_PER_TURN} SP`), ' — the bench regains nothing, so a spent Persona stays spent until you fight with it again.'],
       ['Play as many ', b('Persona'), ' cards as you like (field cap ', b(String(CONFIG.FIELD_CAP)), '), plus at most ', b(`${CONFIG.ITEMS_PER_TURN} Item`), ', ', b(`${CONFIG.SPECIALS_PER_TURN} Special`), ' and ', b(`${CONFIG.FUSIONS_PER_TURN} fusion`), '. None of that costs your action.'],
       ['Change your active Persona ', b(`${CONFIG.PERSONA_CHANGES_PER_TURN} time`), ' (more with Baton Pass).'],
-      ['Take your ', b('one action'), ': attack, use a skill, call a Showtime, guard, feed a Persona to the Gallows, or pass.'],
+      ['Take your ', b('one action'), ': attack, use a skill, guard, feed a Persona to the Gallows, or pass.'],
       ['End the turn, discarding down to ', b(`${CONFIG.HAND_LIMIT} cards`), ' if you are over.'],
     ])
   );
@@ -85,6 +85,53 @@ function renderHowToPlay() {
       [b('Guard'), ` halves incoming damage and prevents knockdown until your next turn.`],
       ['Buffs and debuffs shift damage by ', b(`×${CONFIG.BUFF_MULT}`), ` for ${CONFIG.BUFF_DURATION} turns. Concentrate and Charge multiply your next magic or physical skill by `, b(`×${CONFIG.CHARGE_MULT}`), '.'],
       [b('Burn'), ` deals ${CONFIG.BURN_DAMAGE} at the end of each of its owner's turns. `, b('Shock'), ' stops a Persona acting for a turn and raises the damage it takes by 50%.'],
+    ])
+  );
+
+  wrap.appendChild(el('h3', 'rules__heading', 'Keeping a board'));
+  wrap.appendChild(
+    para([
+      'An empty field is a legal position and you are allowed to sit in it — holding Personas back as fusion or Gallows fodder, or waiting for your level cap to reach the one you actually want, is real strategy. Nothing will ever force a card out of your hand. But it is on a clock: you get ',
+      b(`${CONFIG.EMPTY_FIELD_LOSS_TURNS} full turns`),
+      ' starting with an empty field, and beginning one more after that ',
+      b('loses the match'),
+      ' — no knockouts required. Playing any Persona, by any route, resets the clock completely.',
+    ])
+  );
+  wrap.appendChild(
+    bullets([
+      [
+        'While the clock runs, every card you draw is a ',
+        b('Persona'),
+        ' for as long as your deck still holds one. That is the clock\'s only effect — it changes what you draw, never how much. If you lose to it, it is because your deck and hand genuinely had nothing, not because the shuffle looked elsewhere.',
+      ],
+      [
+        'Being empty is ',
+        b('not'),
+        ' treated as falling behind. Underdog Draw and Momentum read the knockout tally and nothing else, so an empty board never pays you a comeback bonus.',
+      ],
+      [
+        'The mirror of the rule: end your turn with ',
+        b("your opponent's"),
+        ' field empty and your next draw phase deals you ',
+        b('one extra card'),
+        '. Leaving your board bare does not just start your own clock — it feeds them.',
+      ],
+    ])
+  );
+
+  wrap.appendChild(el('h3', 'rules__heading', 'Knockdown combo'));
+  wrap.appendChild(
+    para([
+      'Every Persona you put on its back adds ',
+      b(`+${Math.round(CONFIG.COMBO_DAMAGE_STEP * 100)}%`),
+      ' damage to everything else you do for the ',
+      b('rest of that turn'),
+      '. The stacks reset when the turn ends, and the hit that scores a knockdown never boosts itself — the bonus is for what comes ',
+      b('after'),
+      '. It multiplies with a Technical rather than replacing it, so a One More chain that keeps finding weaknesses ramps hard, which is exactly what ',
+      b('Trickster'),
+      ' is for. It costs nothing extra: SP and HP prices are untouched.',
     ])
   );
 
@@ -180,6 +227,49 @@ function renderHowToPlay() {
     ])
   );
 
+  wrap.appendChild(el('h3', 'rules__heading', 'Traesto — the tactical retreat'));
+  wrap.appendChild(
+    para([
+      b('Traesto'),
+      ' — one per deck, and rare — pulls one of your field Personas back into your hand. It uses your action, and it is ',
+      b('never a knockout'),
+      ': your opponent\'s tally does not move.',
+    ])
+  );
+  wrap.appendChild(
+    bullets([
+      [
+        'It comes back as the ',
+        b('same Persona'),
+        ': its level, every skill it learned or inherited, its passive and its ',
+        b('SP'),
+        ' all survive. Retreating is not a way to refill a spent Persona.',
+      ],
+      [
+        'What it loses is the fight it was in — ',
+        b('ailments, buffs and debuffs'),
+        ' are gone — and its ',
+        b('HP is fully restored'),
+        '. Pulling a Persona out from under a killing blow is exactly what it is for.',
+      ],
+      [
+        'Putting it back down ',
+        b('ignores the play-level ceiling'),
+        '. The ceiling stops you dropping a card you have not earned; this one was standing on your field a moment ago.',
+      ],
+      [
+        'If the Persona you pull back was your ',
+        b('active'),
+        ', one of your bench steps up for free — your choice, and it does not spend your Persona change.',
+      ],
+      [
+        'Retreating your ',
+        b('last'),
+        ' Persona is legal. You will be on the empty-field clock, and you can answer it by putting the same Persona straight back down next turn.',
+      ],
+    ])
+  );
+
   wrap.appendChild(el('h3', 'rules__heading', 'Twist of Fate'));
   wrap.appendChild(
     para([
@@ -256,7 +346,7 @@ function renderHowToPlay() {
     para([
       'Once a turn you may send one Persona from your field or hand to the ',
       b('Gallows'),
-      ' to feed another Persona on your field. What you get back depends entirely on how the food compares with the eater — the panel shows you which tier a meal falls into before you confirm it.',
+      ' to feed another Persona on your field. What you get back depends entirely on how the food compares with the eater — the panel previews the exact outcome, down to the stat and the skill, before you confirm it.',
     ])
   );
   wrap.appendChild(
@@ -265,7 +355,11 @@ function renderHowToPlay() {
         b('Feast'),
         ' — food at or above the eater\'s own level: ',
         b(`+${CONFIG.GALLOWS_FEAST_LEVELS} levels`),
-        '. Costs your action.',
+        ', one inherited skill ',
+        b('or the food\'s passive'),
+        ', and a permanent ',
+        b(`+${CONFIG.GALLOWS_STAT_BUMP}`),
+        ' to whichever combat stat the eater grows fastest. Costs your action.',
       ],
       [
         b('Meal'),
@@ -273,11 +367,11 @@ function renderHowToPlay() {
         b(`${CONFIG.COMEBACK_FARM_GAP} levels`),
         ' beneath it: ',
         b(`+${CONFIG.GALLOWS_LEVELS} level`),
-        '. Costs your action.',
+        ' and one inherited skill of your choice. Costs your action.',
       ],
       [
         b('Junk'),
-        ' — anything further beneath it teaches nothing, but restores ',
+        ' — anything further beneath it teaches nothing at all: no levels and no skill, but it restores ',
         b(`${Math.round(CONFIG.GALLOWS_JUNK_HEAL * 100)}% HP`),
         ' and ',
         b('costs no action'),
@@ -287,9 +381,48 @@ function renderHowToPlay() {
   );
   wrap.appendChild(
     para([
+      'The ',
+      b('inherited skill'),
+      ' works exactly as it does in fusion: pick one skill the food can currently cast (a card still in hand offers only what its printed level has unlocked) and the eater keeps it for the rest of the match. You may also take nothing.',
+    ])
+  );
+  wrap.appendChild(el('h3', 'rules__heading', 'Moving a passive'));
+  wrap.appendChild(
+    para([
+      b('Any'),
+      ' passive in the game can be moved onto another Persona — Trickster, Stalwart, Counter, Analyst, Soul Battery, Bloodlust, Endure, Momentum and Sacrificial Lamb alike. There is no approved list. What limits it is that there are only ',
+      b('two channels'),
+      ', and both are expensive:',
+    ])
+  );
+  wrap.appendChild(
+    bullets([
+      [
+        b('Fusion'),
+        ' — from each parent you take one skill ',
+        b('or'),
+        ' that parent\'s passive. The result can carry at most one passive either way.',
+      ],
+      [
+        b('The Gallows, feast tier only'),
+        ' — you may take the food\'s passive instead of one of its skills, and only when the food has grown to the eater\'s own level. A meal or a junk disposal never moves one.',
+      ],
+      [
+        'A Persona carries ',
+        b('one passive at most'),
+        ', so inheriting one over an existing passive ',
+        b('replaces'),
+        ' it. That is a real loss, and both channels make you confirm it explicitly before it happens.',
+      ],
+    ])
+  );
+  wrap.appendChild(
+    para([
       'Food that prints ',
       b('Sacrificial Lamb'),
-      ` is worth +${CONFIG.GALLOWS_LAMB_BONUS} level on top of whichever tier it lands in, so a Lamb is always the best version of the meal it would otherwise have been. All three tiers share the one-per-turn limit: a free junk meal still closes the Gallows for the turn, so it is tempo rather than an engine.`,
+      ` is worth +${CONFIG.GALLOWS_LAMB_BONUS} level on top of whichever tier it lands in, so a Lamb is always the best version of the meal it would otherwise have been. The two nourishing tiers and the free junk tier are rationed `,
+      b('separately'),
+      `: ${CONFIG.GALLOWS_PER_TURN} nourishing meal and ${CONFIG.GALLOWS_JUNK_PER_TURN} junk disposal per turn, so binning a dead card never costs you the feast you were saving your action for.`,
     ])
   );
   wrap.appendChild(
@@ -297,19 +430,6 @@ function renderHowToPlay() {
       'Like fusion material, a Persona you feed is ',
       b('not'),
       " a knockout — it never touches your opponent's tally. It is how a hand full of openers becomes something worth having in the late game.",
-    ])
-  );
-
-  wrap.appendChild(el('h3', 'rules__heading', 'Showtime'));
-  wrap.appendChild(
-    para([
-      'Certain pairs of Personas have a ',
-      b('Showtime'),
-      ': a duo attack that unlocks the moment ',
-      b('both'),
-      ' of them are on your field and on their feet. It costs your action, it does not matter which of the two is active, and each pair may only be called ',
-      b('once per match'),
-      '. A card that is half of a duo names its partner on its face.',
     ])
   );
 
@@ -341,17 +461,38 @@ function renderHowToPlay() {
   wrap.appendChild(el('h3', 'rules__heading', 'Falling behind'));
   wrap.appendChild(
     para([
-      'The game pushes back when you are losing, and only then. While more of your Personas have been knocked out than your opponent\'s:',
+      'The game pushes back when you are losing, and only then. The help arrives in ',
+      b('stages'),
+      ", one knockout apart, so no single bad exchange switches the whole lot on. Counting by how many more of your Personas have been knocked out than your opponent's:",
     ])
   );
   wrap.appendChild(
     bullets([
-      [b('Momentum Draw'), ' — your draws are weighted toward stronger cards, more heavily the further behind you are.'],
       [
-        b('Underdog Draw'),
-        ` — behind by ${CONFIG.COMEBACK_UNDERDOG_DEFICIT} or more knockouts, you draw ${CONFIG.COMEBACK_UNDERDOG_DRAW} cards a turn instead of ${CONFIG.DRAW_PER_TURN}.`,
+        b(`${CONFIG.MOMENTUM_MIN_DEFICIT} behind — Momentum Draw`),
+        ' — your draws are weighted toward stronger cards. The weighting is ',
+        b('front-loaded'),
+        `: it is already at ${Math.round((momentumBonus(CONFIG.MOMENTUM_MIN_DEFICIT) / CONFIG.MOMENTUM_CAP) * 100)}% of its maximum the moment it switches on, and falling further behind adds almost nothing. Losing on purpose to farm it does not work.`,
       ],
-      [b('Bloodlust'), ' — Personas with that passive hit harder while their side is behind.'],
+      [
+        b(`${CONFIG.COMEBACK_UNDERDOG_DEFICIT} behind — Underdog Draw`),
+        ` — you draw ${CONFIG.COMEBACK_UNDERDOG_DRAW} cards a turn instead of ${CONFIG.DRAW_PER_TURN}.`,
+      ],
+      [
+        b(`${CONFIG.WHIMS_DEFICIT} behind — Whims of Fate widens`),
+        ' — the Special stops matching only the weaknesses you have uncovered and matches every weakness, revealed or not.',
+      ],
+      [
+        b('Bloodlust'),
+        ' — at any deficit. It is a printed passive you chose to run, not a handout, so it keeps its own schedule.',
+      ],
+    ])
+  );
+  wrap.appendChild(
+    para([
+      'Momentum only ever weights cards you could actually ',
+      b('play'),
+      ': a Persona above your current level ceiling counts as junk while it is stuck in your hand, so the help cannot fill your hand with Personas your board is too small to summon.',
     ])
   );
 
@@ -399,7 +540,7 @@ function renderFaq() {
       );
       body.appendChild(
         para([
-          'There is no shop, no deck building and no between-match progression in the beta: your 30-card deck plus your starting Persona is everything you get.',
+          'There is no shop, no deck building and no between-match progression in Patch 3: your 30-card deck plus your starting Persona is everything you get.',
         ])
       );
     })
@@ -591,7 +732,9 @@ function renderFaq() {
             b('Feast'),
             " — food at or above the eater's own level. ",
             b(`+${CONFIG.GALLOWS_FEAST_LEVELS} levels`),
-            ', and it costs your action.',
+            ', one skill of your choice, a permanent ',
+            b(`+${CONFIG.GALLOWS_STAT_BUMP}`),
+            ' to its best combat stat, and it costs your action.',
           ],
           [
             b('Meal'),
@@ -599,11 +742,11 @@ function renderFaq() {
             b(`${CONFIG.COMEBACK_FARM_GAP} levels`),
             ' beneath it. ',
             b(`+${CONFIG.GALLOWS_LEVELS} level`),
-            ', and it costs your action.',
+            ', one skill of your choice, and it costs your action.',
           ],
           [
             b('Junk'),
-            ' — anything further beneath it. No levels, ',
+            ' — anything further beneath it. No levels and no skill, ',
             b(`${Math.round(CONFIG.GALLOWS_JUNK_HEAL * 100)}% HP`),
             ', and it costs ',
             b('nothing'),
@@ -613,9 +756,11 @@ function renderFaq() {
       );
       body.appendChild(
         para([
-          'All three share the ',
-          b(`${CONFIG.GALLOWS_PER_TURN} per turn`),
-          ' limit, so a free junk meal still closes the Gallows for the turn. It is tempo, not an engine.',
+          'The two paid tiers and the free one are rationed separately — ',
+          b(`${CONFIG.GALLOWS_PER_TURN} nourishing meal`),
+          ' and ',
+          b(`${CONFIG.GALLOWS_JUNK_PER_TURN} junk disposal`),
+          ' per turn — so housekeeping never costs you the feast. Neither is an engine: the paid tiers are rationed by the action they spend, and junk needs food far beneath its eater.',
         ])
       );
     })

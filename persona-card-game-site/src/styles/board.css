@@ -432,6 +432,66 @@ body.board-mode #app {
   50% { box-shadow: 0 0 20px var(--accent-glow); }
 }
 
+/* The knockdown combo. Same fixed chip box as every other allowance, so it can
+ * appear and disappear mid-turn without moving a single tile. */
+.allowance--combo {
+  border-color: #ff9a3c;
+  color: #ffc98a;
+  font-weight: 700;
+  background: #241a13;
+}
+
+/* ---------- Empty-field countdown ---------- */
+
+/* Sits in the side header next to the KO tally, and is drawn for whichever
+ * player is on the clock — an empty board is public information. */
+.field-timer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--warn, #d98b2b);
+  border-radius: 999px;
+  background: #2a1a10;
+  color: #ffcf99;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.field-timer__pips { display: flex; gap: 3px; }
+
+.field-timer .pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4a3a2a;
+  border: 1px solid #6b5236;
+}
+
+.field-timer .pip--on { background: #ff8a3c; border-color: #ffb27a; }
+
+.field-timer__count { font-weight: 700; }
+
+/* One turn left: the only thing on the board allowed to shout. Colour and
+ * shadow only — the box never changes size, so nothing moves. */
+.field-timer--critical {
+  border-color: var(--accent);
+  color: #ffd2cf;
+  background: #2e1414;
+  animation: field-timer-alarm calc(1s / var(--anim-scale, 1)) ease-in-out infinite;
+}
+
+.field-timer--critical .pip--on { background: #ff5f52; border-color: #ffb0a8; }
+
+@keyframes field-timer-alarm {
+  0%, 100% { box-shadow: 0 0 6px rgba(224, 85, 79, 0.4); }
+  50% { box-shadow: 0 0 20px rgba(224, 85, 79, 0.85); }
+}
+
+/* The forced-play prompt is the same modal as everything else; it only reads
+ * more urgently. */
+
 /* ---------- Skill bar ---------- */
 
 .skill-bar {
@@ -675,13 +735,21 @@ body.board-mode #app {
 .log-entry--fusion { border-left-color: #d64f9e; color: #ffd6f0; }
 .log-entry--special { border-left-color: var(--accent); color: #ffd2d8; }
 .log-entry--technical { border-left-color: #ff8c1a; color: #ffd39a; font-weight: 700; }
-.log-entry--showtime { border-left-color: #ff4fd8; color: #ffd0f6; font-weight: 700; }
 .log-entry--gallows { border-left-color: #8f7bd6; color: #ded4ff; }
 .log-entry--endure { border-left-color: var(--ok); color: #d8ffe9; font-weight: 700; }
 .log-entry--draw { border-left-color: #4aa3df; color: #cfe7fb; }
 .log-entry--guard { border-left-color: #6c9bd6; color: #d4e5ff; }
 .log-entry--resign { border-left-color: var(--accent); color: #ffb9c3; font-weight: 700; }
 .log-entry--system { border-left-color: var(--ink-faint); color: var(--ink); }
+.log-entry--combo { border-left-color: #ff9a3c; color: #ffc98a; font-weight: 700; }
+/* The empty-field countdown. The loudest thing the log has, because it is the
+ * only entry that can end the match without a single knockout. */
+.log-entry--danger {
+  border-left-color: var(--accent);
+  color: #ffc7cc;
+  font-weight: 700;
+  background: #241013;
+}
 
 /* ---------- Inspection: tooltip + detail overlay ---------- */
 
@@ -902,14 +970,6 @@ body.board-mode #app {
   box-shadow: 0 0 34px rgba(255, 140, 26, 0.6);
   animation: splash-pop calc(var(--dur-splash-technical, 1100ms) / var(--anim-scale)) ease-out forwards;
   top: 32%;
-}
-
-.splash--showtime {
-  font-size: 40px;
-  color: #fff;
-  background: linear-gradient(100deg, #ff4fd8, #8f2bd6 60%, #4aa3df);
-  box-shadow: 0 0 44px rgba(255, 79, 216, 0.6);
-  animation: splash-pop calc(var(--dur-splash-showtime, 1400ms) / var(--anim-scale)) ease-out forwards;
 }
 
 .splash--onemore {
@@ -1206,6 +1266,184 @@ body.board-mode #app {
 /* ---------- Result ---------- */
 
 .modal-overlay--result { z-index: 60; }
+
+/* ---------- End-of-match outro ---------- */
+/* One beat between the last blow and the scoreboard. Pure CSS: every duration
+ * divides by --anim-scale like the rest of the board, and the "Off" animation
+ * setting skips the element entirely rather than playing it at zero length.
+ * Themed through the same variables as everything else, so each deck's victory
+ * burst comes out in its own colours. */
+.match-outro {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.match-outro__scrim {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 45%, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.88));
+  animation: outro-fade calc(420ms / var(--anim-scale)) ease-out both;
+}
+
+.match-outro--lose .match-outro__scrim {
+  background: rgba(2, 2, 6, 0.9);
+}
+
+/* The desaturation sweep: a wide band of backdrop-filter dragged across the
+ * darkened board, so the colour drains left to right rather than all at once. */
+.match-outro__sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 60%;
+  backdrop-filter: grayscale(1) brightness(0.65);
+  -webkit-backdrop-filter: grayscale(1) brightness(0.65);
+  /* Travels on transform rather than `left`: the band is 60% of the board wide,
+   * so crossing it end to end is 266% of its own width. */
+  animation: outro-sweep calc(1100ms / var(--anim-scale)) ease-in-out both;
+}
+
+.match-outro__stage {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  padding: 20px;
+}
+
+.match-outro__card {
+  position: relative;
+  transform-origin: center;
+  animation: outro-card-in calc(700ms / var(--anim-scale)) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.match-outro--lose .match-outro__card {
+  filter: grayscale(0.8) brightness(0.7);
+  animation-duration: calc(900ms / var(--anim-scale));
+}
+
+/* The shine: a narrow bright diagonal that travels once across the card face. */
+.match-outro__shine {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.match-outro__shine::after {
+  content: '';
+  position: absolute;
+  top: -60%;
+  bottom: -60%;
+  left: -50%;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.7), transparent);
+  animation: outro-shine calc(900ms / var(--anim-scale)) calc(500ms / var(--anim-scale)) ease-in-out both;
+}
+
+.match-outro__banner {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.match-outro__word {
+  font-size: clamp(38px, 9vw, 76px);
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  color: var(--gold);
+  text-shadow: 0 0 30px var(--accent-glow), 0 4px 0 rgba(0, 0, 0, 0.5);
+  animation: outro-banner-in calc(620ms / var(--anim-scale)) calc(220ms / var(--anim-scale)) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Defeat says the same thing quieter: no glow, no overshoot, a slower fade. */
+.match-outro--lose .match-outro__word {
+  color: var(--ink-dim);
+  text-shadow: none;
+  letter-spacing: 0.2em;
+  animation: outro-banner-quiet calc(1200ms / var(--anim-scale)) calc(300ms / var(--anim-scale)) ease-out both;
+}
+
+.match-outro__mvp {
+  font-size: 12px;
+  color: var(--ink-dim);
+  letter-spacing: 0.04em;
+  animation: outro-fade calc(600ms / var(--anim-scale)) calc(700ms / var(--anim-scale)) ease-out both;
+}
+
+.match-outro__particles {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.match-outro__spark {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 12px var(--accent-glow);
+  animation: outro-spark calc(1000ms / var(--anim-scale)) var(--delay, 0ms) ease-out both;
+}
+
+.match-outro__hint {
+  position: absolute;
+  bottom: 22px;
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  animation: outro-fade calc(500ms / var(--anim-scale)) calc(1200ms / var(--anim-scale)) ease-out both;
+}
+
+@keyframes outro-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes outro-sweep {
+  from { transform: translateX(0); }
+  to { transform: translateX(266%); }
+}
+
+@keyframes outro-card-in {
+  from { opacity: 0; transform: translateY(40px) scale(0.82); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes outro-shine {
+  from { transform: translateX(0) rotate(12deg); }
+  to { transform: translateX(425%) rotate(12deg); }
+}
+
+@keyframes outro-banner-in {
+  0% { opacity: 0; transform: scale(1.5); }
+  70% { opacity: 1; transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes outro-banner-quiet {
+  from { opacity: 0; transform: scale(1.06); }
+  to { opacity: 0.85; transform: scale(1); }
+}
+
+@keyframes outro-spark {
+  from { opacity: 1; transform: rotate(var(--angle, 0deg)) translateX(0) scale(1); }
+  to { opacity: 0; transform: rotate(var(--angle, 0deg)) translateX(280px) scale(0.3); }
+}
 
 .result { width: min(680px, 100%); padding: 28px; text-align: center; }
 .result h2 { font-size: 42px; letter-spacing: 0.08em; }
@@ -1623,23 +1861,16 @@ body.board-mode #app {
   text-transform: uppercase;
 }
 
-/* ---------- Fusion panel ---------- */
+/* ---------- Action-bar badges ---------- */
 
-.fusion-btn { position: relative; }
+/* An absolutely-positioned child anchors to its nearest POSITIONED ancestor,
+ * not to its parent — so a badge on an unpositioned button escapes all the way
+ * up to .board-screen and lands in the corner of the screen. Every badge is
+ * therefore created by badgeButton() in board.js, which adds .btn--badged and
+ * .btn__badge together and makes the pair impossible to separate. */
+.btn--badged { position: relative; }
 
-.fusion-btn--ready {
-  border-color: var(--gold);
-  color: var(--gold);
-  box-shadow: 0 0 0 1px var(--gold), 0 0 18px rgba(240, 194, 67, 0.35);
-  animation: fusion-ready calc(2s / var(--anim-scale, 1)) ease-in-out infinite;
-}
-
-@keyframes fusion-ready {
-  0%, 100% { box-shadow: 0 0 0 1px var(--gold), 0 0 12px rgba(240, 194, 67, 0.25); }
-  50% { box-shadow: 0 0 0 1px var(--gold), 0 0 26px rgba(240, 194, 67, 0.6); }
-}
-
-.fusion-btn__badge {
+.btn__badge {
   position: absolute;
   top: -6px;
   right: -6px;
@@ -1652,6 +1883,20 @@ body.board-mode #app {
   color: #0b0b0d;
   font-size: 11px;
   font-weight: 900;
+}
+
+/* ---------- Fusion panel ---------- */
+
+.fusion-btn--ready {
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold), 0 0 18px rgba(240, 194, 67, 0.35);
+  animation: fusion-ready calc(2s / var(--anim-scale, 1)) ease-in-out infinite;
+}
+
+@keyframes fusion-ready {
+  0%, 100% { box-shadow: 0 0 0 1px var(--gold), 0 0 12px rgba(240, 194, 67, 0.25); }
+  50% { box-shadow: 0 0 0 1px var(--gold), 0 0 26px rgba(240, 194, 67, 0.6); }
 }
 
 .fusion-list { display: grid; gap: 8px; }
@@ -2283,28 +2528,18 @@ body.board-mode #app {
   min-height: 74px;
 }
 
-/* ---------- Showtime button ---------- */
-
-.skill-btn--showtime {
-  border-color: #ff4fd8;
-  background: linear-gradient(120deg, rgba(255, 79, 216, 0.18), rgba(74, 163, 223, 0.14));
-}
-
-.skill-btn--showtime .skill-btn__cost {
-  color: #ff9ceb;
-  letter-spacing: 0.08em;
-}
-
-.skill-btn--showtime:hover:not(:disabled) {
-  border-color: #ffb0ee;
-  box-shadow: 0 0 16px rgba(255, 79, 216, 0.45);
-}
-
 /* ---------- The Gallows ---------- */
 
 .gallows-btn--ready {
   border-color: #8f7bd6;
   color: #ded4ff;
+}
+
+/* The badge inherits its anchor from .btn--badged; only the colour differs, so
+ * the Gallows marker does not read as a fusion prompt. */
+.gallows-btn .btn__badge {
+  background: #8f7bd6;
+  color: #10101a;
 }
 
 .gallows__heading {
@@ -2389,6 +2624,57 @@ body.board-mode #app {
 .gallows-meal--feast .gallows-meal__tier { color: var(--gold); }
 .gallows-meal--meal .gallows-meal__tier { color: #ded4ff; }
 .gallows-meal--junk .gallows-meal__tier { color: var(--ok); }
+
+/* The confirm step. Nothing is eaten until this panel has said, in full, what
+ * the sacrifice buys — tier, levels, stat, cost and the one skill you may keep. */
+.gallows-confirm {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #8f7bd6;
+  border-radius: 10px;
+  background: rgba(143, 123, 214, 0.08);
+}
+
+.gallows-confirm .gallows__heading { margin-top: 0; }
+
+.gallows-confirm__lines {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.gallows-confirm__line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.gallows-confirm__label {
+  color: var(--ink-dim);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 9px;
+}
+
+.gallows-confirm__value { color: var(--ink); text-align: right; }
+
+/* A passive is a Persona's whole nature, and it only carries one — replacing it
+ * is the single destructive thing the Gallows can do, so it is said in red. */
+.gallows-confirm__warning {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(200, 60, 60, 0.14);
+  color: var(--warn, #e8a33d);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.gallows__row--skills { flex-wrap: wrap; margin-bottom: 10px; }
+.gallows__row--confirm { justify-content: flex-end; }
 
 /* The compact board strip flags a rewritten chart with a single glyph — there
  * is no room for a sentence, and the full card is one hover away. */

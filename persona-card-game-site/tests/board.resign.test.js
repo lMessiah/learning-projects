@@ -119,10 +119,21 @@ describe('confirming', () => {
 });
 
 describe('what you see afterwards', () => {
+  /**
+   * The match now ends on a short outro before the scoreboard. It is skippable
+   * with a click, which is what these tests do — they are about the result
+   * screen, and the flourish in front of it has its own file.
+   */
+  const skipOutro = () => {
+    const outro = $('.match-outro');
+    if (outro) click(outro);
+  };
+
   it('vs bot: an instant loss, with the reason, the tips and a way out', () => {
     const controller = boot();
     click($('.log-panel__resign'));
     click(byText('.modal .btn', /Yes, resign/));
+    skipOutro();
 
     const result = $('.result');
     expect(result).toBeTruthy();
@@ -138,6 +149,7 @@ describe('what you see afterwards', () => {
     const controller = boot({ botPlayer: null, viewer: 0, neutralResult: true });
     click($('.log-panel__resign'));
     click(byText('.modal .btn', /Yes, resign/));
+    skipOutro();
 
     expect(controller.getState().winner).toBe(1);
     expect($('.result h2').textContent).toMatch(/Rival wins/);
@@ -148,6 +160,7 @@ describe('what you see afterwards', () => {
     // Same match seen from the other seat.
     const controller = boot({ botPlayer: null, viewer: 1, neutralResult: false });
     controller.dispatch({ type: 'RESIGN', player: 0 });
+    skipOutro();
     expect($('.result h2').textContent).toBe('Victory');
     expect($('.result__reason').textContent).toMatch(/resigned — you win!/);
   });

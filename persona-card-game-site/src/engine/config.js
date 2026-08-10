@@ -48,6 +48,11 @@ export const CONFIG = Object.freeze({
   // active-only tap below, never from arriving broke: a Persona you just paid
   // a card for should be able to do something the turn it lands.
   //
+  // Traesto is the single exception. A Persona it pulled back is not a purchase
+  // arriving, it is your own body walking off and back on, so it keeps the SP it
+  // left with. Without that, retreating and replaying would be a full SP refill
+  // on a two-turn cycle, which is a hole straight through the tap below.
+  //
   // SP regenerates in the ACTIVE SLOT ONLY: the bench neither gains nor loses.
   // That is what makes rotating a spent Persona out a real cost rather than a
   // free refill, and it is the only tap in the game.
@@ -84,6 +89,38 @@ export const CONFIG = Object.freeze({
   // Levelling
   LEVEL_UP_GAP: 3, // victim level >= killer level + this  ->  +2 levels instead of +1
 
+  // --- Knockdown combo ---------------------------------------------------
+  // Every knockdown you score makes the REST OF YOUR TURN hit harder: +10% per
+  // stack, reset when the turn ends. It is the reward for a multi-knockdown
+  // turn, so it ramps naturally with One More chains (and hardest of all with
+  // Trickster, which is what keeps those chains alive).
+  //
+  // DESIGN NOTE: a damage bonus rather than a draw. A draw would pay you for
+  // knocking things down whether or not you did anything with the extra
+  // action; this only pays out if you keep swinging, which is the behaviour
+  // the mechanic is trying to reward.
+  COMBO_DAMAGE_STEP: 0.1,
+
+  // --- Field presence ----------------------------------------------------
+  // An empty field is a LEGAL TACTICAL STATE, not evidence of losing. Holding
+  // Personas back as fusion or Gallows fodder, or waiting for the level cap to
+  // catch up with the card you actually want to land, is intended play — so
+  // nothing forces a Persona out of your hand and nothing about being empty
+  // hands you a comeback benefit. Comeback benefits key off the KO tally and
+  // the KO tally only (see MOMENTUM_MIN_DEFICIT and friends below).
+  //
+  // The one consequence is a clock. You get EMPTY_FIELD_LOSS_TURNS full turns
+  // — each with its own draw phase — starting with an empty field; beginning
+  // one more after that loses the match. Playing any Persona resets it.
+  EMPTY_FIELD_LOSS_TURNS: 3,
+  // While that clock runs, every draw the player takes is HARD-FILTERED to
+  // Persona cards for as long as the deck still holds one. That filter is the
+  // timer's only side effect, and it exists so that a timer death is never
+  // draw luck: if you lose to the clock it is because your deck and hand had
+  // no Persona to give, not because the shuffle looked elsewhere. It changes
+  // WHAT you draw, never HOW MANY — quantity is Underdog Draw's business, and
+  // Underdog Draw reads the KO deficit alone.
+
   // --- Gallows ----------------------------------------------------------
   // Feed one Persona to another. Three tiers, keyed off how the food's level
   // compares with the eater's — see gallowsMeal() in state.js, which is the
@@ -96,13 +133,23 @@ export const CONFIG = Object.freeze({
   //
   // Junk disposal being free is the point of the bottom tier: clearing a dead
   // level-3 card off a level-20 board is tempo housekeeping, not a play, and
-  // charging a whole turn for it meant nobody ever did it. All three tiers
-  // still share the one-per-turn cap, so it cannot become an engine.
-  GALLOWS_PER_TURN: 1,
+  // charging a whole turn for it meant nobody ever did it.
+  //
+  // The two caps are SEPARATE. A paid meal and a free junk disposal are
+  // different economies — the first is your turn, the second is housekeeping —
+  // and sharing one counter meant binning a dead card cost you the feast you
+  // were about to eat. Neither can become an engine on its own: the paid tiers
+  // are rationed by the action they spend, and junk needs food more than
+  // COMEBACK_FARM_GAP levels beneath its eater.
+  GALLOWS_PER_TURN: 1, // paid tiers (feast + meal)
+  GALLOWS_JUNK_PER_TURN: 1, // action-free junk disposal, counted on its own
   GALLOWS_FEAST_LEVELS: 2, // food at or above the eater's own level
   GALLOWS_LEVELS: 1, // food within COMEBACK_FARM_GAP below it
   GALLOWS_LAMB_BONUS: 1, // Sacrificial Lamb adds this on top of either tier
   GALLOWS_JUNK_HEAL: 0.2, // fraction of max HP recovered when the food was too weak
+  // Both nourishing tiers may also pass on ONE skill of the player's choice;
+  // the feast additionally leaves a permanent mark on the eater's best stat.
+  GALLOWS_STAT_BUMP: 1,
 
   // --- Draw-level scaling ------------------------------------------------
   // From DRAW_SCALE_START the minimum printed level a Persona draw aims for
@@ -143,18 +190,44 @@ export const CONFIG = Object.freeze({
   // Whims of Fate reads only the weaknesses you have UNCOVERED, unless you are
   // this far behind on the KO tally — at which point fate stops being subtle
   // and matches against the lot, revealed or not.
-  WHIMS_DEFICIT: 2,
+  //
+  // Raised from 2 to 4 deliberately: see the staggered thresholds below. At 2 it
+  // fired on the same turn Momentum activated, so the whole comeback stack
+  // arrived at once and a single bad exchange felt like a reward.
+  WHIMS_DEFICIT: 4,
   PROVIDENCE_LOOK: 5, // how deep Providence reads before you throw any of it away
 
   // --- Comeback mechanics ----------------------------------------------
-  // All keyed off the KO deficit: how many more of your own Personas have been
+  // All keyed off the KO deficit N: how many more of your own Personas have been
   // knocked out than the opponent's. Zero or negative means these are inert, so
   // the player who is ahead never benefits from any of them.
-  COMEBACK_MOMENTUM_FACTOR: 0.25, // draw weight = 1 + deficit x this x normalisedQuality
+  //
+  // The thresholds are STAGGERED on purpose. Momentum starts first and alone;
+  // the Underdog draw joins a knockout later; Whims widens a knockout after
+  // that. Nothing arrives simultaneously, so no single exchange flips the whole
+  // stack on. (Bloodlust is the exception and fires at any deficit — it is a
+  // printed passive a player chose to run, not a system handout.)
+  //
+  //   N >= MOMENTUM_MIN_DEFICIT (2) -> quality-weighted draws
+  //   N >= UNDERDOG_DEFICIT     (3) -> two cards a turn
+  //   N >= WHIMS_DEFICIT        (4) -> Whims of Fate reads hidden weaknesses
+  MOMENTUM_MIN_DEFICIT: 2,
+  // bonus(N) = MOMENTUM_CAP x (1 - MOMENTUM_DECAY^N). Concave and hard-capped:
+  // 0.84 x CAP at N=2, 0.94 at N=3, 0.99 at N=5.
+  MOMENTUM_CAP: 1.0,
+  MOMENTUM_DECAY: 0.4,
   COMEBACK_UNDERDOG_DEFICIT: 3, // behind by this many KOs -> Underdog Draw
   COMEBACK_UNDERDOG_DRAW: 2, // ...draw this many per turn instead of DRAW_PER_TURN
   COMEBACK_FARM_GAP: 5, // a victim this many levels BELOW the killer teaches it nothing
 });
+
+/**
+ * An inheritance choice of `"passive:<id>"` means "take this parent's or this
+ * food's PASSIVE instead of one of its skills". Shared by fusion and by the
+ * Gallows, and kept here rather than in passives.js so state.js can build the
+ * choice list without the two modules importing each other.
+ */
+export const PASSIVE_CHOICE_PREFIX = 'passive:';
 
 export const MAGIC_TYPES = Object.freeze(['fire', 'ice', 'elec', 'wind', 'light', 'dark', 'almighty']);
 

@@ -92,11 +92,30 @@ const EXCLUSIVE_WEIGHT = 2.5;
 
 const leanOf = (flavour) => DECKS.find((d) => d.id === flavour)?.flavourLean ?? null;
 
-function weightOf(card, archetype, flavour) {
+/**
+ * Traesto is worth exactly as much as there are Personas to pull back with it,
+ * so its weight rides on how many Persona slots the deck being built actually
+ * holds. A deck of five Personas has almost nothing to retreat and should
+ * hardly ever see the card; a Persona-heavy one gets it at full strength.
+ *
+ * DESIGN NOTE: DECK_SHAPE currently fixes that count at 16 for every archetype,
+ * so today this always evaluates to 1 and the card's real weighting comes from
+ * its Tactical affinity plus the one-per-deck cap. It is written as a live
+ * function of the deck anyway — if the shape ever stops being uniform, the card
+ * follows it instead of quietly becoming a dead draw in a low-Persona deck.
+ */
+const RETREAT_PIVOT = DECK_SHAPE.persona;
+
+function retreatScale(personaCount) {
+  return Math.min(1, personaCount / RETREAT_PIVOT);
+}
+
+function weightOf(card, archetype, flavour, personaCount = RETREAT_PIVOT) {
   let weight = BASE_WEIGHT + AFFINITY_WEIGHT * affinityOf(card, archetype);
   const lean = leanOf(flavour);
   if (lean && lean !== archetype) weight += FLAVOUR_LEAN_WEIGHT * affinityOf(card, lean);
   if (card.exclusive) weight += EXCLUSIVE_WEIGHT;
+  if (card.effect?.kind === 'retreat') weight *= retreatScale(personaCount);
   return weight;
 }
 
@@ -133,7 +152,7 @@ function pickWeighted(cards, weights, rng) {
   return [cards[cards.length - 1], next];
 }
 
-function fillSlots(cards, count, archetype, rng, groups = new Map(), flavour = null) {
+function fillSlots(cards, count, archetype, rng, groups = new Map(), flavour = null, personaCount = RETREAT_PIVOT) {
   const copies = new Map();
   const out = [];
   let state = rng;
@@ -149,7 +168,7 @@ function fillSlots(cards, count, archetype, rng, groups = new Map(), flavour = n
   for (let i = 0; i < count; i++) {
     const available = cards.filter((card) => !atCap(card));
     if (!available.length) break; // pool too small; the caller validates the size
-    const weights = available.map((card) => weightOf(card, archetype, flavour));
+    const weights = available.map((card) => weightOf(card, archetype, flavour, personaCount));
     const [picked, next] = pickWeighted(available, weights, state);
     state = next;
     copies.set(picked.id, (copies.get(picked.id) ?? 0) + 1);
@@ -316,8 +335,12 @@ export function buildDeck({ flavour, archetype = null, rng }) {
   const groups = new Map(); // shared caps span the whole deck, not one slot type
   let state = rng;
 
+  // Personas are filled first (DECK_SHAPE's key order), so by the time the
+  // Special slots are picked the deck already knows how many bodies it holds —
+  // which is what Traesto's weight reads.
   for (const [type, count] of Object.entries(DECK_SHAPE)) {
-    const [picked, next] = fillSlots(pool[type], count, archetype, state, groups, flavour);
+    const personaCount = cards.filter((id) => getCard(id).type === 'persona').length;
+    const [picked, next] = fillSlots(pool[type], count, archetype, state, groups, flavour, personaCount);
     state = next;
     cards.push(...picked);
   }

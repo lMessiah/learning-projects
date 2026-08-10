@@ -90,6 +90,13 @@ export function expectDecisiveMatch(difficulty, seed = 7) {
   expect(state.phase).toBe('gameOver');
   expect(state.players[state.winner === 0 ? 1 : 0].koCount).toBeGreaterThanOrEqual(CONFIG.KO_TARGET);
 
+  // The match ends on a short outro. Click past it — its own behaviour is
+  // covered in board.outro.test.js; what matters here is that it always hands
+  // over to the scoreboard rather than being somewhere a real match can stall.
+  const outro = root.querySelector('.match-outro');
+  expect(outro).toBeTruthy();
+  outro.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
   // The result overlay is on screen with a rematch route out.
   expect(root.querySelector('.result')).toBeTruthy();
   expect(root.querySelector('.result h2').textContent).toMatch(/Victory|Defeat/);

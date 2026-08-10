@@ -53,7 +53,6 @@ export function summarise(state, playerId) {
       ['Weakness hits', stats.weaknessHits ?? 0],
       ['Fusions', stats.fusions ?? 0],
       ['Gallows', stats.gallows ?? 0],
-      ['Showtimes', stats.showtimes ?? 0],
       ['Cards drawn', stats.cardsDrawn ?? 0],
       ['Cards played', stats.cardsPlayed ?? 0],
       ['SP spent', stats.spSpent ?? 0],

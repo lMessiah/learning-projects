@@ -51,6 +51,12 @@ export function computeDamage({
   ignoreGuard = false,
   flat = false,
   passiveMult = 1,
+  // The knockdown combo: +COMBO_DAMAGE_STEP per Persona this attacker's side has
+  // put on its back so far this turn. A separate parameter rather than another
+  // factor folded into passiveMult so it shows up in the breakdown on its own —
+  // the board explains where a number came from, and "combo" is the part a
+  // player is most likely to be surprised by.
+  comboMult = 1,
   ignoreShockBonus = false,
 }) {
   const cat = category || skillCategory(damageType);
@@ -63,6 +69,9 @@ export function computeDamage({
   // FLAT damage: a card that prints "deal 60 damage" deals 60, full stop —
   // modified only by weakness, resist and guard. Nothing else touches it, so
   // the number on the card is always the number the player can plan around.
+  // That already excludes Dark Hour, Bloodlust and the execute rider, and the
+  // knockdown combo is no different: it rides the pipeline, and a flat card is
+  // not in the pipeline.
   if (flat) {
     const guardOnly = defender.guarding && !ignoreGuard ? CONFIG.GUARD_MULT : 1;
     const flatRaw = power * affinityMult * guardOnly;
@@ -95,7 +104,12 @@ export function computeDamage({
   const chargeUsed = attacker.charges.includes(wantedCharge) ? wantedCharge : null;
   const chargeMult = chargeUsed ? CONFIG.CHARGE_MULT : 1;
 
-  const raw = base * affinityMult * attackMult * defenseMult * guardMult * shockMult * chargeMult * passiveMult;
+  // Order reads as the rules read: stats, then buffs, then the combo the turn
+  // has built up, then the defender's affinity and everything situational.
+  // Multiplication is commutative, so this is documentation rather than
+  // arithmetic — but it is the documentation the spec asks for.
+  const raw =
+    base * attackMult * defenseMult * comboMult * affinityMult * guardMult * shockMult * chargeMult * passiveMult;
   const amount = Math.max(0, Math.round(raw));
 
   return {
@@ -105,7 +119,7 @@ export function computeDamage({
     resisted: affinity === 'resist',
     chargeUsed,
     flat: false,
-    breakdown: { base, affinityMult, attackMult, defenseMult, guardMult, shockMult, chargeMult, passiveMult },
+    breakdown: { base, affinityMult, attackMult, defenseMult, comboMult, guardMult, shockMult, chargeMult, passiveMult },
   };
 }
 

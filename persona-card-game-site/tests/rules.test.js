@@ -24,12 +24,14 @@ describe('every mechanic is explained', () => {
     'the execute rider': /Hama/,
     Gallows: /Gallows/,
     'fusion being free': /no action/,
-    Showtime: /Showtime/,
     'affinity rewrites': /rewrites/,
     'the Brutal counter': /Brutal/,
     drains: /Life Drain/,
     'Spirit Drain': /Spirit Drain/,
     'comeback mechanics': /Momentum Draw/,
+    Traesto: /Traesto/,
+    'the empty-field clock': /empty-field clock|empty field/i,
+    'passive transfer': /Moving a passive/,
   };
 
   for (const [topic, pattern] of Object.entries(topics)) {

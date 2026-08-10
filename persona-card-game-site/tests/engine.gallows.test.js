@@ -253,15 +253,36 @@ describe('the three tiers', () => {
     ).toThrow(/action/i);
   });
 
-  it('still closes the Gallows for the turn even when the meal was free', () => {
+  it('spends the junk ration without touching the paid one', () => {
+    // Silky at 30 with two level-3 scraps: both are junk, so the first disposal
+    // is free and the second is refused — but the paid ration is untouched.
     const state = board({ eaterLevel: 30, benchLevel: 3 });
     const next = feed(state);
 
+    expect(next.turnState.gallowsJunkUsed).toBe(CONFIG.GALLOWS_JUNK_PER_TURN);
+    expect(next.turnState.gallowsUsed).toBe(0);
+    expect(next.turnState.actionsRemaining).toBe(1); // junk is free
+    expect(gallowsActions(next, 0).some((a) => a.tier === 'junk')).toBe(false);
+    expect(() => feed(next, 'angel')).toThrow(/junk/i);
+  });
+
+  it('lets a free disposal and a paid meal happen on the same turn', () => {
+    // A level-3 scrap (junk) and a level-18 bench (a meal): binning the scrap
+    // must not cost you the meal you were saving the action for.
+    const state = board({ eaterLevel: 20 });
+    state.players[0].field[1].level = 3; // Pixie becomes junk
+    let next = feed(state, 'pixie');
+    expect(next.turnState.gallowsJunkUsed).toBe(1);
+    expect(gallowsAvailable(next, 0)).toBe(true);
+
+    const before = eaterOf(next).level;
+    next = feed(next, 'angel');
+    expect(eaterOf(next).level).toBe(before + CONFIG.GALLOWS_LEVELS);
     expect(next.turnState.gallowsUsed).toBe(1);
+    expect(next.turnState.actionsRemaining).toBe(0);
+    // Now both rations are gone.
     expect(gallowsActions(next, 0)).toHaveLength(0);
     expect(gallowsAvailable(next, 0)).toBe(false);
-    // The free tier must not become an engine: one per turn covers all three.
-    expect(CONFIG.GALLOWS_PER_TURN).toBe(1);
   });
 
   it('rejects a paid meal without consuming the food', () => {
@@ -376,6 +397,155 @@ describe('draw-level floor', () => {
     expect(drawLevelFloor(next)).toBeGreaterThan(getPersona('pixie').level);
     expect(drawLevelFloor(next)).toBeLessThanOrEqual(getPersona('anzu').level);
     expect(stats.personaDrawsLateAboveFloor).toBe(1);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * What a nourishing meal leaves behind
+ * ------------------------------------------------------------------ */
+
+/**
+ * A feast and a meal both pass on one skill of the player's choice; a feast
+ * also leaves a permanent mark on the eater's best combat stat. Junk teaches
+ * nothing — that is the whole difference between eating and binning.
+ */
+describe('inheritance and the feast stat bump', () => {
+  const gallows = (state, extra = {}) => ({
+    type: 'GALLOWS',
+    player: 0,
+    eaterUid: eaterOf(state).uid,
+    food: { zone: 'field', uid: uidOf(state, 0, 'pixie') },
+    ...extra,
+  });
+
+  const offer = (state, foodCardId = 'pixie') =>
+    getLegalActions(state, 0).find(
+      (a) => a.type === 'GALLOWS' && a.foodCardId === foodCardId && a.eaterUid === eaterOf(state).uid
+    );
+
+  it('offers the food\'s skills on both nourishing tiers and none on junk', () => {
+    const feast = offer(board({ eaterLevel: 14, benchLevel: 14 }));
+    expect(feast.tier).toBe('feast');
+    expect(feast.canInherit).toBe(true);
+    expect(feast.inheritOptions.map((s) => s.id)).toContain('zio');
+
+    const meal = offer(board({ eaterLevel: 20, benchLevel: 18 }));
+    expect(meal.tier).toBe('meal');
+    expect(meal.canInherit).toBe(true);
+    expect(meal.inheritOptions.length).toBeGreaterThan(0);
+
+    const junk = offer(board({ eaterLevel: 30, benchLevel: 3 }));
+    expect(junk.tier).toBe('junk');
+    expect(junk.canInherit).toBe(false);
+    expect(junk.inheritOptions).toEqual([]);
+  });
+
+  it('previews the stat bump on the feast tier only', () => {
+    // Silky grows magic and endurance equally and strength not at all, so the
+    // bump lands on magic — the first of the three it grows fastest.
+    expect(offer(board({ eaterLevel: 14, benchLevel: 14 })).statBump).toBe('magic');
+    expect(offer(board({ eaterLevel: 20, benchLevel: 18 })).statBump).toBe(null);
+    expect(offer(board({ eaterLevel: 30, benchLevel: 3 })).statBump).toBe(null);
+  });
+
+  it('teaches the eater the one skill the player picked', () => {
+    const state = board({ eaterLevel: 14, benchLevel: 14 });
+    expect(eaterOf(state).inheritedSkills).toEqual([]);
+
+    const next = applyAction(state, gallows(state, { inherit: 'zio' }));
+
+    expect(eaterOf(next).inheritedSkills).toEqual(['zio']);
+    // And it is genuinely castable, not merely recorded. (The feast spent the
+    // action, so hand one back to see the skill on the legal list.)
+    next.turnState.actionsRemaining = 1;
+    expect(getLegalActions(next, 0).some((a) => a.type === 'USE_SKILL' && a.skillId === 'zio')).toBe(true);
+    expect(next.log.some((l) => /inherited Zio/i.test(l.text))).toBe(true);
+  });
+
+  it('takes only one skill, and only if you ask for one', () => {
+    const state = board({ eaterLevel: 14, benchLevel: 14 });
+    const next = applyAction(state, gallows(state)); // no inherit
+    expect(eaterOf(next).inheritedSkills).toEqual([]);
+    expect(eaterOf(next).level).toBe(14 + CONFIG.GALLOWS_FEAST_LEVELS);
+  });
+
+  it('eats a skill out of a card still in hand', () => {
+    const state = board({ eaterLevel: 14 });
+    setHand(state, 0, ['nekomata']); // level 12: a meal, and it knows Agi
+
+    const next = applyAction(state, {
+      type: 'GALLOWS',
+      player: 0,
+      eaterUid: eaterOf(state).uid,
+      food: { zone: 'hand', uid: handUidOf(state, 0, 'nekomata') },
+      inherit: 'agi',
+    });
+
+    expect(eaterOf(next).inheritedSkills).toEqual(['agi']);
+  });
+
+  it('refuses a skill the food has not unlocked', () => {
+    const state = board({ eaterLevel: 14 });
+    setHand(state, 0, ['nekomata']); // Agilao unlocks at 18; the card is level 12
+    expect(() =>
+      applyAction(state, {
+        type: 'GALLOWS',
+        player: 0,
+        eaterUid: eaterOf(state).uid,
+        food: { zone: 'hand', uid: handUidOf(state, 0, 'nekomata') },
+        inherit: 'agilao',
+      })
+    ).toThrow(/cannot pass on/);
+  });
+
+  it('refuses inheritance from junk food, and leaves the board alone when it does', () => {
+    const state = board({ eaterLevel: 30, benchLevel: 3 });
+    expect(() => applyAction(state, gallows(state, { inherit: 'zio' }))).toThrow(/junk/i);
+    // Nothing was eaten: the refusal happens before anything is consumed.
+    expect(state.players[0].field.some((p) => p.cardId === 'pixie')).toBe(true);
+  });
+
+  it('does not offer a skill the eater already knows', () => {
+    const state = board({ eaterLevel: 14, benchLevel: 14 });
+    eaterOf(state).inheritedSkills = ['zio'];
+    const options = offer(state).inheritOptions.map((s) => s.id);
+    expect(options).not.toContain('zio');
+    expect(options).toContain('dia');
+  });
+
+  it('raises the eater\'s best stat permanently on a feast, on top of the levels', () => {
+    const state = board({ eaterLevel: 14, benchLevel: 14 });
+    const eater = eaterOf(state);
+    const beforeMagic = eater.magic;
+    const beforeStrength = eater.strength;
+
+    const next = applyAction(state, gallows(state));
+    const after = eaterOf(next);
+
+    // Two levels of ordinary growth (magic +1 each) plus the feast's own +1.
+    const growth = getPersona('silky').statGrowth.magic * CONFIG.GALLOWS_FEAST_LEVELS;
+    expect(after.magic).toBe(beforeMagic + growth + CONFIG.GALLOWS_STAT_BUMP);
+    expect(after.strength).toBe(beforeStrength); // Silky does not grow strength
+    expect(next.log.some((l) => /magic rises permanently/i.test(l.text))).toBe(true);
+  });
+
+  it('leaves the stats alone on a meal and on junk', () => {
+    const meal = board({ eaterLevel: 20, benchLevel: 18 });
+    const beforeMeal = eaterOf(meal).magic;
+    const afterMeal = eaterOf(applyAction(meal, gallows(meal)));
+    expect(afterMeal.magic).toBe(beforeMeal + getPersona('silky').statGrowth.magic * CONFIG.GALLOWS_LEVELS);
+
+    const junk = board({ eaterLevel: 30, benchLevel: 3 });
+    const beforeJunk = eaterOf(junk).magic;
+    expect(eaterOf(applyAction(junk, gallows(junk))).magic).toBe(beforeJunk);
+  });
+
+  it('survives redaction — the preview an online opponent sees is their own', () => {
+    const state = board({ eaterLevel: 14, benchLevel: 14 });
+    const offered = offer(state);
+    expect(offered.inheritOptions.every((s) => s.id && s.name)).toBe(true);
+    expect(offered.statBumpAmount).toBe(CONFIG.GALLOWS_STAT_BUMP);
+    expect(offered.needsChoice).toBe(true);
   });
 });
 

@@ -131,6 +131,14 @@ describe('deck curve', () => {
     // was within the curve at the moment it was played. (Fusion results are
     // exempt by design — they are paid for with two Personas and a combined
     // level requirement.)
+    //
+    // NOTE: the printed level is deliberately NOT checked against
+    // DECK_MAX_PERSONA_LEVEL here. That cap governs deck GENERATION, and a
+    // mid-match deck is not a generated one: a fusion result that is later fed
+    // to the Gallows or fused again lands in the discard, and the discard is
+    // reshuffled back into the deck when it runs dry. Drawing your own Lv 30
+    // Kikuri-Hime back is the fusion payoff coming round again, and the play
+    // ceiling below is what actually keeps it honest.
     for (let seed = 1; seed <= 8; seed++) {
       let state = createMatch({ seed, players: [{ name: 'A', deckId: 'p3' }, { name: 'B', deckId: 'p5' }] });
       let rng = createRng(seed * 3 + 1);
@@ -147,7 +155,6 @@ describe('deck curve', () => {
         if (action.type === 'PLAY_PERSONA') {
           const level = getPersona(action.cardId).level;
           expect(level).toBeLessThanOrEqual(playableLevelCap(state, action.player));
-          expect(level).toBeLessThanOrEqual(CONFIG.DECK_MAX_PERSONA_LEVEL);
           plays += 1;
         }
         state = applyAction(state, action);

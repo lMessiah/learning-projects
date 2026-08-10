@@ -88,7 +88,7 @@ export const GENERAL_TIPS = Object.freeze([
   {
     id: 'comeback',
     title: 'Behind is not beaten',
-    text: `Falling behind on knockouts weights your draws toward stronger cards, and at ${CONFIG.COMEBACK_UNDERDOG_DEFICIT} down you draw ${CONFIG.COMEBACK_UNDERDOG_DRAW} a turn. The game hands you the tools; you still have to use them.`,
+    text: `At ${CONFIG.MOMENTUM_MIN_DEFICIT} knockouts down your draws are weighted toward stronger cards, at ${CONFIG.COMEBACK_UNDERDOG_DEFICIT} you draw ${CONFIG.COMEBACK_UNDERDOG_DRAW} a turn, at ${CONFIG.WHIMS_DEFICIT} Whims of Fate reads hidden weaknesses. Losing further does not help — the weighting is nearly maxed out at ${CONFIG.MOMENTUM_MIN_DEFICIT}.`,
   },
   {
     id: 'passives',

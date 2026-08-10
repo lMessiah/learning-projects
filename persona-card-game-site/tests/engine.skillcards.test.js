@@ -2,12 +2,12 @@
  * Skill Cards: an Item that permanently teaches its printed skill.
  *
  * The interesting properties are the negative ones — a Skill Card cannot teach
- * a passive, cannot teach a Showtime, cannot double up on a Persona that
+ * a passive, cannot double up on a Persona that
  * already knows the skill, and cannot flood a deck.
  */
 import { describe, it, expect } from 'vitest';
 import { applyAction, getLegalActions, personaSkills } from '../src/engine/index.js';
-import { ITEMS, SPECIALS, SKILLS, META, PASSIVE_IDS, SHOWTIMES, getCard } from '../src/data/cards.js';
+import { ITEMS, SPECIALS, SKILLS, META, PASSIVE_IDS, getCard } from '../src/data/cards.js';
 import { expandDeck, ARCHETYPE_IDS } from '../src/data/archetypes.js';
 import { setupMatch, setField, setHand, activeOf, uidOf, handUidOf } from './helpers.js';
 
@@ -38,14 +38,12 @@ describe('the cards themselves', () => {
     expect(taught).toContain('life-drain'); // drain
   });
 
-  it('can only ever name a real skill — never a passive, never a Showtime', () => {
-    const showtimeIds = new Set(SHOWTIMES.map((s) => s.id));
+  it('can only ever name a real skill — never a passive', () => {
     for (const card of [...ITEMS, ...SPECIALS]) {
       if (card.effect.kind !== 'teachSkill') continue;
       const { skillId } = card.effect;
       expect(SKILLS[skillId], `${card.name} teaches an unknown skill`).toBeTruthy();
       expect(PASSIVE_IDS).not.toContain(skillId);
-      expect(showtimeIds.has(skillId)).toBe(false);
     }
   });
 

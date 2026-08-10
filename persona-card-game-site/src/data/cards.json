@@ -5,7 +5,7 @@
       "Unofficial fan project. No official ATLUS artwork, sprites or logos are used or referenced.",
       "DESIGN NOTE: stats, weaknesses and resistances are balance approximations inspired by the games, not exact ports.",
       "DESIGN NOTE: skills are stored once in `skillLibrary` and referenced by personas via { skill, unlockLevel }. The data loader (src/data/cards.js) resolves each reference into a full skill object { name, type, power, spCost|hpCost, unlockLevel, description, effect }. This keeps the file small and means new cards never touch engine code.",
-      "DESIGN NOTE: the beta ships two ailments, Burn and Shock. Canonically these come from fire and electric skills, so they are applied via `ailment` + `ailmentChance` on those damage skills rather than via dedicated ailment-only skills. `type: \"ailment\"` remains a valid schema value for future cards. RULE: an ailment chance is the ONLY randomness a skill may carry, and the card text must print the percentage.",
+      "DESIGN NOTE: Patch 3 ships two ailments, Burn and Shock. Canonically these come from fire and electric skills, so they are applied via `ailment` + `ailmentChance` on those damage skills rather than via dedicated ailment-only skills. `type: \"ailment\"` remains a valid schema value for future cards. RULE: an ailment chance is the ONLY randomness a skill may carry, and the card text must print the percentage.",
       "DESIGN NOTE: `usesAction` is stored on every Item and Special. Per the rules, playing Items/Specials is separate from your one action, so it defaults to false; the two strongest Specials set it to true.",
       "RULE: you may play at most ONE Item card and ONE Special card per turn (engine constants ITEMS_PER_TURN / SPECIALS_PER_TURN). The two limits are counted separately, so one of each in the same turn is legal.",
       "RULE: prebuilt decks contain no Persona above level 25 (CONFIG.DECK_MAX_PERSONA_LEVEL). Everything stronger is fusion-only, and every fusionOnly Persona is the result of exactly one recipe.",
@@ -19,13 +19,13 @@
       "RULE: `alacrity: true` on a skill means a knockdown from it refunds a Persona change (CONFIG.ALACRITY_REFUND). It is the Swift keyword: hit, rotate, hit again.",
       "RULE: `exclusive: 'p3'|'p4'|'p5'` locks a card to one flavour's pool. Each flavour also declares a `flavourLean` archetype axis, which the deck builder weights on top of the player's own archetype choice — that is what makes P3 swing, P4 grind and P5 scout.",
       "RULE: no skill has a random chance to knock a Persona out. The Hama and Mudo lines are ordinary Light/Dark damage skills with a deterministic `execute` rider (CONFIG.EXECUTE_MULT) — Hama against a knocked-down target, Mudo against one below 40% HP.",
-      "RULE: `showtimes` are duo attacks. Each names a `pair` of Persona card ids; when BOTH are on your field and standing, the combo unlocks as an extra option for your one action, once per match per pair. Every Persona in a pair mirrors it in `duoPartners`, which is derived from this table and asserted equal by tests/engine.showtime.test.js.",
       "RULE: drain SKILLS, not drain affinities. `drain: \"hp\"` on a damage effect heals the attacker for exactly the damage dealt; `kind: \"drainSp\"` deals no damage and moves up to `amount` SP from the enemy active to yours. Both are Almighty, so neither has any weakness, resist or Technical interaction.",
-      "RULE: a Skill Card is an Item whose effect is `{ kind: \"teachSkill\", skillId }`. It permanently adds that skill to one of your field Personas for the rest of the match. It may only ever name an entry in `skillLibrary`, so it can never teach a passive or a Showtime. `deckGroup: \"skill-card\"` caps them at meta.deckGroupCaps[\"skill-card\"] per deck.",
+      "RULE: a Skill Card is an Item whose effect is `{ kind: \"teachSkill\", skillId }`. It permanently adds that skill to one of your field Personas for the rest of the match. It may only ever name an entry in `skillLibrary`, so it can never teach a passive. `deckGroup: \"skill-card\"` caps them at meta.deckGroupCaps[\"skill-card\"] per deck.",
       "RULE: draw manipulation is deterministic and seeded. `guaranteedDraw` reserves the next draw for a Persona of a named Arcana (`best: true` takes the highest-level one); `fateFetch` reserves it for a Persona that answers the enemy active's weaknesses, widening from revealed-only to all of them at CONFIG.WHIMS_DEFICIT; `providence` looks at the top CONFIG.PROVIDENCE_LOOK cards and discards any of them. A reservation ALWAYS overrides Momentum Draw weighting and the draw-level floor for that draw, and is spent whether or not it found anything.",
       "RULE: `kind: \"inflict\"` applies a named ailment with certainty and deals no damage. It is the only guaranteed way to start a Technical — every other source is a percentage rider on a fire or electric skill, and every one of those prints its odds.",
       "RULE: `percentOfTargetHp` on a damage effect replaces the power curve entirely: the hit deals that fraction of the target's CURRENT HP, modified only by weakness, resist and guard, exactly like a flat Special. Taking a share of what remains can never reduce it to zero, so a percentage skill never lands a knockout.",
-      "RULE: `rewriteAffinities` replaces a Persona INSTANCE's weakness and resist lists, preserving the count of each, clearing everything anyone had revealed, and setting `rewritten`. Every reader goes through state.affinitiesOf, and a rewritten Persona is opaque even to the Brutal bot — its cheat is reading the card, and the card no longer describes it. One exclusive per flavour: Turn of the Moon (P3), Jester's Trickery (P4), Change of Heart (P5)."
+      "RULE: `rewriteAffinities` replaces a Persona INSTANCE's weakness and resist lists, preserving the count of each, clearing everything anyone had revealed, and setting `rewritten`. Every reader goes through state.affinitiesOf, and a rewritten Persona is opaque even to the Brutal bot — its cheat is reading the card, and the card no longer describes it. One exclusive per flavour: Turn of the Moon (P3), Jester's Trickery (P4), Change of Heart (P5).",
+      "RULE: `traesto` is the tactical retreat. Its effect `{ kind: \"retreat\" }` returns one of your field Personas to your hand as the SAME INSTANCE — a hand entry carrying a `persona` blob — so its level, skills and passive survive. Capped at 1 per deck by meta.deckGroupCaps."
     ],
     "damageTypes": [
       "phys",
@@ -80,7 +80,8 @@
     "deckGroupCaps": {
       "sp-restore": 2,
       "skill-card": 2,
-      "twist-fate": 1
+      "twist-fate": 1,
+      "traesto": 1
     }
   },
   "skillLibrary": {
@@ -685,10 +686,7 @@
         "defensive": 2,
         "tactical": 2,
         "swift": 3
-      },
-      "duoPartners": [
-        "jack-frost"
-      ]
+      }
     },
     {
       "id": "jack-frost",
@@ -744,11 +742,7 @@
         "defensive": 0,
         "tactical": 1,
         "swift": 3
-      },
-      "duoPartners": [
-        "pixie",
-        "black-frost"
-      ]
+      }
     },
     {
       "id": "apsaras",
@@ -804,10 +798,7 @@
         "defensive": 3,
         "tactical": 3,
         "swift": 2
-      },
-      "duoPartners": [
-        "orpheus"
-      ]
+      }
     },
     {
       "id": "orpheus",
@@ -863,10 +854,7 @@
         "defensive": 2,
         "tactical": 3,
         "swift": 3
-      },
-      "duoPartners": [
-        "apsaras"
-      ]
+      }
     },
     {
       "id": "izanagi",
@@ -921,10 +909,7 @@
         "defensive": 0,
         "tactical": 0,
         "swift": 3
-      },
-      "duoPartners": [
-        "ara-mitama"
-      ]
+      }
     },
     {
       "id": "arsene",
@@ -979,10 +964,7 @@
         "defensive": 0,
         "tactical": 3,
         "swift": 2
-      },
-      "duoPartners": [
-        "jack-o-lantern"
-      ]
+      }
     },
     {
       "id": "ara-mitama",
@@ -1039,10 +1021,7 @@
         "defensive": 3,
         "tactical": 1,
         "swift": 3
-      },
-      "duoPartners": [
-        "izanagi"
-      ]
+      }
     },
     {
       "id": "angel",
@@ -1153,10 +1132,7 @@
         "defensive": 0,
         "tactical": 3,
         "swift": 3
-      },
-      "duoPartners": [
-        "arsene"
-      ]
+      }
     },
     {
       "id": "hua-po",
@@ -2417,10 +2393,7 @@
         "defensive": 2,
         "tactical": 3,
         "swift": 0
-      },
-      "duoPartners": [
-        "jack-frost"
-      ]
+      }
     },
     {
       "id": "surt",
@@ -3553,7 +3526,7 @@
       "type": "special",
       "usesAction": false,
       "quality": 4,
-      "description": "Fate looks for the answer to whatever is in front of you. Your next draw becomes a Persona from your deck that can hit one of the enemy active Persona's weaknesses. It matches only weaknesses you have already UNCOVERED — unless you are behind by 2 or more knockouts, in which case it matches every weakness, revealed or not. It does not reveal anything. If your deck holds no answer, you draw as normal.",
+      "description": "Fate looks for the answer to whatever is in front of you. Your next draw becomes a Persona from your deck that can hit one of the enemy active Persona's weaknesses. It matches only weaknesses you have already UNCOVERED — unless you are behind by 4 or more knockouts, in which case it matches every weakness, revealed or not. It does not reveal anything. If your deck holds no answer, you draw as normal.",
       "effect": {
         "kind": "fateFetch",
         "target": "ownDeck"
@@ -3697,6 +3670,25 @@
       "affinity": {
         "aggressive": 1,
         "defensive": 0,
+        "tactical": 3,
+        "swift": 1
+      }
+    },
+    {
+      "id": "traesto",
+      "name": "Traesto",
+      "type": "special",
+      "usesAction": true,
+      "quality": 4,
+      "deckGroup": "traesto",
+      "description": "Uses up your action. Pull one of your field Personas back into your hand. It is the same body: it keeps its level, every skill it has learned or inherited, its passive and its SP. Its ailments, buffs and debuffs are gone and its HP is fully restored. If it was your active Persona, one of your choice steps up from the bench for free. It is never a knockout, and it ignores the play-level ceiling coming back down — it was already yours.",
+      "effect": {
+        "kind": "retreat",
+        "target": "ownAny"
+      },
+      "affinity": {
+        "aggressive": 0,
+        "defensive": 2,
         "tactical": 3,
         "swift": 1
       }
@@ -3878,93 +3870,6 @@
       "tagline": "P5 Deck — curses, ambushes and stolen momentum.",
       "flavourLean": "tactical",
       "playstyle": "Scout then strike — probe for weaknesses, swap into the counter, hit once and hard."
-    }
-  ],
-  "showtimes": [
-    {
-      "id": "duo-evening-elegy",
-      "name": "Evening Elegy",
-      "pair": [
-        "orpheus",
-        "apsaras"
-      ],
-      "flavour": "p3",
-      "description": "Orpheus takes up the lyre and Apsaras dances to it. Deals exactly 75 Almighty damage to the enemy active Persona.",
-      "effect": {
-        "kind": "damage",
-        "damageType": "almighty",
-        "amount": 75,
-        "flat": true,
-        "target": "enemyActive"
-      }
-    },
-    {
-      "id": "duo-truth-unveiled",
-      "name": "Truth Unveiled",
-      "pair": [
-        "izanagi",
-        "ara-mitama"
-      ],
-      "flavour": "p4",
-      "description": "Blade and fury, swung together through the fog. Deals exactly 42 Almighty damage to EVERY enemy Persona, active and benched.",
-      "effect": {
-        "kind": "damage",
-        "damageType": "almighty",
-        "amount": 42,
-        "flat": true,
-        "target": "enemyAll"
-      }
-    },
-    {
-      "id": "duo-curtain-call",
-      "name": "Curtain Call",
-      "pair": [
-        "arsene",
-        "jack-o-lantern"
-      ],
-      "flavour": "p5",
-      "description": "A gentleman thief, a lantern, and no witnesses. Deals exactly 60 Dark damage to the enemy active Persona.",
-      "effect": {
-        "kind": "damage",
-        "damageType": "dark",
-        "amount": 60,
-        "flat": true,
-        "target": "enemyActive"
-      }
-    },
-    {
-      "id": "duo-hee-ho-hop",
-      "name": "Hee-Ho Hop",
-      "pair": [
-        "pixie",
-        "jack-frost"
-      ],
-      "flavour": "common",
-      "description": "Hee-ho! Small, cheerful, and colder than it looks. Deals exactly 55 Ice damage to the enemy active Persona.",
-      "effect": {
-        "kind": "damage",
-        "damageType": "ice",
-        "amount": 55,
-        "flat": true,
-        "target": "enemyActive"
-      }
-    },
-    {
-      "id": "duo-frozen-rebellion",
-      "name": "Frozen Rebellion",
-      "pair": [
-        "jack-frost",
-        "black-frost"
-      ],
-      "flavour": "common",
-      "description": "What Jack Frost became, standing beside what he was. Deals exactly 110 Almighty damage to the enemy active Persona.",
-      "effect": {
-        "kind": "damage",
-        "damageType": "almighty",
-        "amount": 110,
-        "flat": true,
-        "target": "enemyActive"
-      }
     }
   ]
 }

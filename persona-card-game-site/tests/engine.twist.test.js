@@ -236,25 +236,32 @@ describe('the card itself', () => {
 
 describe('in a real match', () => {
   it('is played by the Brutal bot without ever producing an illegal action', () => {
-    let state = createMatch({
-      seed: 8181,
-      players: [
-        { name: 'A', deckId: 'p3', archetype: 'tactical', controller: 'bot', difficulty: 'brutal' },
-        { name: 'B', deckId: 'p5', archetype: 'aggressive', controller: 'bot', difficulty: 'brutal' },
-      ],
-    });
-    state = applyAction(state, { type: 'CHOOSE_STARTER', player: 0, cardId: state.starterOptions[0][0] });
-    state = applyAction(state, { type: 'CHOOSE_STARTER', player: 1, cardId: state.starterOptions[1][0] });
-
+    // The card is one per deck and competes for six Special slots, so any single
+    // seed may simply not deal it. Sweeping a handful keeps the assertion about
+    // the CARD — reachable, and never wedges a match — rather than about the
+    // shuffle, which is what made this brittle the last time a Special was added.
     let played = 0;
-    for (let i = 0; i < 400 && state.winner === null; i++) {
-      const twist = getLegalActions(state, state.activePlayer).filter((a) => a.cardId === CARD);
-      if (twist.length) {
-        state = applyAction(state, twist[0]);
-        played++;
-        continue;
+    for (const seed of [2, 3, 6, 20, 24, 31]) {
+      let state = createMatch({
+        seed,
+        players: [
+          { name: 'A', deckId: 'p3', archetype: 'tactical', controller: 'bot', difficulty: 'brutal' },
+          { name: 'B', deckId: 'p5', archetype: 'aggressive', controller: 'bot', difficulty: 'brutal' },
+        ],
+      });
+      state = applyAction(state, { type: 'CHOOSE_STARTER', player: 0, cardId: state.starterOptions[0][0] });
+      state = applyAction(state, { type: 'CHOOSE_STARTER', player: 1, cardId: state.starterOptions[1][0] });
+
+      for (let i = 0; i < 400 && state.winner === null; i++) {
+        const twist = getLegalActions(state, state.activePlayer).filter((a) => a.cardId === CARD);
+        if (twist.length) {
+          state = applyAction(state, twist[0]);
+          played++;
+          continue;
+        }
+        state = endTurn(state);
       }
-      state = endTurn(state);
+      if (played > 0) break;
     }
     // Not asserting a rate — only that it is reachable and never wedges a match.
     expect(played).toBeGreaterThan(0);

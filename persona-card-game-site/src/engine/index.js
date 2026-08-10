@@ -31,8 +31,12 @@ export {
   visibleAffinities,
   affinitiesOf,
   canTargetBench,
-  availableShowtimes,
   gallowsMeal,
+  gallowsBumpStat,
+  gallowsInheritOptions,
+  comboMultiplier,
+  emptyFieldStage,
+  emptyFieldTurnsLeft,
 } from './state.js';
 export {
   PASSIVE_DEFS,
@@ -65,6 +69,10 @@ export {
   evaluateGameEnd,
   runStartOfTurn,
   runEndOfTurn,
+  drawCountFor,
+  momentumBonus,
+  emptyFieldDrawFilter,
+  notePersonaEnteredField,
 } from './effects.js';
 export { applyAction } from './actions.js';
 export { redactStateFor, isRedacted, findLeaks, HIDDEN_CARD } from './redact.js';
@@ -74,5 +82,4 @@ export {
   fusionCandidates,
   gallowsActions,
   gallowsAvailable,
-  showtimeActions,
 } from './legal.js';

@@ -28,15 +28,13 @@
  *   damageMultiplier   ({ state, persona })           -> number
  *   oneMoreChain       ({ persona })                  -> boolean
  */
-import { CONFIG } from './config.js';
+import { CONFIG, PASSIVE_CHOICE_PREFIX } from './config.js';
 import { getPersona } from '../data/cards.js';
 import { opponentOf } from './state.js';
 
-/**
- * A fusion `inherit` entry of `"passive:<id>"` means "take this parent's
- * passive instead of one of its skills".
- */
-export const PASSIVE_CHOICE_PREFIX = 'passive:';
+// Re-exported so callers that already import the passive table do not need a
+// second import for the prefix. Defined in config.js — see the note there.
+export { PASSIVE_CHOICE_PREFIX };
 
 export const PASSIVE_DEFS = Object.freeze({
   trickster: {

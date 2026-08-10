@@ -4,9 +4,9 @@
  * State is a plain JSON-serialisable object: no class instances, no functions,
  * no DOM references. `applyAction` (actions.js) always returns a fresh copy.
  */
-import { CONFIG } from './config.js';
+import { CONFIG, PASSIVE_CHOICE_PREFIX } from './config.js';
 import { createRng, shuffle, sample } from './rng.js';
-import { getCard, getPersona, getSkillDefinition, STARTER_POOL, SHOWTIMES } from '../data/cards.js';
+import { getCard, getPersona, getSkillDefinition, STARTER_POOL } from '../data/cards.js';
 import { buildDeck } from '../data/archetypes.js';
 
 /* ------------------------------------------------------------------ *
@@ -76,7 +76,13 @@ function createPlayer(id, { name, deckId, archetype = null, controller = 'human'
     field: [], // persona instances, including KO'd ones (KO'd don't occupy the cap)
     activeUid: null,
     koCount: 0, // how many of THIS player's Personas have been KO'd
-    showtimesUsed: [], // duo ids already spent — once per match, per pair
+    // Consecutive turns this player has STARTED with nothing living on the
+    // field. Drives the loss timer, the Persona draw filter and the countdown
+    // the board shows. Reset the moment a Persona lands.
+    emptyFieldTurns: 0,
+    // Cards owed to this player on their NEXT draw phase, banked by catching
+    // the opponent boardless at the end of a turn. Paid out and cleared there.
+    pendingBonusDraws: 0,
     fatigue: 0,
     reshuffles: 0,
     stats: createStats(),
@@ -102,8 +108,9 @@ export function createStats() {
     oneMores: 0,
     guards: 0,
     fusions: 0,
-    showtimes: 0, // duo attacks called
     gallows: 0, // Personas fed to another of your own
+    gallowsPaid: 0, // ...of which cost an action (feast or meal)
+    gallowsJunk: 0, // ...of which were free disposal
     fusionReadyTurns: 0, // turns that began with a fusion available
     cardsDrawn: 0,
     cardsPlayed: 0, // Personas, Items and Specials put down from hand
@@ -118,6 +125,13 @@ export function createStats() {
     heavyHitsTaken: 0, // single hits of 25%+ of a Persona's max HP
     koWithEmptyBench: 0, // active knocked out with nothing left to step up
     typesUsed: [], // damage types this player has attacked with
+    // --- Field presence and the knockdown combo -------------------------
+    // Kept for the balance simulator, which has to answer "is the combo doing
+    // too much of the damage?" and "who is collecting the reward draws?".
+    comboStacksTotal: 0, // summed over turns; divide by turnsTaken for the mean
+    comboMax: 0, // deepest single chain this match
+    comboDamageBonus: 0, // damage attributable to the combo multiplier alone
+    emptyFieldRewardDraws: 0, // bonus draws for catching the opponent boardless
     // --- SP pressure ---------------------------------------------------
     spSpent: 0,
     spUnspentAtTurnEnd: 0, // summed over turns; divide by turnsTaken for the mean
@@ -205,11 +219,51 @@ export function createTurnState() {
     itemsPlayed: 0,
     specialsPlayed: 0,
     fusionsPerformed: 0, // fusion is free, but rationed like an Item or Special
-    gallowsUsed: 0, // one Persona may be fed to another per turn
+    // Two separate rations: one nourishing meal (which costs the action) and
+    // one free junk disposal. See the CONFIG comment for why they don't share.
+    gallowsUsed: 0,
+    gallowsJunkUsed: 0,
     canTargetBench: false, // granted by Ambush for the WHOLE turn
     momentumUsed: false, // Momentum draws once a turn, however many cheap skills fly
     personasPlayed: 0,
+    // Knockdown combo: one stack per standing Persona you put on its back this
+    // turn. Lives on the turn state, so it resets itself — a new turn builds a
+    // new one of these and the stacks are simply gone.
+    comboStacks: 0,
   };
+}
+
+/**
+ * The damage multiplier the acting player's knockdown combo is currently worth.
+ *
+ * The single place the stacks are turned into a number, so the damage pipeline,
+ * the bot and the board all price a combo identically.
+ */
+export function comboMultiplier(state) {
+  const stacks = state.turnState?.comboStacks ?? 0;
+  return 1 + stacks * CONFIG.COMBO_DAMAGE_STEP;
+}
+
+/**
+ * How deep into the empty-field timer a player is: 0 when they have a board,
+ * 1 on the first turn they start without one, and so on up to the loss.
+ */
+export function emptyFieldStage(state, playerId) {
+  return state.players[playerId].emptyFieldTurns ?? 0;
+}
+
+/**
+ * How many turns this player has left — INCLUDING the one they are in — before
+ * an empty field loses them the match.
+ *
+ * Stage 1 (the first empty turn-start) reads 3: this turn and two more. Stage 3
+ * reads 1, the last chance. Starting a turn that would be stage 4 is the loss,
+ * so this never legitimately reads 0.
+ */
+export function emptyFieldTurnsLeft(state, playerId) {
+  const stage = emptyFieldStage(state, playerId);
+  if (stage <= 0) return CONFIG.EMPTY_FIELD_LOSS_TURNS;
+  return Math.max(0, CONFIG.EMPTY_FIELD_LOSS_TURNS - stage + 1);
 }
 
 /**
@@ -313,8 +367,33 @@ export function playableLevelCap(state, playerId) {
 }
 
 /** Can this Persona card be played to the field yet? */
-export function canPlayPersonaCard(state, playerId, cardId) {
-  return getPersona(cardId).level <= playableLevelCap(state, playerId);
+export function canPlayPersonaCard(state, playerId, cardId, entry = null) {
+  // A Persona pulled back by Traesto is exempt: the ceiling exists to stop a
+  // card you have not earned dropping onto a small board, and this one was
+  // legally standing on your field a moment ago. Without the exemption,
+  // retreating your last Persona would be unrecoverable — you could never put
+  // it back down — which contradicts the whole point of an empty field being a
+  // position a player may choose.
+  if (entry?.persona) return true;
+  return handPersonaLevel(entry, cardId) <= playableLevelCap(state, playerId);
+}
+
+/**
+ * The level a Persona in hand actually is.
+ *
+ * Normally that is the printed level of the card. A Persona pulled back by
+ * Traesto is different: the hand entry carries the living instance, so the card
+ * in your hand is a level 30 body rather than the level 6 one on its face.
+ *
+ * Read by everything that prices a Persona in hand — the play ceiling, fusion
+ * material, the Gallows — so there is one answer to "how big is this card"
+ * rather than three. It is also the honest cost of the retreat: you cannot put
+ * a grown Persona back down until your board has climbed to meet it again.
+ */
+export function handPersonaLevel(entry, fallbackCardId = null) {
+  if (entry?.persona) return entry.persona.level;
+  const cardId = entry?.cardId ?? fallbackCardId;
+  return cardId ? getPersona(cardId).level : 0;
 }
 
 /** Every skill a Persona can currently use: printed (unlocked) + inherited. */
@@ -416,24 +495,6 @@ export function deckTop(state, playerId, count) {
   return player.deck.slice(0, count).filter(Boolean);
 }
 
-/**
- * Duo attacks this player could call right now.
- *
- * A Showtime belongs to the PAIR, not to either Persona: both halves have to be
- * on your field and on their feet, and once spent it is gone for the match.
- *
- * DESIGN NOTE: neither partner has to be in the active slot. "Usable by either
- * partner" is about which one leads, and requiring a specific one would mean
- * spending your Persona change to line the duo up before you could ever use it
- * — on top of drawing and fielding both halves, which is already the cost.
- */
-export function availableShowtimes(state, playerId) {
-  const player = state.players[playerId];
-  const standing = new Set(player.field.filter((p) => !p.ko && !p.knockedDown).map((p) => p.cardId));
-  return SHOWTIMES.filter(
-    (showtime) => !player.showtimesUsed?.includes(showtime.id) && showtime.pair.every((id) => standing.has(id))
-  );
-}
 
 /**
  * The skill Wild Card would copy: the last one the opponent used, if any.
@@ -509,6 +570,12 @@ export function gallowsMeal(eaterLevel, foodLevel, foodPassive = null, eaterMaxH
       // Gallows offers, so it is the one that costs a whole action.
       usesAction: true,
       nourishing: true,
+      // Both nourishing tiers may pass on one skill; only the feast can hand
+      // over the food's PASSIVE instead, and only the feast leaves a permanent
+      // mark on the body that ate.
+      canInherit: true,
+      canInheritPassive: true,
+      statBump: CONFIG.GALLOWS_STAT_BUMP,
     };
   }
 
@@ -520,6 +587,11 @@ export function gallowsMeal(eaterLevel, foodLevel, foodPassive = null, eaterMaxH
       heal: 0,
       usesAction: true,
       nourishing: true,
+      canInherit: true,
+      // A passive is the food's whole identity; handing one over takes food
+      // that had grown to your own size. See CONFIG for why that gate matters.
+      canInheritPassive: false,
+      statBump: 0,
     };
   }
 
@@ -532,5 +604,77 @@ export function gallowsMeal(eaterLevel, foodLevel, foodPassive = null, eaterMaxH
     // play, and charging a turn for it meant nobody ever did it.
     usesAction: false,
     nourishing: false,
+    // Nothing that far beneath you has anything left to teach.
+    canInherit: false,
+    canInheritPassive: false,
+    statBump: 0,
   };
+}
+
+/**
+ * The stat a Gallows feast permanently raises: whichever of the three combat
+ * stats the eater's card grows fastest, ties broken in printed order.
+ *
+ * DESIGN NOTE: `statGrowth` also carries hp and sp, and both grow by far larger
+ * numbers than str/mag/end — +1 HP on a 60 HP body is nothing anyone would
+ * notice, so the bump deliberately looks only at the three stats that move
+ * damage. Read here and nowhere else, so the Rules screen, the confirm dialog
+ * and the reducer can never disagree about which stat is coming.
+ */
+export const GALLOWS_BUMP_STATS = Object.freeze(['strength', 'magic', 'endurance']);
+
+export function gallowsBumpStat(cardId) {
+  const growth = getPersona(cardId).statGrowth ?? {};
+  let best = GALLOWS_BUMP_STATS[0];
+  for (const stat of GALLOWS_BUMP_STATS) {
+    if ((growth[stat] ?? 0) > (growth[best] ?? 0)) best = stat;
+  }
+  return best;
+}
+
+/**
+ * The skills a piece of Gallows food could pass on — the same rule fusion uses:
+ * a Persona on the field offers everything it can currently cast (printed and
+ * inherited alike), a card still in hand offers only what its printed level has
+ * unlocked. Anything the eater already knows is dropped, because inheriting it
+ * would change nothing.
+ *
+ * One list, read by the legal-action builder and by the reducer that validates
+ * the choice, so the UI can never offer a skill the engine would refuse.
+ */
+export function gallowsInheritOptions(state, food = {}, eater = null, { passives = false } = {}) {
+  const { persona = null, cardId = null } = food;
+  let offered;
+  let foodPassive;
+  if (persona) {
+    offered = personaSkills(state, persona);
+    foodPassive = persona.passive ?? null;
+  } else if (cardId) {
+    const card = getPersona(cardId);
+    offered = card.skills.filter((s) => s.unlockLevel <= card.level);
+    foodPassive = card.passive || null;
+  } else {
+    return [];
+  }
+
+  const known = eater ? new Set(personaSkills(state, eater).map((s) => s.id)) : new Set();
+  const out = offered
+    .filter((s) => !known.has(s.id))
+    .map((s) => ({ id: s.id, name: s.name, kind: 'skill' }));
+
+  // The food's passive, offered INSTEAD of a skill and only on the top tier —
+  // see gallowsMeal. Any passive in the game may move this way; the gate is the
+  // price (food grown to the eater's own level), not a list of approved ones.
+  // Dropped when the eater already has it, for the same reason a known skill is.
+  if (passives && foodPassive && (!eater || (eater.passive ?? null) !== foodPassive)) {
+    // The display name is filled in by legal.js, which owns the passive table;
+    // resolving it here would make state.js and passives.js import each other.
+    out.push({
+      id: `${PASSIVE_CHOICE_PREFIX}${foodPassive}`,
+      name: foodPassive,
+      kind: 'passive',
+      passiveId: foodPassive,
+    });
+  }
+  return out;
 }

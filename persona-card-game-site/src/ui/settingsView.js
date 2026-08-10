@@ -191,7 +191,7 @@ export function renderSettings(root) {
   const sound = section('Sound');
   sound.appendChild(
     el('p', 'settings-section__hint',
-      'The beta has no audio yet, so there is nothing to switch off. A toggle appears here as soon as there is a sound to attach it to.')
+      'Patch 3 has no audio yet, so there is nothing to switch off. A toggle appears here as soon as there is a sound to attach it to.')
   );
   wrap.appendChild(sound);
 

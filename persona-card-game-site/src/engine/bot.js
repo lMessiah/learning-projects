@@ -18,7 +18,7 @@
  *   chaos  - random, biased hard toward the highest-damage option; swingy
  */
 import { CONFIG, skillCategory } from './config.js';
-import { getCard, getPersona, getShowtime, getSkillDefinition, cardQuality } from '../data/cards.js';
+import { getCard, getPersona, getSkillDefinition, cardQuality } from '../data/cards.js';
 import { nextInt, nextFloat } from './rng.js';
 import { getLegalActions } from './legal.js';
 import {
@@ -32,6 +32,8 @@ import {
   findPersona,
   mimicableSkill,
   affinitiesOf,
+  comboMultiplier,
+  emptyFieldStage,
 } from './state.js';
 import {
   chainsOneMore,
@@ -91,7 +93,7 @@ function perceivedAffinity(persona, damageType, difficulty) {
  * Damage the bot *expects*, using only what it knows. Mirrors damage.js but
  * substitutes perceived affinity for the real one.
  */
-function estimateDamage(attacker, defender, { power, damageType, category, execute }, difficulty) {
+function estimateDamage(attacker, defender, { power, damageType, category, execute, comboMult = 1 }, difficulty) {
   const cat = category || skillCategory(damageType);
   const atkStat = Math.max(1, cat === 'phys' ? attacker.strength : attacker.magic);
   const base = (power * atkStat) / (atkStat + Math.max(0, defender.endurance));
@@ -117,7 +119,7 @@ function estimateDamage(attacker, defender, { power, damageType, category, execu
     amount: Math.max(
       0,
       Math.round(
-        base * affinityMult * attackMult * defenseMult * guardMult * shockMult * technicalMult * executeMult * chargeMult
+        base * affinityMult * attackMult * defenseMult * comboMult * guardMult * shockMult * technicalMult * executeMult * chargeMult
       )
     ),
     affinity,
@@ -135,10 +137,15 @@ function actionDamage(state, action, difficulty) {
   const targetOf = () =>
     (action.targetUid && findPersona(state, action.targetUid)) || getActive(state, foeId);
 
+  // The knockdown combo the bot has already built this turn. Without it the bot
+  // systematically under-reads its own damage mid-combo, which is exactly when
+  // it most needs to know whether the next hit finishes something.
+  const comboMult = playerId === state.activePlayer ? comboMultiplier(state) : 1;
+
   if (action.type === 'ATTACK') {
     const target = targetOf();
     if (!target) return { amount: 0, affinity: 'neutral' };
-    return estimateDamage(attacker, target, { power: CONFIG.BASIC_ATTACK_POWER, damageType: 'phys', category: 'phys' }, difficulty);
+    return estimateDamage(attacker, target, { power: CONFIG.BASIC_ATTACK_POWER, damageType: 'phys', category: 'phys', comboMult }, difficulty);
   }
 
   if (action.type === 'USE_SKILL') {
@@ -151,15 +158,14 @@ function actionDamage(state, action, difficulty) {
     return estimateDamage(
       attacker,
       target,
-      { power: skill.power, damageType: skill.type, category: skillCategory(skill.type), execute: skill.effect.execute },
+      { power: skill.power, damageType: skill.type, category: skillCategory(skill.type), execute: skill.effect.execute, comboMult },
       difficulty
     );
   }
 
-  // A Special and a Showtime are the same shape to the scorer: a card-level
-  // effect delivered by whoever is holding the active slot.
-  if (action.type === 'PLAY_SPECIAL' || action.type === 'SHOWTIME') {
-    const source = action.type === 'SHOWTIME' ? getShowtime(action.showtimeId) : getCard(action.cardId ?? '');
+  // A Special is a card-level effect delivered by whoever holds the active slot.
+  if (action.type === 'PLAY_SPECIAL') {
+    const source = getCard(action.cardId ?? '');
     if (source?.effect?.kind !== 'damage') return { amount: 0, affinity: 'neutral' };
     const { effect } = source;
     const category = effect.statSource === 'magic' ? 'magic' : attacker.magic >= attacker.strength ? 'magic' : 'phys';
@@ -228,7 +234,6 @@ function scoreAction(state, action, difficulty) {
 
     case 'ATTACK':
     case 'USE_SKILL':
-    case 'SHOWTIME':
     case 'PLAY_SPECIAL': {
       const { amount, affinity, technical } = actionDamage(state, action, difficulty);
 
@@ -264,9 +269,8 @@ function scoreAction(state, action, difficulty) {
       }
       if (affinity === 'resist') score -= 10;
 
-      // Don't burn a big-ticket Special or a once-a-match Showtime on a target
-      // that is nearly dead.
-      if ((action.type === 'PLAY_SPECIAL' || action.type === 'SHOWTIME') && target && target.hp < amount * 0.4) {
+      // Don't burn a big-ticket Special on a target that is nearly dead.
+      if (action.type === 'PLAY_SPECIAL' && target && target.hp < amount * 0.4) {
         score -= 25;
       }
 
@@ -284,7 +288,11 @@ function scoreAction(state, action, difficulty) {
       if (count >= CONFIG.FIELD_CAP) return 0;
       const card = getPersona(action.cardId);
       const power = (card.strength + card.magic + card.endurance) / 3;
-      if (count <= 1) return 90 + power; // never sit on an empty board
+      // An empty field is not a board-management preference, it is a countdown
+      // to losing the match outright. Nothing else on the list can outbid this,
+      // and it climbs as the timer does.
+      if (count === 0) return 1000 * (1 + emptyFieldStage(state, playerId)) + power;
+      if (count <= 1) return 90 + power;
       if (count <= 3) return 45 + power / 2;
       return Math.max(4, 20 - count * 2);
     }
@@ -423,9 +431,15 @@ function scoreGallows(state, action, difficulty) {
   // The tier and its payout already rode in on the action, so the bot values
   // exactly what the rules will hand it.
   const LEVEL_VALUE = 16;
-  const gain = action.nourishing
+  let gain = action.nourishing
     ? action.levels * LEVEL_VALUE
     : Math.min(eater.maxHp - eater.hp, action.heal) * 0.6;
+
+  // The expanded rewards. Both are free riders on a meal the bot was already
+  // weighing, so they nudge rather than decide: a kept skill is worth about a
+  // third of a level, and a permanent stat point rather less.
+  if (action.inherit) gain += LEVEL_VALUE * 0.35;
+  if (action.statBump) gain += action.statBumpAmount * LEVEL_VALUE * 0.25;
 
   const power = (c) => c.strength + c.magic + c.endurance;
   let cost = fromField
@@ -480,6 +494,31 @@ function scoreSupportEffect(state, action, effect, difficulty, source) {
       const target = action.targetUid ? findPersona(state, action.targetUid) : null;
       if (!target) return 0;
       return healValue(state, playerId, action.targetUid, 9999) + (target.maxSp - target.sp) * 0.4;
+    }
+
+    /**
+     * Traesto. The bot pulls a Persona back for exactly one reason: it is about
+     * to lose it. So the value is the damage it would have taken had it stayed,
+     * which is roughly the HP it is missing — plus a large bonus for a body it
+     * has actually invested levels in, because that is what a retreat saves.
+     *
+     * It refuses to empty its own board. That is a legal move and a human may
+     * want it; the bot has no plan that needs it and the clock is fatal, so it
+     * never spends an action to start one.
+     */
+    case 'retreat': {
+      const target = action.targetUid ? findPersona(state, action.targetUid) : null;
+      if (!target) return 0;
+      const own = livingField(state, playerId);
+      if (own.length <= 1) return 0; // never leave the board bare on purpose
+
+      const missing = target.maxHp - target.hp;
+      const ratio = target.hp / target.maxHp;
+      if (ratio > HEAL_THRESHOLD) return 0; // not in danger; the action is worth more elsewhere
+
+      const printed = getPersona(target.cardId).level;
+      const grown = Math.max(0, target.level - printed);
+      return missing * 0.5 + grown * 14 + (target.knockedDown ? 20 : 0);
     }
 
     case 'restoreSp': {
