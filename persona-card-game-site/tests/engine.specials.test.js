@@ -14,7 +14,7 @@ import {
   CONFIG,
 } from '../src/engine/index.js';
 import { SPECIALS, getCard, getPersona, getSkillDefinition } from '../src/data/cards.js';
-import { setupMatch, setField, setHand, activeOf, handUidOf, fakePersona } from './helpers.js';
+import { setupMatch, setField, setHand, activeOf, handUidOf, fakePersona, unlockFusion } from './helpers.js';
 
 /** Player 0: Orpheus (fire/phys). Player 1: Jack Frost (weak fire) + a bench. */
 function board({ ownerCard = 'orpheus' } = {}) {
@@ -388,7 +388,7 @@ describe('fusion, fully wired', () => {
       { cardId: 'sarasvati' },
     ]);
     setField(state, 1, [{ cardId: 'pixie', active: true }]);
-    return state;
+    return unlockFusion(state);
   }
 
   const fuse = (state, inherit = ['bufu', 'media']) =>
@@ -516,7 +516,7 @@ describe('fusion, fully wired', () => {
     })).not.toThrow();
 
     // one from each
-    const mixed = setupMatch();
+    const mixed = unlockFusion(setupMatch());
     setField(mixed, 0, [{ cardId: 'sarasvati', level: 26, active: true }]);
     setField(mixed, 1, [{ cardId: 'pixie', active: true }]);
     setHand(mixed, 0, ['jack-frost']);
@@ -533,7 +533,7 @@ describe('fusion, fully wired', () => {
     // Both straight from hand, with an unrelated Persona holding the field.
     // Hand material counts at its PRINTED level, so this needs a recipe two
     // fresh cards can actually reach: Sarasvati 19 + Berith 16 = 35 >= 26.
-    const bothHand = setupMatch();
+    const bothHand = unlockFusion(setupMatch());
     setField(bothHand, 0, [{ cardId: 'unicorn', level: 21, active: true }]);
     setField(bothHand, 1, [{ cardId: 'pixie', active: true }]);
     setHand(bothHand, 0, ['sarasvati', 'berith']);
@@ -565,7 +565,7 @@ describe('fusion, fully wired', () => {
   });
 
   it('leaves the active alone when only bench Personas were sacrificed', () => {
-    const state = setupMatch();
+    const state = unlockFusion(setupMatch());
     setField(state, 0, [
       { cardId: 'unicorn', level: 21, active: true },
       { cardId: 'jack-frost', level: 13 },

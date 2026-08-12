@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { applyAction, getLegalActions, personaSkills, CONFIG } from '../src/engine/index.js';
 import { getPersona } from '../src/data/cards.js';
-import { setupMatch, setField, setHand, activeOf, handUidOf } from './helpers.js';
+import { setupMatch, setField, setHand, activeOf, handUidOf, unlockFusion } from './helpers.js';
 
 /** Player 0's Pixie is about to finish off a 1 HP victim with a basic attack. */
 function killShot({ killer = { cardId: 'pixie' }, victimCardId = 'apsaras' }) {
@@ -79,7 +79,7 @@ describe('fusion', () => {
       { cardId: 'sarasvati' },
     ]);
     setField(state, 1, [{ cardId: 'pixie', active: true }]);
-    return state;
+    return unlockFusion(state);
   }
 
   const fuseAction = (state, inherit = ['bufu', 'media']) => ({
@@ -152,7 +152,7 @@ describe('fusion', () => {
   });
 
   it('can consume a Persona straight from hand', () => {
-    const state = setupMatch();
+    const state = unlockFusion(setupMatch());
     // Sarasvati grown to Lv26 + Jack Frost from hand at its printed Lv6 = 32.
     setField(state, 0, [{ cardId: 'sarasvati', level: 26, active: true }]);
     setField(state, 1, [{ cardId: 'pixie', active: true }]);

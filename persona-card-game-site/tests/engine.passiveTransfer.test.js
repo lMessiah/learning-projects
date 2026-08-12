@@ -15,7 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import { applyAction, getLegalActions, PASSIVE_DEFS, passiveDefinition, CONFIG } from '../src/engine/index.js';
 import { getPersona } from '../src/data/cards.js';
-import { setupMatch, setField, setHand, activeOf, uidOf, handUidOf } from './helpers.js';
+import { setupMatch, setField, setHand, activeOf, uidOf, handUidOf, unlockFusion } from './helpers.js';
 
 const ALL_PASSIVES = Object.keys(PASSIVE_DEFS);
 
@@ -62,7 +62,7 @@ describe('fusion moves any passive', () => {
     // The parent carries the passive under test. Which card prints it is
     // irrelevant to the rule, so it is written straight onto the instance.
     state.players[0].field[0].passive = parentPassive;
-    return state;
+    return unlockFusion(state);
   }
 
   const fuse = (state, inherit, extra = {}) =>

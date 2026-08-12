@@ -3,7 +3,7 @@
  * readable setup. Tests own their state object outright, so mutating it here
  * before feeding it to `applyAction` is safe.
  */
-import { createMatch, applyAction, createPersonaInstance } from '../src/engine/index.js';
+import { createMatch, applyAction, createPersonaInstance, CONFIG } from '../src/engine/index.js';
 import { getPersona } from '../src/data/cards.js';
 
 /** A started match with both starters chosen (first option each). */
@@ -17,6 +17,18 @@ export function setupMatch({ seed = 42, decks = ['p3', 'p4'], names = ['Alpha', 
   });
   state = applyAction(state, { type: 'CHOOSE_STARTER', player: 0, cardId: state.starterOptions[0][0] });
   state = applyAction(state, { type: 'CHOOSE_STARTER', player: 1, cardId: state.starterOptions[1][0] });
+  return state;
+}
+
+/**
+ * Skip past the opening-turns fusion lock.
+ *
+ * Fusion does not open until CONFIG.FUSION_FIRST_TURN, which is a rule about
+ * pacing rather than about any of the mechanics these fixtures test. Anything
+ * that fuses calls this so the lock is never the reason a test fails.
+ */
+export function unlockFusion(state) {
+  state.turn = Math.max(state.turn, CONFIG.FUSION_FIRST_TURN);
   return state;
 }
 

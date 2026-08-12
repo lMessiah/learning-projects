@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import { applyAction, getLegalActions, CONFIG } from '../src/engine/index.js';
 import { ITEMS, SPECIALS, getCard } from '../src/data/cards.js';
-import { setupMatch, setField, setHand, handUidOf, uidOf } from './helpers.js';
+import { setupMatch, setField, setHand, handUidOf, uidOf, unlockFusion } from './helpers.js';
 
 /**
  * What an action actually charged, in actions. A One More refunds the action in
@@ -44,7 +44,7 @@ function fusableBoard() {
     { cardId: 'apsaras', level: 20 },
   ]);
   setField(state, 1, [{ cardId: 'orpheus', active: true, hp: 900, maxHp: 900 }]);
-  return state;
+  return unlockFusion(state);
 }
 
 const firstFusion = (state) => getLegalActions(state, 0).find((a) => a.type === 'FUSE');

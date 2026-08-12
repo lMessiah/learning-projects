@@ -379,6 +379,40 @@ export function canPlayPersonaCard(state, playerId, cardId, entry = null) {
 }
 
 /**
+ * Can a fusion put this card on the board right now?
+ *
+ * The SAME ceiling a card played from hand answers to. Fusion used to be exempt,
+ * on the reasoning that two sacrifices and a combined-level requirement were
+ * price enough — but the two prices measure different things. Combined level
+ * asks "are the materials big enough"; the ceiling asks "has your board earned a
+ * Persona this size", and only the second one stops a small board leapfrogging
+ * straight to the top of the ladder.
+ *
+ * Read BEFORE the parents leave the field, which is what makes the ladder climb
+ * rather than lock: the Persona being fed in usually IS the board's ceiling, so
+ * a Lv 36 parent is exactly what admits a Lv 46 result.
+ */
+export function canFuseInto(state, playerId, resultCardId) {
+  return getPersona(resultCardId).level <= fusionLevelCap(state, playerId);
+}
+
+/** The printed level a FUSION RESULT must be at or under right now. */
+export function fusionLevelCap(state, playerId) {
+  return highestFieldLevel(state, playerId) + CONFIG.FUSION_LEVEL_GAP;
+}
+
+/**
+ * Has fusion opened yet?
+ *
+ * A whole-match gate rather than a per-player one, keyed to the turn counter
+ * the board already shows, so "fusion opens on turn 4" means the number the
+ * player is looking at.
+ */
+export function fusionUnlocked(state) {
+  return (state.turn ?? 0) >= CONFIG.FUSION_FIRST_TURN;
+}
+
+/**
  * The level a Persona in hand actually is.
  *
  * Normally that is the printed level of the card. A Persona pulled back by

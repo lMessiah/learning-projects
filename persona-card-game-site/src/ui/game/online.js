@@ -13,8 +13,15 @@ import { applyThemeFor } from '../theme.js';
 import { mountBoard } from './board.js';
 import { createHostSession, createGuestSession, HOST_SEAT, GUEST_SEAT } from '../../net/onlineMatch.js';
 import { createHostConnection, createGuestConnection, webrtcSupported } from '../../net/webrtc.js';
-import { createRendezvousClient, normaliseCode, isValidCode, CODE_LENGTH } from '../../net/shortcode.js';
-import { getRendezvousUrl } from '../settings.js';
+import { connectAsHost, connectAsGuest, relayAvailable, websocketSupported } from '../../net/websocket.js';
+import {
+  createRendezvousClient,
+  generateCode,
+  normaliseCode,
+  isValidCode,
+  CODE_LENGTH,
+} from '../../net/shortcode.js';
+import { getRendezvousUrl, getRelayUrl } from '../settings.js';
 import { mountRotatingTip } from '../tips.js';
 
 const DECK_SYMBOL = { p3: '🌙', p4: '🌫️', p5: '🎭' };
@@ -182,6 +189,74 @@ function shortCodeInput(label, onSubmit) {
   return wrap;
 }
 
+/* ------------------------------------------------------------------ *
+ * Shareable links
+ * ------------------------------------------------------------------ */
+
+/**
+ * The link a host sends their opponent.
+ *
+ * The code lives in the HASH rather than a query string, which matters for two
+ * reasons: this is a static site with a hash router, so a path the server has
+ * never heard of would 404; and a fragment is never sent to the server at all,
+ * so the match code stays between the two players even in access logs.
+ */
+export function shareLinkFor(code, location = globalThis.location) {
+  const base = `${location?.origin ?? ''}${location?.pathname ?? '/'}`;
+  return `${base}#/join/${String(code).toUpperCase()}`;
+}
+
+/** The match code in a `#/join/ABC234` hash, or '' for any other route. */
+export function joinCodeFromHash(hash) {
+  const match = String(hash ?? '').match(/^#\/join\/([^/?]+)/);
+  return match ? normaliseCode(decodeURIComponent(match[1])) : '';
+}
+
+/** A link with a copy button, shown big — this is the thing being shared. */
+function linkBlock(label, link, hint) {
+  const wrap = el('div', 'code-block');
+  wrap.appendChild(el('span', 'code-block__label', label));
+
+  const area = document.createElement('input');
+  area.type = 'text';
+  area.className = 'code-block__code code-block__code--link';
+  area.readOnly = true;
+  area.value = link;
+  area.addEventListener('focus', () => area.select());
+  wrap.appendChild(area);
+
+  const row = el('div', 'code-block__row');
+  const copy = button('🔗 Copy link', 'btn btn--primary', async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      copy.textContent = '✅ Copied';
+    } catch {
+      area.select();
+      copy.textContent = 'Press Ctrl/Cmd+C';
+    }
+    setTimeout(() => {
+      copy.textContent = '🔗 Copy link';
+    }, 2000);
+  });
+  row.appendChild(copy);
+  if (hint) row.appendChild(el('span', 'code-block__hint', hint));
+  wrap.appendChild(row);
+  return wrap;
+}
+
+/**
+ * Is a relay reachable right now?
+ *
+ * Probed rather than assumed, so a relay that is configured but down falls back
+ * to the copy-paste handshake instead of offering a link that cannot work.
+ */
+async function findRelay() {
+  if (!websocketSupported()) return null;
+  const url = getRelayUrl();
+  if (!url) return null;
+  return (await relayAvailable(url)) ? url : null;
+}
+
 /**
  * Rotating tips run on the connection screens, on BOTH sides — the handshake
  * is dead time on the host's screen as well as the guest's. One timer at a
@@ -216,10 +291,12 @@ function renderLobby(root, { onHost, onJoin, onExit }) {
 
   const wrap = el('section', 'setup');
 
-  if (!webrtcSupported()) {
+  // Either route is enough on its own: a relay needs only WebSockets, and the
+  // peer-to-peer path needs only WebRTC. Both missing is the dead end.
+  if (!webrtcSupported() && !websocketSupported()) {
     wrap.appendChild(
       el('div', 'notice notice--error',
-        'This browser does not support WebRTC, so online play is unavailable. Local multiplayer and the bot still work.')
+        'This browser supports neither WebSockets nor WebRTC, so online play is unavailable. Local multiplayer and the bot still work.')
     );
     root.appendChild(wrap);
     return;
@@ -227,7 +304,7 @@ function renderLobby(root, { onHost, onJoin, onExit }) {
 
   wrap.appendChild(
     el('p', 'setup__note',
-      'Play someone on another machine. Your two browsers talk directly to each other. With a rendezvous server configured you trade one six-character code; without one you paste the connection details directly, which needs no infrastructure at all.')
+      'Play someone on another machine. With a relay server running you send them a link and that is the whole handshake; otherwise your browsers connect directly and you trade codes by hand.')
   );
 
   const row = el('div', 'setup__row');
@@ -321,12 +398,77 @@ async function findRendezvous() {
   return (await client.available()) ? client : null;
 }
 
+/**
+ * Host over the relay: generate a code, show the link, wait for someone to open
+ * it. No copy-paste handshake and no second code — the relay seats both players
+ * itself, so the whole flow is one link.
+ */
+async function runHostViaRelay(root, choice, relay, { onExit }) {
+  const code = generateCode();
+  const connection = connectAsHost({ url: relay, code });
+
+  let cancelled = false;
+  teardown = () => {
+    cancelled = true;
+    connection.cancel();
+  };
+
+  root.innerHTML = '';
+  root.appendChild(topbar('Hosting', onExit));
+  const wrap = el('section', 'setup');
+  wrap.appendChild(statusPanel('Opening the match room…'));
+  root.appendChild(wrap);
+
+  // Nothing is shown until the relay confirms the room exists. A link built
+  // from a code the relay refused looks identical to one that works.
+  try {
+    await connection.joined;
+  } catch (error) {
+    if (cancelled) return;
+    wrap.innerHTML = '';
+    wrap.appendChild(el('div', 'notice notice--error', error.message));
+    wrap.appendChild(button('Try again', 'btn', () => runHost(root, choice, { onExit })));
+    return;
+  }
+  if (cancelled) return;
+
+  wrap.innerHTML = '';
+  wrap.appendChild(el('h2', 'setup__heading', 'Send your opponent this link'));
+  wrap.appendChild(linkBlock('Match link', shareLinkFor(code), 'Opening it drops them straight into the match.'));
+  wrap.appendChild(
+    el('p', 'setup__note', 'If a link is awkward to send, they can pick Join a match and type this code instead:')
+  );
+  wrap.appendChild(shortCodeBlock('Match code', code));
+  const waiting = statusPanel('Waiting for them to join…', 'The match starts by itself the moment they do.');
+  wrap.appendChild(waiting);
+
+  try {
+    const transport = await connection.connected;
+    if (cancelled) return;
+    startOnlineMatch(root, { transport, role: 'host', choice, onExit });
+  } catch (error) {
+    if (cancelled) return;
+    waiting.remove();
+    wrap.appendChild(el('div', 'notice notice--error', error.message));
+    wrap.appendChild(button('Try again', 'btn', () => runHost(root, choice, { onExit })));
+  }
+}
+
 async function runHost(root, choice, { onExit }) {
   root.innerHTML = '';
   root.appendChild(topbar('Hosting', onExit));
   const wrap = el('section', 'setup');
   wrap.appendChild(statusPanel('Preparing your code…', 'Gathering connection details. This takes a few seconds.'));
   root.appendChild(wrap);
+
+  // A relay gives the simplest flow there is — one link — so it is tried first.
+  // Everything below is the peer-to-peer path, unchanged, for when there is no
+  // relay to be had.
+  const relay = await findRelay();
+  if (relay) {
+    await runHostViaRelay(root, choice, relay, { onExit });
+    return;
+  }
 
   let connection;
   let rendezvous;
@@ -395,12 +537,61 @@ async function runHost(root, choice, { onExit }) {
  * Guest flow
  * ------------------------------------------------------------------ */
 
+/**
+ * Join over the relay. Reached two ways: by opening a shared link (the code
+ * comes from the URL and this runs immediately), or by typing a code in the
+ * lobby. Both land here.
+ */
+async function runJoinViaRelay(root, code, relay, { onExit, onFallback }) {
+  root.innerHTML = '';
+  root.appendChild(topbar('Joining', onExit));
+  const wrap = el('section', 'setup');
+  wrap.appendChild(statusPanel(`Joining match ${code}…`, 'Connecting to your opponent.'));
+  root.appendChild(wrap);
+
+  const connection = connectAsGuest({ url: relay, code });
+  let cancelled = false;
+  teardown = () => {
+    cancelled = true;
+    connection.cancel();
+  };
+
+  try {
+    const transport = await connection.connected;
+    if (cancelled) return;
+    startOnlineMatch(root, { transport, role: 'guest', onExit });
+  } catch (error) {
+    if (cancelled) return;
+    wrap.innerHTML = '';
+    wrap.appendChild(el('div', 'notice notice--error', error.message));
+    wrap.appendChild(
+      el('p', 'setup__note', 'Match links are good for as long as the host keeps the page open. Ask them for a fresh one.')
+    );
+    wrap.appendChild(button('Back to online menu', 'btn btn--primary', onFallback ?? onExit));
+  }
+}
+
 async function renderJoin(root, { onExit }) {
   root.innerHTML = '';
   root.appendChild(topbar('Joining', onExit));
   const wrap = el('section', 'setup');
-  wrap.appendChild(statusPanel('Looking for a rendezvous server…'));
+  wrap.appendChild(statusPanel('Looking for a server…'));
   root.appendChild(wrap);
+
+  // The relay path takes a code and nothing else, so it is offered first.
+  const relay = await findRelay();
+  if (relay) {
+    wrap.innerHTML = '';
+    wrap.appendChild(
+      el('p', 'setup__note', 'Open the link your opponent sent you, or type the six-character code here.')
+    );
+    wrap.appendChild(
+      shortCodeInput('Match code', async (code) => {
+        await runJoinViaRelay(root, code, relay, { onExit, onFallback: () => renderJoin(root, { onExit }) });
+      })
+    );
+    return;
+  }
 
   const rendezvous = await findRendezvous();
   wrap.innerHTML = '';
@@ -516,7 +707,7 @@ function startOnlineMatch(root, { transport, role, choice, onExit }) {
  * Route
  * ------------------------------------------------------------------ */
 
-export function renderOnline(root) {
+export function renderOnline(root, { joinCode = '' } = {}) {
   cleanup();
   const goMenu = () => {
     cleanup();
@@ -525,6 +716,9 @@ export function renderOnline(root) {
 
   const lobby = () => {
     cleanup();
+    // Arriving from a link puts the code in the hash; going back to the lobby
+    // has to clear it, or the next hashchange would rejoin the same match.
+    if (joinCodeFromHash(window.location.hash)) window.location.hash = '#/online';
     renderLobby(root, {
       onExit: goMenu,
       onHost: () =>
@@ -536,5 +730,40 @@ export function renderOnline(root) {
     });
   };
 
+  // A shared link skips the lobby entirely: the code is the whole decision.
+  if (joinCode) {
+    joinByLink(root, joinCode, { onExit: goMenu, onFallback: lobby });
+    return;
+  }
+
   lobby();
+}
+
+/** The `#/join/CODE` entry point: probe for the relay, then connect. */
+async function joinByLink(root, code, { onExit, onFallback }) {
+  root.innerHTML = '';
+  root.appendChild(topbar('Joining', onExit));
+  const wrap = el('section', 'setup');
+  wrap.appendChild(statusPanel('Opening the match link…'));
+  root.appendChild(wrap);
+
+  if (!isValidCode(code)) {
+    wrap.innerHTML = '';
+    wrap.appendChild(el('div', 'notice notice--error', `"${code}" is not a valid match code.`));
+    wrap.appendChild(button('Back to online menu', 'btn btn--primary', onFallback));
+    return;
+  }
+
+  const relay = await findRelay();
+  if (!relay) {
+    wrap.innerHTML = '';
+    wrap.appendChild(
+      el('div', 'notice notice--error',
+        'This match link needs a relay server, and none is reachable. If you are running the game locally, start it with "npm run relay" and set the address in Settings → Online.')
+    );
+    wrap.appendChild(button('Back to online menu', 'btn btn--primary', onFallback));
+    return;
+  }
+
+  await runJoinViaRelay(root, code, relay, { onExit, onFallback });
 }

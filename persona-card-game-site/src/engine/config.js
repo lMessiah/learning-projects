@@ -52,6 +52,29 @@ export const CONFIG = Object.freeze({
   FUSION_USES_ACTION: true,
   FUSIONS_PER_TURN: 1,
 
+  // --- When fusion opens -------------------------------------------------
+  // No fusion while `state.turn` is below this. The opening turns are for
+  // putting a board down and finding out what you are up against; a fusion
+  // landing before either player has committed anything skips that entirely.
+  //
+  // NOTE the turn counter is PER PLAYER TURN, not per round — turn 1 is the
+  // first player's, turn 2 the second's. So the first player is held for two of
+  // their own turns and the second for one. That asymmetry is deliberate: the
+  // first player is the one who could otherwise fuse first.
+  FUSION_FIRST_TURN: 4,
+
+  // The power curve as it applies to a FUSION RESULT: its printed level may be
+  // at most (highest level on your field + this).
+  //
+  // Wider than PLAY_LEVEL_GAP on purpose. Both gates ask "has your board earned
+  // this?", but fusion has already paid twice — two Personas sacrificed and a
+  // combined-level requirement — so it is allowed to reach further than a card
+  // played from hand. At parity with PLAY_LEVEL_GAP (10) the simulator showed
+  // fusion happening in 2.5% of matches, which is not a mechanic, it is a
+  // rumour: the first rung needed a level 28 board and decks print nothing
+  // above 25.
+  FUSION_LEVEL_GAP: 20,
+
   // SP economy
   //
   // Every Persona ENTERS PLAY AT FULL SP — starters, cards played from hand,

@@ -391,6 +391,10 @@ describe('fusion and specials in the UI', () => {
     const [first] = state.players[0].field;
     Object.assign(first, { cardId: 'jack-frost', level: 13, hp: 400, maxHp: 400, sp: 40, maxSp: 40 });
     state.players[0].field.push({ ...first, uid: 'sara-1', cardId: 'sarasvati', level: 19 });
+    // Fusion is locked for the opening turns, which is a pacing rule and not
+    // what any of these UI tests are about. One turn passes below, so the
+    // counter is wound forward to just short of the gate.
+    state.turn = Math.max(state.turn, CONFIG.FUSION_FIRST_TURN - 1);
 
     controller.dispatch({ type: 'PASS', player: 0 });
     controller.dispatch({ type: 'END_TURN', player: 0, discard: [] });
@@ -441,7 +445,20 @@ describe('fusion and specials in the UI', () => {
     expect(hot.querySelector('.btn__badge')).toBeTruthy();
   });
 
+  it('says fusion is shut in the opening turns, and why', () => {
+    // The panel is reachable from turn 1, but nothing in it is: fusion does not
+    // open until CONFIG.FUSION_FIRST_TURN, and the panel says so rather than
+    // blaming materials the player cannot do anything about yet.
+    openFusion();
+    expect(controller.getState().turn).toBeLessThan(CONFIG.FUSION_FIRST_TURN);
+    const reasons = $$('.fusion-recipe--blocked .fusion-recipe__reason').map((r) => r.textContent);
+    expect(reasons.length).toBe(14); // every recipe, all shut
+    expect(new Set(reasons)).toEqual(new Set([`Fusion opens on turn ${CONFIG.FUSION_FIRST_TURN}`]));
+    expect($('.fusion-recipe--ready')).toBe(null);
+  });
+
   it('lists every recipe, with reasons on the ones you cannot make', () => {
+    readyFusion(); // past the opening lock, with one recipe actually makeable
     openFusion();
     const rows = $$('.fusion-recipe');
     expect(rows.length).toBe(14); // every recipe in the database
@@ -449,8 +466,19 @@ describe('fusion and specials in the UI', () => {
     const blocked = $$('.fusion-recipe--blocked');
     expect(blocked.length).toBeGreaterThan(0);
     const reasons = blocked.map((r) => r.querySelector('.fusion-recipe__reason').textContent);
-    // Reasons are specific and actionable, not just "unavailable".
-    expect(reasons.some((r) => /^Need a /.test(r) || /^Combined level \d+\/\d+$/.test(r))).toBe(true);
+    // Reasons are specific and actionable, not just "unavailable". A recipe can
+    // be out of reach for the materials, or for the board itself — the power
+    // curve applies to a fusion result exactly as it does to a card in hand.
+    expect(
+      reasons.some(
+        (r) =>
+          /^Need a /.test(r) ||
+          /^Combined level \d+\/\d+$/.test(r) ||
+          /^Needs a Lv \d+ Persona on your field$/.test(r)
+      )
+    ).toBe(true);
+    expect(reasons.some((r) => r === 'Unavailable')).toBe(false);
+    expect(reasons.some((r) => /^Fusion opens on turn/.test(r))).toBe(false);
     expect(rows[0].querySelector('.fusion-recipe__formula').textContent).toMatch(/combined Lv \d+\+/);
   });
 

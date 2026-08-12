@@ -11,12 +11,16 @@ import {
   playableLevelCap,
   highestFieldLevel,
   canPlayPersonaCard,
+  canFuseInto,
+  fusionLevelCap,
+  fusionUnlocked,
+  describeFusions,
   CONFIG,
 } from '../src/engine/index.js';
 import { chooseBotAction } from '../src/engine/bot.js';
 import { getPersona, DECKS } from '../src/data/cards.js';
 import { ARCHETYPE_IDS, expandDeck } from '../src/data/archetypes.js';
-import { setupMatch, setField, setHand, activeOf, handUidOf } from './helpers.js';
+import { setupMatch, setField, setHand, activeOf, handUidOf, unlockFusion } from './helpers.js';
 
 describe('play level gap', () => {
   it('caps playable level at the best Persona on your field + PLAY_LEVEL_GAP', () => {
@@ -84,17 +88,20 @@ describe('play level gap', () => {
     }
   });
 
-  it('does not gate fusion results — fusion has its own level requirement', () => {
-    const state = setupMatch();
+  it('gates fusion results too — a small board cannot leapfrog the ladder', () => {
+    const state = unlockFusion(setupMatch());
+    // Combined level 32 satisfies the recipe's own requirement, but the best
+    // body on the board is a 16, so the ceiling for a fusion is 36.
     setField(state, 0, [
-      { cardId: 'jack-frost', level: 13, active: true },
-      { cardId: 'sarasvati' },
+      { cardId: 'jack-frost', level: 16, active: true },
+      { cardId: 'sarasvati', level: 16 },
     ]);
     setField(state, 1, [{ cardId: 'pixie', active: true }]);
 
-    // Black Frost is level 38, far above the cap, but fusion is allowed.
-    expect(playableLevelCap(state, 0)).toBe(19 + CONFIG.PLAY_LEVEL_GAP);
-    const after = applyAction(state, {
+    expect(fusionLevelCap(state, 0)).toBe(16 + CONFIG.FUSION_LEVEL_GAP);
+    expect(canFuseInto(state, 0, 'black-frost')).toBe(false); // Lv 38
+
+    const fuse = {
       type: 'FUSE',
       player: 0,
       recipeId: 'fuse-black-frost',
@@ -103,9 +110,104 @@ describe('play level gap', () => {
         { zone: 'field', uid: state.players[0].field[1].uid },
       ],
       inherit: ['bufu', 'media'],
-    });
-    expect(activeOf(after, 0).cardId).toBe('black-frost');
-    expect(activeOf(after, 0).level).toBe(38);
+    };
+    expect(() => applyAction(state, fuse)).toThrow(/level 38/);
+    // ...and it is never offered in the first place.
+    expect(getLegalActions(state, 0).some((a) => a.type === 'FUSE')).toBe(false);
+  });
+
+  it('reaches further than a card played from hand, because it has paid more', () => {
+    const state = unlockFusion(setupMatch());
+    setField(state, 0, [{ cardId: 'jack-frost', level: 20, active: true }]);
+    // The same board that could only PLAY a Lv 30 card can FUSE up to Lv 40.
+    expect(playableLevelCap(state, 0)).toBe(30);
+    expect(fusionLevelCap(state, 0)).toBe(40);
+    expect(CONFIG.FUSION_LEVEL_GAP).toBeGreaterThan(CONFIG.PLAY_LEVEL_GAP);
+  });
+
+  it('reads the ceiling BEFORE the parents are sacrificed, so the ladder climbs', () => {
+    // The Persona carrying the ceiling is usually one of the materials: a Lv 26
+    // Chariot fed into Surt (46) is precisely the next rung of the ladder. Both
+    // parents leave the field here, so if the ceiling were read afterwards —
+    // against an empty board — this fusion could never happen.
+    const state = unlockFusion(setupMatch());
+    setField(state, 0, [
+      { cardId: 'take-minakata', level: 26, active: true }, // Chariot, the ceiling
+      { cardId: 'nekomata', level: 20 }, // Magician
+    ]);
+    expect(fusionLevelCap(state, 0)).toBe(46); // exactly Surt's level
+    expect(canFuseInto(state, 0, 'surt')).toBe(true);
+
+    const legal = getLegalActions(state, 0).filter((a) => a.type === 'FUSE' && a.result === 'surt');
+    expect(legal.length).toBeGreaterThan(0);
+    const after = applyAction(state, legal[0]);
+    expect(activeOf(after, 0).cardId).toBe('surt');
+    expect(activeOf(after, 0).level).toBe(46);
+  });
+
+  it('allows a result standing exactly on the ceiling', () => {
+    const state = unlockFusion(setupMatch());
+    // A Lv 10 board fuses up to exactly Lv 30 — Kikuri-Hime.
+    setField(state, 0, [
+      { cardId: 'sarasvati', level: 10, active: true },
+      { cardId: 'jack-frost', level: 10 },
+    ]);
+    expect(fusionLevelCap(state, 0)).toBe(30);
+    expect(canFuseInto(state, 0, 'kikuri-hime')).toBe(true);
+    expect(canFuseInto(state, 0, 'titania')).toBe(false); // 33, one rung too far
+  });
+
+  it('tells the player which board they need, rather than blaming the materials', () => {
+    const state = unlockFusion(setupMatch());
+    setField(state, 0, [{ cardId: 'pixie', level: 3, active: true }]);
+    const entry = describeFusions(state, 0).find((e) => e.recipe.result === 'black-frost');
+    expect(entry.satisfiable).toBe(false);
+    expect(entry.belowCurve).toBe(true);
+    expect(entry.reason).toBe(`Needs a Lv ${38 - CONFIG.FUSION_LEVEL_GAP} Persona on your field`);
+  });
+});
+
+describe('the opening fusion lock', () => {
+  it('is shut before FUSION_FIRST_TURN and open from it', () => {
+    const state = setupMatch();
+    expect(state.turn).toBe(1);
+    expect(fusionUnlocked(state)).toBe(false);
+
+    for (let turn = 1; turn < CONFIG.FUSION_FIRST_TURN; turn++) {
+      expect(fusionUnlocked({ ...state, turn })).toBe(false);
+    }
+    expect(fusionUnlocked({ ...state, turn: CONFIG.FUSION_FIRST_TURN })).toBe(true);
+  });
+
+  it('offers no fusion at all in the opening turns, however good the board is', () => {
+    const state = setupMatch();
+    // A board that would otherwise fuse on the spot.
+    setField(state, 0, [
+      { cardId: 'jack-frost', level: 20, active: true },
+      { cardId: 'apsaras', level: 20 },
+    ]);
+    setField(state, 1, [{ cardId: 'pixie', active: true }]);
+    state.turn = CONFIG.FUSION_FIRST_TURN - 1;
+
+    expect(getLegalActions(state, 0).some((a) => a.type === 'FUSE')).toBe(false);
+    expect(describeFusions(state, 0).every((e) => !e.satisfiable)).toBe(true);
+    expect(describeFusions(state, 0)[0].reason).toBe(`Fusion opens on turn ${CONFIG.FUSION_FIRST_TURN}`);
+    expect(() =>
+      applyAction(state, {
+        type: 'FUSE',
+        player: 0,
+        recipeId: 'fuse-black-frost',
+        sacrifices: [
+          { zone: 'field', uid: state.players[0].field[0].uid },
+          { zone: 'field', uid: state.players[0].field[1].uid },
+        ],
+        inherit: ['bufu', 'media'],
+      })
+    ).toThrow(/not available until turn/);
+
+    // ...and the same board one turn later is fine.
+    const opened = { ...state, turn: CONFIG.FUSION_FIRST_TURN };
+    expect(getLegalActions(opened, 0).some((a) => a.type === 'FUSE')).toBe(true);
   });
 });
 

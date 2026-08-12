@@ -17,6 +17,9 @@ import {
   koedField,
   hasFieldRoom,
   canPlayPersonaCard,
+  canFuseInto,
+  fusionLevelCap,
+  fusionUnlocked,
   personaSkills,
   hasAilment,
   canTargetBench,
@@ -422,6 +425,7 @@ function pairFits(state, playerId, a, b) {
  */
 export function describeFusions(state, playerId) {
   const candidates = fusionCandidates(state, playerId);
+  const locked = !fusionUnlocked(state);
   const spent = (state.turnState?.fusionsPerformed ?? 0) >= CONFIG.FUSIONS_PER_TURN;
   // Two separate ways to be out of fusions, and they need separate wording: the
   // ration is gone for the turn, or the action that pays for one is.
@@ -458,8 +462,18 @@ export function describeFusions(state, playerId) {
       .filter(([arcana, count]) => candidates.filter((c) => c.arcana === arcana).length < count)
       .map(([arcana]) => arcana);
 
+    // The power curve outranks every other reason: no arrangement of materials
+    // makes a recipe available while the board is too small for the result, so
+    // saying "Need a Death Persona" first would send the player after the wrong
+    // thing entirely.
+    const belowCurve = !canFuseInto(state, playerId, recipe.result);
+
     let reason = null;
-    if (pairs.length === 0) {
+    if (locked) {
+      reason = `Fusion opens on turn ${CONFIG.FUSION_FIRST_TURN}`;
+    } else if (belowCurve) {
+      reason = `Needs a Lv ${getPersona(recipe.result).level - CONFIG.FUSION_LEVEL_GAP} Persona on your field`;
+    } else if (pairs.length === 0) {
       if (missing.length) reason = `Need a ${missing.join(' and a ')} Persona`;
       else if (!anyArcanaPair) reason = `Need ${recipe.arcana.join(' + ')} at the same time`;
       else if (bestCombined < recipe.minCombinedLevel) reason = `Combined level ${bestCombined}/${recipe.minCombinedLevel}`;
@@ -479,7 +493,9 @@ export function describeFusions(state, playerId) {
       arcana: recipe.arcana,
       pairs,
       bestCombined,
-      satisfiable: pairs.length > 0 && !spent && !noAction,
+      belowCurve,
+      locked,
+      satisfiable: pairs.length > 0 && !spent && !noAction && !belowCurve && !locked,
       usesAction: CONFIG.FUSION_USES_ACTION,
       // What the result is FOR. Deck building already uses this to decide which
       // material an archetype is dealt; surfacing it lets the player read the
@@ -496,8 +512,10 @@ export function describeFusions(state, playerId) {
  * to record whether a fusion went begging.
  */
 export function fusionAvailable(state, playerId) {
+  if (!fusionUnlocked(state)) return false;
   const candidates = fusionCandidates(state, playerId);
   for (const recipe of FUSION_RECIPES) {
+    if (!canFuseInto(state, playerId, recipe.result)) continue;
     for (let i = 0; i < candidates.length; i++) {
       for (let j = i + 1; j < candidates.length; j++) {
         const a = candidates[i];
@@ -516,9 +534,13 @@ export function fusionAvailable(state, playerId) {
 function fusionActions(state, playerId) {
   if (state.turnState.fusionsPerformed >= CONFIG.FUSIONS_PER_TURN) return [];
   if (CONFIG.FUSION_USES_ACTION && state.turnState.actionsRemaining <= 0) return [];
+  if (!fusionUnlocked(state)) return [];
   const candidates = fusionCandidates(state, playerId);
   const out = [];
   for (const recipe of FUSION_RECIPES) {
+    // The power curve applies to a fused Persona exactly as it does to one
+    // played from hand: your board has to have grown into it.
+    if (!canFuseInto(state, playerId, recipe.result)) continue;
     for (let i = 0; i < candidates.length; i++) {
       for (let j = i + 1; j < candidates.length; j++) {
         const a = candidates[i];

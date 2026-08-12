@@ -17,7 +17,7 @@ import {
   hasPassive,
 } from '../src/engine/index.js';
 import { PERSONAS, PASSIVE_IDS } from '../src/data/cards.js';
-import { setupMatch, setField, setHand, activeOf, uidOf, handUidOf, endTurn } from './helpers.js';
+import { setupMatch, setField, setHand, activeOf, uidOf, handUidOf, endTurn , unlockFusion} from './helpers.js';
 
 describe('the passive table', () => {
   it('never prints more than one passive on a card, and only known ones', () => {
@@ -239,7 +239,7 @@ describe('Soul Battery — onTurnStart', () => {
 
 describe('Sacrificial Lamb — onFusionMaterial', () => {
   it('hands the fusion result extra levels', () => {
-    let state = setupMatch();
+    let state = unlockFusion(setupMatch());
     // Girimehkala = Moon + Hermit, combined level 32+. Hua Po holds the passive.
     setField(state, 0, [
       { cardId: 'mothman', active: true, level: 17 },
@@ -260,7 +260,7 @@ describe('Sacrificial Lamb — onFusionMaterial', () => {
   });
 
   it('leaves the result at its printed level when neither parent is a Lamb', () => {
-    let state = setupMatch();
+    let state = unlockFusion(setupMatch());
     setField(state, 0, [
       { cardId: 'mothman', active: true, level: 17 },
       { cardId: 'ippon-datara', level: 20 }, // Hermit, no passive
@@ -286,7 +286,7 @@ describe('fusion inheritance of passives', () => {
       { cardId: 'silky' },
     ]);
     setField(state, 1, [{ cardId: 'orpheus', active: true }]);
-    return state;
+    return unlockFusion(state);
   }
 
   it('offers each parent its skills OR its passive', () => {
@@ -310,7 +310,7 @@ describe('fusion inheritance of passives', () => {
   });
 
   it('refuses to take two passives', () => {
-    let state = setupMatch();
+    let state = unlockFusion(setupMatch());
     // Black Frost = Magician + Priestess, 32+. Nekomata and Apsaras both have one.
     setField(state, 0, [
       { cardId: 'jack-o-lantern', active: true, level: 20 },
@@ -330,7 +330,7 @@ describe('fusion inheritance of passives', () => {
   });
 
   it('will not overwrite a native passive without a confirmation', () => {
-    let state = setupMatch();
+    let state = unlockFusion(setupMatch());
     setField(state, 0, [
       { cardId: 'jack-o-lantern', active: true, level: 20 },
       { cardId: 'apsaras', level: 15 },
@@ -349,7 +349,7 @@ describe('fusion inheritance of passives', () => {
   });
 
   it('keeps the native passive when nothing is inherited over it', () => {
-    let state = setupMatch();
+    let state = unlockFusion(setupMatch());
     setField(state, 0, [
       { cardId: 'jack-o-lantern', active: true, level: 20 },
       { cardId: 'apsaras', level: 15 },

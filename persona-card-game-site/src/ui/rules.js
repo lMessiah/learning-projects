@@ -624,7 +624,18 @@ function renderFaq() {
         para([
           'Open the ',
           b('🌀 Fusion'),
-          ` button any turn to see all ${FUSION_RECIPES.length} recipes. Ones you can perform are highlighted; the rest tell you exactly what they still need — the right Arcana, or a higher combined level. The button glows when at least one is ready.`,
+          ` button any turn to see all ${FUSION_RECIPES.length} recipes. Ones you can perform are highlighted; the rest tell you exactly what they still need — the right Arcana, a higher combined level, or a bigger board. The button glows when at least one is ready.`,
+        ])
+      );
+      body.appendChild(
+        para([
+          'Two things gate it beyond the materials. Fusion is ',
+          b(`shut until turn ${CONFIG.FUSION_FIRST_TURN}`),
+          ' — the opening turns are for putting a board down. After that a fused Persona has to clear a ',
+          b('power curve'),
+          ' of its own: its level may be at most ',
+          b(`the highest level on your field + ${CONFIG.FUSION_LEVEL_GAP}`),
+          `. That reaches further than a card played from hand (which gets +${CONFIG.PLAY_LEVEL_GAP}), because fusion has already paid two Personas for the privilege. The ceiling is measured before the sacrifice, so the big Persona you feed in is the one that lets the result land — which is how the recipes climb a rung at a time rather than a level 3 board reaching straight for a level 64.`,
         ])
       );
       body.appendChild(
@@ -853,21 +864,32 @@ function renderFaq() {
         para([
           'Main menu → ',
           b('🌐 Online Match'),
-          '. There are no accounts, and no server is needed by default: the two browsers talk ',
+          '. There are no accounts. How you connect depends on whether a ',
+          b('relay server'),
+          ' is running: with one you send a link, without one the two browsers talk ',
           b('directly to each other'),
-          ', and you connect by swapping a code over any chat you already use.',
+          ' and you swap a code over any chat you already use.',
         ])
       );
       body.appendChild(
         bullets([
-          [b('One of you hosts'), ' — choose both decks, then send over the code you are given.'],
-          [b('The other joins'), ' — enter that code.'],
+          [b('One of you hosts'), ' — choose both decks, then send over the link or code you are given.'],
+          [b('The other joins'), ' — open that link, or enter the code.'],
           ['The match begins, and plays exactly like a local game.'],
         ])
       );
       body.appendChild(
         para([
-          'By default the code ',
+          'A ',
+          b('match link'),
+          ' looks like yoursite/#/join/ABC234 and is the whole handshake: opening it drops your opponent straight into the match, with nothing to paste back. It needs the bundled relay to be running (',
+          { tag: 'code', text: 'npm run relay' },
+          '), which forwards messages between the two of you and stores no game data. When no relay can be reached the game falls back to the direct handshake below, so online play never depends on one.',
+        ])
+      );
+      body.appendChild(
+        para([
+          'In that fallback the code ',
           b('is'),
           ' the connection details, which is why it is a long block of text — a WebRTC handshake carries a security fingerprint and network addresses, and roughly 90 characters of it are irreducible. For a ',
           b('six-character code'),
@@ -885,9 +907,9 @@ function renderFaq() {
       );
       body.appendChild(
         para([
-          'Keep both tabs open for the whole match: there is nowhere to save a game in progress, so closing a tab ends it. If the code is accepted but the connection never completes, one of you is probably behind a strict firewall or a mobile network — a direct browser-to-browser link cannot always get through. Fixing that needs a ',
+          'Keep both tabs open for the whole match: there is nowhere to save a game in progress, so closing a tab ends it. If a direct connection is accepted but never completes, one of you is probably behind a strict firewall or a mobile network — a browser-to-browser link cannot always get through. Fixing that for the peer-to-peer path needs a ',
           b('TURN relay'),
-          ' that carries the traffic itself, which is a different and much heavier thing than the rendezvous server, and this project does not include one.',
+          ' that carries the traffic itself, which is a different and much heavier thing than the rendezvous server, and this project does not include one. The match-link relay above sidesteps the problem entirely, since every message already goes through it.',
         ])
       );
     })

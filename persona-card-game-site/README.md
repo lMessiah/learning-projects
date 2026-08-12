@@ -15,7 +15,9 @@ npm run dev      # http://localhost:5173
 npm test         # engine, bot and UI suites
 npm run build    # static bundle in dist/ (relative asset paths)
 npm run simulate # headless balance report (200 bot-vs-bot matches, ~100s)
-node server/rendezvous.js   # optional: six-character online match codes
+npm run relay    # match-link relay for online play (port 8788)
+npm run relay:smoke         # 11 checks against it, no browser needed
+node server/rendezvous.js   # optional: six-character WebRTC codes (legacy path)
 
 # The build uses base: './', so dist/ serves from anywhere:
 cd dist && python3 -m http.server
@@ -45,8 +47,10 @@ persist in localStorage and apply immediately.
 | `src/engine/` | Pure deterministic state machine — `applyAction(state, action)` / `getLegalActions(state, player)`. No DOM, no `Math.random()`; all randomness comes from a seeded RNG stored in state, so the same engine can later run on a server for online play. |
 | `src/engine/bot.js` | The four bot difficulties. Also pure: `chooseBotAction(state, player, difficulty, rng)` returns an action plus the advanced RNG, and only ever picks from `getLegalActions`. |
 | `src/ui/` | Rendering and event handling only. Never contains game rules. |
-| `server/rendezvous.js` | Optional, zero-dependency short-code server. Not needed to play. |
-| `src/net/` | Online play: `transport.js` (a 4-method interface + an in-memory pair for tests), `webrtc.js` (peer-to-peer data channel, copy-paste signalling), `onlineMatch.js` (host-authoritative protocol, same controller shape the board already consumes). |
+| `server/relay.js` | The match relay: seats two players in a room and forwards their messages verbatim. Never imports the engine. Required for shareable match links. |
+| `server/rendezvous.js` | Optional, zero-dependency short-code server for the WebRTC path. Not needed to play. |
+| `deploy/` | systemd unit, nginx site and a step-by-step guide for putting both on a server. |
+| `src/net/` | Online play: `transport.js` (a 4-method interface + an in-memory pair for tests), `websocket.js` (relay transport, used by match links), `webrtc.js` (peer-to-peer data channel, copy-paste signalling), `onlineMatch.js` (host-authoritative protocol, same controller shape the board already consumes). |
 | `src/ui/game/` | The match screen: `controller.js` (owns the state, paces the bot), `board.js` (renders + input), `inspect.js` (hover tooltip / tap detail), `anim.js` (state-diff feedback), `setup.js` (vs-bot picker), `hotseat.js` (local multiplayer + privacy gate). |
 | `src/styles/select.css` | The one selection & highlight system: hoverable / selected / valid-target / invalid, for every screen that lets you pick something. Loaded last so it wins; rings are `box-shadow`, never a border width, so a highlight can never move the layout. |
 | `tests/` | Vitest suites. The four `botMatch.*.test.js` files play whole matches through the real UI and are one difficulty per file — see the note in `tests/support/fullMatch.js` before merging any of them. |
@@ -355,9 +359,18 @@ in hand until your board grows into them. Prebuilt decks additionally contain no
 above `DECK_MAX_PERSONA_LEVEL` (25) — every Persona beyond that is fusion-only, and
 each one is the result of exactly one recipe (both enforced by `validateDatabase()`).
 
-Fusion is exempt from the gap: it is already paid for with two sacrificed Personas
-and a combined-level requirement, and the recipes form a ladder — mid tier (28–40)
-then high tier (46–64).
+Fusion answers to a gap of its own, `FUSION_LEVEL_GAP` (20) — wider than the hand-play
+gap because fusion has already paid twice, in two sacrificed Personas and a combined-level
+requirement. The two gates ask different questions: combined level asks whether the
+*materials* are big enough, the gap asks whether your *board* has earned a Persona that
+size, and only the second stops a small board jumping straight to the top. The ceiling is
+read before the parents are sacrificed, so the Persona you feed in is the one that admits
+the result — which is what makes the recipes a ladder (mid tier 28–40, then high tier
+46–64) climbed a rung at a time rather than a menu.
+
+Fusion is also shut for the opening turns (`FUSION_FIRST_TURN`, turn 4). The first turns
+are for putting a board down; a fusion landing before either player has committed anything
+skips that entirely.
 
 ## What's in Patch 3
 
@@ -375,9 +388,30 @@ Everything below is built, wired to the UI and covered by tests.
 
 ## Online multiplayer
 
-Two browsers talk directly over a WebRTC data channel. By default there is no
-backend at all: the peers connect by pasting their connection details to each
-other. That code is long because it *is* the connection detail — a WebRTC
+There are two ways in, and the game picks between them by itself.
+
+### Match links (relay)
+
+With `server/relay.js` running, hosting produces a link like
+`https://yoursite/#/join/ABC234`. Sending it is the entire handshake — the guest
+opens it and the match starts. The relay seats two players in a room and
+forwards their messages verbatim; it never imports the rules engine, parses a
+game message, or stores anything. See `deploy/README.md` to run it on a server.
+
+```bash
+npm run relay        # port 8788, loopback only
+npm run relay:smoke  # prove it works, no browser required
+```
+
+The relay address is empty by default, which means *the same host the page came
+from, at `/ws`* — a deployed site behind the bundled nginx config needs no
+configuration. Set Settings → Match links only when the relay lives elsewhere.
+
+### Peer to peer (no server)
+
+Without a relay the game falls back to WebRTC: two browsers talk directly over a
+data channel and there is no backend at all. The peers connect by pasting their
+connection details to each other. That code is long because it *is* the connection detail — a WebRTC
 handshake carries a 32-byte DTLS fingerprint, ICE credentials and candidate
 addresses, so ~90 characters of it are irreducible.
 

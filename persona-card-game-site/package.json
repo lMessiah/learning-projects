@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "relay": "node server/relay.js",
+    "relay:smoke": "node tools/relay-smoke.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "simulate": "vite-node tools/simulate.js"
@@ -16,5 +18,8 @@
     "jsdom": "^30.0.1",
     "vite": "^5.4.10",
     "vitest": "^2.1.4"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
   }
 }

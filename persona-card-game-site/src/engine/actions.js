@@ -19,6 +19,9 @@ import {
   koedField,
   hasFieldRoom,
   playableLevelCap,
+  canFuseInto,
+  fusionLevelCap,
+  fusionUnlocked,
   personaSkills,
   getSkill,
   hasAilment,
@@ -1029,6 +1032,9 @@ const handlers = {
     if (state.turnState.fusionsPerformed >= CONFIG.FUSIONS_PER_TURN) {
       fail(`only ${CONFIG.FUSIONS_PER_TURN} fusion per turn`);
     }
+    if (!fusionUnlocked(state)) {
+      fail(`fusion is not available until turn ${CONFIG.FUSION_FIRST_TURN} (this is turn ${state.turn})`);
+    }
     if (CONFIG.FUSION_USES_ACTION) requireAction(state);
     const player = state.players[action.player];
     const recipe = FUSION_RECIPES.find((r) => r.id === action.recipeId);
@@ -1065,6 +1071,18 @@ const handlers = {
     const combined = parents.reduce((sum, p) => sum + p.level, 0);
     if (combined < recipe.minCombinedLevel) {
       fail(`combined level ${combined} is below the required ${recipe.minCombinedLevel}`);
+    }
+
+    // The power curve, read while the parents are still standing — see
+    // canFuseInto. Checked here as well as in fusionActions because the engine
+    // never trusts a caller's idea of what is legal, and an online guest is a
+    // caller like any other.
+    if (!canFuseInto(state, action.player, recipe.result)) {
+      const result = getPersona(recipe.result);
+      fail(
+        `${result.name} is level ${result.level}; your board only supports a fusion up to level ` +
+          `${fusionLevelCap(state, action.player)} (highest on your field + ${CONFIG.FUSION_LEVEL_GAP})`
+      );
     }
 
     // Inheritance: from EACH parent, one skill OR that parent's passive.

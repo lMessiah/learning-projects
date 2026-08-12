@@ -1,0 +1,46 @@
+#
+# systemd unit for the match relay.
+#
+#   sudo cp deploy/persona-relay.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now persona-relay
+#   systemctl status persona-relay
+#
+# Edit User= and WorkingDirectory= if the checkout lives somewhere else.
+#
+[Unit]
+Description=Persona card game — WebSocket match relay
+Documentation=file:///home/nick/projects/persona-card-game-site/deploy/README.md
+After=network.target
+
+[Service]
+Type=simple
+User=nick
+Group=nick
+WorkingDirectory=/home/nick/projects/persona-card-game-site
+ExecStart=/usr/bin/node server/relay.js
+Environment=NODE_ENV=production
+Environment=PORT=8788
+# Loopback only — nginx proxies to it, nothing else should reach it.
+Environment=HOST=127.0.0.1
+
+# The relay holds rooms in memory and nothing else, so a restart costs only the
+# matches in flight. Always coming back is worth more than preserving them.
+Restart=always
+RestartSec=2
+
+# Hardening. The relay reads its own code, opens one socket, and writes nothing.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

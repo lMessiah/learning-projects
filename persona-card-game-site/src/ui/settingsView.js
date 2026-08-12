@@ -2,7 +2,14 @@
  * Settings screen. Everything here writes straight to localStorage and takes
  * effect immediately — no reload, no "apply" button.
  */
-import { getSettings, setSetting, resetSettings, ANIMATION_SPEEDS, DEFAULT_RENDEZVOUS } from './settings.js';
+import {
+  getSettings,
+  setSetting,
+  resetSettings,
+  ANIMATION_SPEEDS,
+  DEFAULT_RENDEZVOUS,
+  DEFAULT_RELAY,
+} from './settings.js';
 import { THEMES, applyThemeFor, setThemeOverride } from './theme.js';
 import { getProfileName, setProfileName, resetProfile } from './profile.js';
 import { renderRulesContent } from './rules.js';
@@ -223,6 +230,38 @@ export function renderSettings(root) {
       'Run the bundled one with: node server/rendezvous.js — zero dependencies, in memory, codes expire after 10 minutes.')
   );
   wrap.appendChild(online);
+
+  /* ---------- Relay ---------- */
+  const relay = section(
+    'Match links',
+    'A relay server is what turns an online match into a link you can send. Leave this empty on a deployed site: the game looks for a relay on the same address it was served from, at /ws. Set it only when the relay lives elsewhere — running the game with npm run dev being the usual reason.'
+  );
+
+  const relayRow = el('label', 'seat-name seat-name--wide');
+  relayRow.appendChild(el('span', null, 'Relay server (optional)'));
+  const relayInput = document.createElement('input');
+  relayInput.type = 'text';
+  relayInput.className = 'settings-input--relay';
+  relayInput.placeholder = `${DEFAULT_RELAY} — leave empty to use this site`;
+  relayInput.value = settings.relayUrl || '';
+  relayInput.addEventListener('change', () => {
+    setSetting('relayUrl', relayInput.value.trim());
+  });
+  relayRow.appendChild(relayInput);
+  relay.appendChild(relayRow);
+
+  relay.appendChild(
+    button(`Use ${DEFAULT_RELAY}`, 'btn btn--small', () => {
+      setSetting('relayUrl', DEFAULT_RELAY);
+      rerender();
+    })
+  );
+  relay.appendChild(
+    el('p', 'settings-section__hint',
+      'Run the bundled one with: npm run relay — it forwards messages between the two players and stores no game data. ' +
+        'Without a relay, online play still works through the copy-paste handshake above.')
+  );
+  wrap.appendChild(relay);
 
   /* ---------- Credits ---------- */
   const credits = section('Credits', 'Who built this, and what it is.');

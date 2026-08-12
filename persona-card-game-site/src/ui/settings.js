@@ -4,6 +4,8 @@
  * Reads are cheap and always current, so any view can call `getSettings()`
  * during render and pick up a change without a reload.
  */
+import { defaultRelayUrl } from '../net/websocket.js';
+
 const KEY = 'pcg.settings';
 
 /**
@@ -28,10 +30,17 @@ export const DEFAULTS = Object.freeze({
   // Optional rendezvous server for six-character match codes. Empty means the
   // serverless copy-paste handshake, which is the default.
   rendezvousUrl: '',
+  // Optional relay server for shareable match links. Empty does NOT mean "off"
+  // here: it means "the same host this page came from, at /ws", which is what a
+  // deployed site running server/relay.js behind nginx already is. Set it only
+  // when the relay lives somewhere else — `vite dev` being the usual case.
+  relayUrl: '',
 });
 
 /** Suggested value for someone running the bundled server locally. */
 export const DEFAULT_RENDEZVOUS = 'http://localhost:8787';
+/** ...and for the relay, which is the one `vite dev` needs pointing at. */
+export const DEFAULT_RELAY = 'ws://localhost:8788/ws';
 
 let cache = null;
 const listeners = new Set();
@@ -86,6 +95,17 @@ export function animationScale(settings = getSettings()) {
 /** Configured rendezvous base URL, or '' when short codes are not in use. */
 export function getRendezvousUrl(settings = getSettings()) {
   return String(settings.rendezvousUrl || '').trim().replace(/\/+$/, '');
+}
+
+/**
+ * Where the relay lives: the configured value, or the page's own host at `/ws`.
+ *
+ * Unlike the rendezvous setting, empty is a working default rather than "off" —
+ * a site served by nginx with the relay proxied at /ws needs no configuration.
+ */
+export function getRelayUrl(settings = getSettings()) {
+  const configured = String(settings.relayUrl || '').trim().replace(/\/+$/, '');
+  return configured || defaultRelayUrl();
 }
 
 /** Auto-end-turn delay in ms. No delay when animations are off. */

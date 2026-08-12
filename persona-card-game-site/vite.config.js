@@ -5,7 +5,17 @@ export default defineConfig({
   // Relative asset URLs so `dist/` works when served from any path,
   // e.g. `cd dist && python3 -m http.server`.
   base: './',
-  server: { port: 5173, open: false },
+  server: {
+    port: 5173,
+    open: false,
+    // In development the page is served from :5173 and the relay from :8788, so
+    // the default relay address (same host, /ws) would point at Vite itself.
+    // Proxying /ws makes the deployed layout and the dev layout identical, which
+    // is what lets match links work locally with no settings change.
+    proxy: {
+      '/ws': { target: 'http://localhost:8788', ws: true, changeOrigin: true },
+    },
+  },
   build: { outDir: 'dist', emptyOutDir: true },
   test: {
     environment: 'node',

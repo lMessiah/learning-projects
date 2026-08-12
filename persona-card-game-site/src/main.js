@@ -16,7 +16,7 @@ import { renderMenu } from './ui/menu.js';
 import { renderGallery } from './ui/gallery.js';
 import { renderBotGame } from './ui/game/botGame.js';
 import { renderHotseat } from './ui/game/hotseat.js';
-import { renderOnline } from './ui/game/online.js';
+import { renderOnline, joinCodeFromHash } from './ui/game/online.js';
 import { renderSettings } from './ui/settingsView.js';
 import { applyThemeFor } from './ui/theme.js';
 
@@ -29,10 +29,19 @@ const routes = {
   '#/settings': renderSettings,
 };
 
+/**
+ * `#/join/ABC234` is the shareable match link, so it is the one route that
+ * carries a parameter. Everything else is an exact match.
+ */
+function resolve(hash) {
+  const joinCode = joinCodeFromHash(hash);
+  if (joinCode) return (root) => renderOnline(root, { joinCode });
+  return routes[hash] || renderMenu;
+}
+
 function route() {
   const root = document.getElementById('app');
-  const render = routes[window.location.hash] || renderMenu;
-  render(root);
+  resolve(window.location.hash)(root);
   window.scrollTo(0, 0);
 }
 
