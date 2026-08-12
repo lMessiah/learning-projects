@@ -484,12 +484,14 @@ describe('fusion and specials in the UI', () => {
     expect(labels.some((l) => l.includes('Jack Frost'))).toBe(true);
     expect(labels.some((l) => l.includes('Sarasvati'))).toBe(true);
 
-    // And the button says what it costs.
+    // And the button says what it costs. Which answer that is belongs to
+    // CONFIG.FUSION_USES_ACTION, and is pinned against it in
+    // tests/board.actionCost.test.js; here it only has to name a price.
     expect($$('.fusion-preview__actions button').find((b) => /Fuse/.test(b.textContent)).textContent)
-      .toMatch(/uses your action/);
+      .toMatch(/action/i);
   });
 
-  it('performs the fusion with the chosen inherited skills, and leaves the action intact', () => {
+  it('performs the fusion with the chosen inherited skills, and spends the action', () => {
     readyFusion();
     const chosen = fuseThrough();
 
@@ -499,7 +501,7 @@ describe('fusion and specials in the UI', () => {
     expect(result.level).toBe(38);
     expect(result.inheritedSkills).toEqual(chosen);
     expect(state.players[0].koCount).toBe(0); // sacrifices are not KOs
-    expect(state.turnState.actionsRemaining).toBe(CONFIG.ACTIONS_PER_TURN); // fusion is free
+    expect(state.turnState.actionsRemaining).toBe(CONFIG.ACTIONS_PER_TURN - 1); // fusion costs the action
     expect(state.turnState.fusionsPerformed).toBe(1);
   });
 

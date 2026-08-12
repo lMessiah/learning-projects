@@ -70,9 +70,9 @@ function renderHowToPlay() {
   wrap.appendChild(
     bullets([
       [b(`Draw ${CONFIG.DRAW_PER_TURN}`), ' card. Your ', b('active'), ' Persona regains ', b(`${CONFIG.SP_REGEN_PER_TURN} SP`), ' — the bench regains nothing, so a spent Persona stays spent until you fight with it again.'],
-      ['Play as many ', b('Persona'), ' cards as you like (field cap ', b(String(CONFIG.FIELD_CAP)), '), plus at most ', b(`${CONFIG.ITEMS_PER_TURN} Item`), ', ', b(`${CONFIG.SPECIALS_PER_TURN} Special`), ' and ', b(`${CONFIG.FUSIONS_PER_TURN} fusion`), '. None of that costs your action.'],
+      ['Play as many ', b('Persona'), ' cards as you like (field cap ', b(String(CONFIG.FIELD_CAP)), '), plus at most ', b(`${CONFIG.ITEMS_PER_TURN} Item`), ' and ', b(`${CONFIG.SPECIALS_PER_TURN} Special`), '. None of that costs your action.'],
       ['Change your active Persona ', b(`${CONFIG.PERSONA_CHANGES_PER_TURN} time`), ' (more with Baton Pass).'],
-      ['Take your ', b('one action'), ': attack, use a skill, guard, feed a Persona to the Gallows, or pass.'],
+      ['Take your ', b('one action'), ': attack, use a skill, guard, fuse, feed a Persona to the Gallows, or pass.'],
       ['End the turn, discarding down to ', b(`${CONFIG.HAND_LIMIT} cards`), ' if you are over.'],
     ])
   );
@@ -338,8 +338,8 @@ function renderHowToPlay() {
     para([
       b('Fusion'),
       ' costs you ',
-      b('no action'),
-      `: like an Item or a Special it is a free play, rationed at ${CONFIG.FUSIONS_PER_TURN} per turn. Fuse and attack in the same turn. It used to cost the action, and that was why it hardly ever happened — it lost the comparison against attacking almost every turn.`,
+      b('your action'),
+      `, and you still get only ${CONFIG.FUSIONS_PER_TURN} fusion per turn on top of that. Fusing is the turn — you cannot fuse and attack. A One More refunds the action, so a weakness hit can buy you a fusion you had otherwise spent, but the ration still holds you to one.`,
     ])
   );
   wrap.appendChild(
@@ -616,8 +616,8 @@ function renderFaq() {
           'Fusion sacrifices ',
           b('two of your Personas'),
           ' — from your field, your hand, or one of each — to summon a stronger one at its printed level. It inherits one skill of your choice from each parent, and it costs you ',
-          b('no action at all'),
-          `: like an Item or a Special it is a free play, rationed at ${CONFIG.FUSIONS_PER_TURN} per turn. Fuse and attack in the same turn.`,
+          b('your action'),
+          `, rationed at ${CONFIG.FUSIONS_PER_TURN} per turn as well. Fusing is what you do with the turn, instead of attacking.`,
         ])
       );
       body.appendChild(
@@ -694,12 +694,12 @@ function renderFaq() {
   );
 
   wrap.appendChild(
-    faq('Does fusion still cost my turn?', (body) => {
+    faq('Does fusion cost my turn?', (body) => {
       body.appendChild(
         para([
-          'No. Fusion is a ',
-          b('free play'),
-          ` like an Item or a Special, rationed at ${CONFIG.FUSIONS_PER_TURN} per turn. You can fuse and still attack, and you can fuse after you have already attacked.`,
+          'Yes. Fusion takes ',
+          b('your one action'),
+          `, so you fuse or you attack — not both — and you cannot fuse once the action is gone. It is also rationed at ${CONFIG.FUSIONS_PER_TURN} per turn, which matters because a One More hands the action back: the refund lets you fuse after a weakness hit, but never twice.`,
         ])
       );
       body.appendChild(
@@ -833,7 +833,7 @@ function renderFaq() {
           [
             'A ',
             b('killing blow'),
-            ' grants nothing either — the reward for that is the level-up your Persona gets.',
+            ' does grant one. The target was standing, you found its weakness, and it went down — that it also died is a separate matter, and you get the level-up as well.',
           ],
           [
             `Baseline is ${CONFIG.MAX_ONE_MORE_PER_TURN} per turn. `,

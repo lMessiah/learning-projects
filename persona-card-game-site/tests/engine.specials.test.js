@@ -457,14 +457,19 @@ describe('fusion, fully wired', () => {
     expect(getPersona('black-frost').skills.map((s) => s.id)).not.toContain('media');
   });
 
-  it('is still available after your action for the turn is spent', () => {
+  it('is gone once your action for the turn is spent, and the panel says why', () => {
     let state = fusionBoard();
     state = applyAction(state, { type: 'GUARD', player: 0 }); // spends the action
     expect(state.turnState.actionsRemaining).toBe(0);
 
-    expect(getLegalActions(state, 0).some((a) => a.type === 'FUSE')).toBe(true);
-    expect(describeFusions(state, 0).find((e) => e.recipe.id === 'fuse-black-frost').satisfiable).toBe(true);
-    expect(() => fuse(state)).not.toThrow();
+    expect(getLegalActions(state, 0).some((a) => a.type === 'FUSE')).toBe(false);
+    const entry = describeFusions(state, 0).find((e) => e.recipe.id === 'fuse-black-frost');
+    expect(entry.satisfiable).toBe(false);
+    // The pair is still a valid pair — it is the price that cannot be paid, and
+    // the reason has to say so rather than blaming the materials.
+    expect(entry.pairs.length).toBeGreaterThan(0);
+    expect(entry.reason).toMatch(/no action left/i);
+    expect(() => fuse(state)).toThrow(/no actions remaining/i);
   });
 
   it('is illegal a second time in the same turn, and the panel says why', () => {

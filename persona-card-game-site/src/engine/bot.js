@@ -257,14 +257,18 @@ function scoreAction(state, action, difficulty) {
       if (target && amount >= target.hp && !enduresFatalBlow(target)) score += 60;
 
       // A knockdown is only worth a One More when it lands on a STANDING
-      // Persona: a killing blow, a guard, a Stalwart and an already-downed
-      // target all pay nothing. A Shock Technical knocks down in its own right,
-      // so it earns the same bonus without needing a weakness. The cap applies
-      // unless the attacker chains.
+      // Persona: a guard and an already-downed target pay nothing. A KILLING
+      // blow does pay — the engine knocks the target down before it removes it,
+      // so a lethal weakness hit earns the One More too. Stalwart is read at the
+      // target's CURRENT HP, which is why a lethal hit slips past it: at 0 HP
+      // there is nothing left for it to shrug off. A Shock Technical knocks down
+      // in its own right, so it earns the same bonus without needing a weakness.
+      // The cap applies unless the attacker chains.
       const knocksDown = affinity === 'weak' || technical === 'shock';
       if (knocksDown && target && oneMoreAvailable(state, active, turn)) {
+        const lethal = amount >= target.hp && !enduresFatalBlow(target);
         const wouldKnockDown =
-          !target.knockedDown && !target.guarding && amount < target.hp && !preventsKnockdown(target);
+          !target.knockedDown && !target.guarding && (lethal || !preventsKnockdown(target));
         if (wouldKnockDown) score += brutal ? 55 : 35;
       }
       if (affinity === 'resist') score -= 10;
@@ -398,7 +402,20 @@ function scoreFusion(state, action, difficulty) {
     return sum + (power(parent.card) * 0.7 + level * 0.5 + presence) * (lamb ? 0.55 : 1);
   }, 0);
 
-  const gain = resultValue - cost;
+  let gain = resultValue - cost;
+
+  // Fusion costs the action, so it does not merely have to be worth doing — it
+  // has to be worth more than the attack it displaces. Without this the bot
+  // would fuse on a scale calibrated back when fusing was free, and give up
+  // lethal swings to do it. The forgone damage is subtracted on the same scale
+  // the attack scorer uses (score starts at `amount`, +60 for a finishing blow),
+  // so the two are directly comparable rather than merely both being numbers.
+  if (CONFIG.FUSION_USES_ACTION && active && enemyActive && !active.knockedDown) {
+    const forgone = bestDamageFrom(state, active, enemyActive, difficulty);
+    const lethal = forgone >= enemyActive.hp && !enduresFatalBlow(enemyActive);
+    gain -= forgone + (lethal ? 60 : 0);
+  }
+
   if (gain <= 0) return 0;
   return brutal ? gain * 1.6 : gain * 0.8;
 }

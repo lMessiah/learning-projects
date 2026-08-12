@@ -25,20 +25,31 @@ export const CONFIG = Object.freeze({
   // Per-turn allowances
   ACTIONS_PER_TURN: 1,
   PERSONA_CHANGES_PER_TURN: 1,
-  // One More is granted only by knocking a STANDING enemy down with a weakness
-  // hit. Baseline is one per turn; the Trickster passive lifts the cap so
-  // knockdowns scored *during* a One More keep the chain alive.
+  // One More is granted by knocking a STANDING enemy down with a weakness hit —
+  // including one that kills it, because the knockdown is resolved before the
+  // knockout is. Baseline is one per turn; the Trickster passive lifts the cap
+  // so knockdowns scored *during* a One More keep the chain alive.
   MAX_ONE_MORE_PER_TURN: 1,
   ITEMS_PER_TURN: 1, // you may play at most one Item card per turn
   SPECIALS_PER_TURN: 1, // ...and at most one Special card per turn
-  // Fusion does NOT cost your action — it is a free play like an Item or a
-  // Special, and is rationed the same way instead.
+  // Fusion COSTS your action, and is rationed per turn on top of that.
   //
-  // DESIGN NOTE: it used to cost the action, and that was the reason fusion
-  // hardly ever happened: it competed directly with attacking, and attacking
-  // wins that comparison almost every turn. Metering it per turn rather than
-  // through the action budget keeps it from running away — without a cap you
-  // could fuse your whole board into one Persona in a single turn.
+  // DESIGN NOTE: this has been both ways. Charging the action makes fusion
+  // compete directly with attacking, and attacking wins that comparison most
+  // turns — which is why it was made free for a while, and why fusion happened
+  // far more often under that rule. It is charged again by explicit design
+  // decision (2026-08-12): a fusion is a turn's work, and getting a stronger
+  // body for free on top of a full turn of attacks was the stronger complaint.
+  //
+  // The per-turn ration is kept as well, and is not redundant: a One More
+  // refunds the action, so without the cap a weakness chain could fuse your
+  // whole board into one Persona in a single turn.
+  //
+  // FUSION_USES_ACTION is the single switch. Nothing re-derives the rule — the
+  // engine reads it, the legal FUSE actions carry it as `usesAction`, and the
+  // UI reads it off the action rather than working it out again. Flipping it
+  // back to false is a one-line change here.
+  FUSION_USES_ACTION: true,
   FUSIONS_PER_TURN: 1,
 
   // SP economy

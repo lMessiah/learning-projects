@@ -61,7 +61,24 @@ function renderRecipeList(entries, { readOnly, onPick, skillNameOf }) {
     head.appendChild(el('span', 'fusion-recipe__symbol', style.symbol));
 
     const titles = el('div', 'fusion-recipe__titles');
-    titles.appendChild(el('span', 'fusion-recipe__name', entry.result.name));
+    const nameRow = el('div', 'fusion-recipe__nameRow');
+    nameRow.appendChild(el('span', 'fusion-recipe__name', entry.result.name));
+    // What the result is for, in one word. Worth the pixels because the whole
+    // point of a recipe is deciding whether it is the one you want, and a
+    // statline does not answer that at a glance.
+    if (entry.alignment) {
+      const tag = el(
+        'span',
+        `fusion-recipe__align fusion-recipe__align--${entry.alignment}`,
+        entry.alignment === 'aggressive' ? '⚔️ Offence' : '🛡️ Defence'
+      );
+      tag.title =
+        entry.alignment === 'aggressive'
+          ? 'An offensive result: damage, reach and pressure.'
+          : 'A defensive result: healing, bulk and staying power.';
+      nameRow.appendChild(tag);
+    }
+    titles.appendChild(nameRow);
     titles.appendChild(
       el('span', 'fusion-recipe__formula',
         `${entry.arcana.join(' + ')} · combined Lv ${entry.minCombinedLevel}+ · result Lv ${entry.result.level}`)
@@ -170,12 +187,20 @@ function renderConfirm(entry, pair, draft, { onChange, onConfirm, onBack, skillN
 
   const actions = el('div', 'fusion-preview__actions');
   actions.appendChild(button('← Back', 'btn btn--ghost btn--small', onBack));
+  // DESIGN NOTE: the price is read off `entry.usesAction`, which is the engine's
+  // own verdict, and is never restated from memory here. This button once read
+  // "Fuse — uses your action" while the engine charged nothing, and that stale
+  // promise was the whole of a bug: whether fusing "took the turn" looked
+  // random to the player. Reading the flag means the label cannot drift again,
+  // in either direction — flipping FUSION_USES_ACTION rewrites this by itself.
+  const priceLabel = entry.usesAction ? 'Fuse — uses your action' : 'Fuse — free, keeps your action';
+  const priceHint = entry.usesAction
+    ? `Fusion costs your action for this turn, and you get ${CONFIG.FUSIONS_PER_TURN} per turn.`
+    : `Fusion costs no action — you can fuse and still attack. ${CONFIG.FUSIONS_PER_TURN} per turn.`;
   actions.appendChild(
-    button(overwrites ? 'Replace passive and fuse' : 'Fuse — uses your action', 'btn btn--primary', () => onConfirm(), {
+    button(overwrites ? 'Replace passive and fuse' : priceLabel, 'btn btn--primary', () => onConfirm(), {
       disabled: doubleUp,
-      title: doubleUp
-        ? 'Only one passive can survive a fusion'
-        : 'Performing a fusion consumes your one action for this turn',
+      title: doubleUp ? 'Only one passive can survive a fusion' : priceHint,
     })
   );
   side.appendChild(actions);
@@ -201,7 +226,10 @@ export function renderFusionPanel(options) {
   if (readOnly) {
     body.appendChild(
       el('p', 'modal__hint',
-        `Fusion is an action on your turn: sacrifice two of your Personas (field and/or hand) matching a recipe. The result enters at its printed level and inherits one skill from each parent. Field cap is ${CONFIG.FIELD_CAP}.`)
+        `${CONFIG.FUSION_USES_ACTION
+          ? `Fusion costs your action, and you get ${CONFIG.FUSIONS_PER_TURN} per turn — fuse or attack, not both.`
+          : `Fusion is a free play, ${CONFIG.FUSIONS_PER_TURN} per turn — it does not cost your action, so you can fuse and still attack.`
+        } Sacrifice two of your Personas (field and/or hand) matching a recipe. The result enters at its printed level and inherits one thing from each parent: a skill, or that parent's passive. Field cap is ${CONFIG.FIELD_CAP}.`)
     );
     body.appendChild(renderRecipeList(entries, { readOnly: true, skillNameOf }));
     return { body, title: 'Fusion recipes' };

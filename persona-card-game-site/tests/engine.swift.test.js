@@ -126,10 +126,26 @@ describe('Alacrity', () => {
     expect(state.turnState.personaChangesRemaining).toBe(before);
   });
 
-  it('gives nothing when the hit kills instead of knocking down', () => {
+  it('pays out on a killing weakness hit too — it knocks down before it kills', () => {
+    // Alacrity keys off the knockdown, and a lethal weakness hit now scores one:
+    // the target is put on its back and only then taken off the board. So the
+    // refund arrives exactly as it would have if the target had survived.
     let state = board({ hp: 1 });
     const before = state.turnState.personaChangesRemaining;
     state = applyAction(state, use('zio'));
+
+    expect(state.players[1].field[0].ko).toBe(true);
+    expect(state.turnState.personaChangesRemaining).toBe(before + 1 + CONFIG.ALACRITY_REFUND);
+  });
+
+  it('gives nothing when the killing hit found no weakness', () => {
+    let state = setupMatch();
+    setField(state, 0, [{ cardId: 'pixie', active: true }]);
+    setField(state, 1, [{ cardId: 'orpheus', active: true, hp: 1, maxHp: 900 }]); // neutral to elec
+    const before = state.turnState.personaChangesRemaining;
+
+    state = applyAction(state, use('zio'));
+
     expect(state.players[1].field[0].ko).toBe(true);
     expect(state.turnState.personaChangesRemaining).toBe(before);
   });

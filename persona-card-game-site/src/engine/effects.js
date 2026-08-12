@@ -596,15 +596,22 @@ export function twistFate(state, persona, element) {
 }
 
 /**
- * Deal already-computed damage. Returns { dealt, ko }.
+ * Deal already-computed damage. Returns { dealt, ko, lethal }.
  * `killer` gets the level-up credit if this drops the target.
+ *
+ * `deferKo` leaves the body standing on 0 HP and reports `lethal: true` instead
+ * of knocking it out, so the caller can finish resolving the blow first. Only
+ * resolveAttack uses it, and it is the reason a lethal weakness hit still
+ * registers its knockdown — see the ordering comment there. Every other caller
+ * (Burn, Fatigue, a Counter reflection) wants the KO to land immediately, and
+ * gets it, because a Persona left on 0 HP is not a state the board may rest in.
  */
-export function applyDamage(state, defender, amount, killer = null) {
-  if (defender.ko) return { dealt: 0, ko: false };
+export function applyDamage(state, defender, amount, killer = null, { deferKo = false } = {}) {
+  if (defender.ko) return { dealt: 0, ko: false, lethal: false };
   // Moonless Gown: nothing gets through, at the price of not acting.
   if (defender.warded) {
     pushLog(state, `${nameOf(defender)} is untouchable — the damage passes straight through.`, 'guard');
-    return { dealt: 0, ko: false };
+    return { dealt: 0, ko: false, lethal: false };
   }
   const dealt = Math.min(defender.hp, Math.max(0, amount));
 
@@ -616,17 +623,18 @@ export function applyDamage(state, defender, amount, killer = null) {
     defender.hp = 1;
     pushLog(state, `${nameOf(defender)} endured the hit! (Endure)`, 'endure');
     recordDamage(state, defender, dealt - 1, killer);
-    return { dealt: dealt - 1, ko: false, endured: true };
+    return { dealt: dealt - 1, ko: false, lethal: false, endured: true };
   }
 
   defender.hp -= dealt;
   recordDamage(state, defender, dealt, killer);
   if (defender.hp <= 0) {
     defender.hp = 0;
+    if (deferKo) return { dealt, ko: false, lethal: true };
     koPersona(state, defender, killer);
-    return { dealt, ko: true };
+    return { dealt, ko: true, lethal: true };
   }
-  return { dealt, ko: false };
+  return { dealt, ko: false, lethal: false };
 }
 
 /** The single hardest blow a player has landed, and what threw it. */
@@ -654,24 +662,37 @@ function recordBiggestHit(state, attacker, defender, dealt, sourceName) {
  * to it — which is the rule that used to be got wrong, because "a weakness hit"
  * and "a knockdown" look the same right up until something prevents one.
  *
+ * DESIGN NOTE: this runs BEFORE a lethal blow is turned into a knockout, which
+ * is why `lethal` is a parameter rather than a disqualification. Hitting a
+ * standing Persona's weakness knocks it down; whether the same blow then also
+ * kills it is a separate fact that happens afterwards, and it does not reach
+ * back and un-knock-down the body. The only thing `lethal` changes is the log
+ * line — the knockout message that follows says it better.
+ *
  * @returns {boolean} whether a knockdown actually occurred
  */
-function attemptKnockdown(state, attacker, defender, { qualifies, dealt }) {
+function attemptKnockdown(state, attacker, defender, { qualifies, dealt, lethal = false }) {
   if (!qualifies) return false;
+
+  // Nothing below may claim the Persona "stayed on its feet" when the same blow
+  // killed it, so a lethal hit takes the same decisions in silence.
+  const say = (message, kind) => {
+    if (!lethal) pushLog(state, message, kind);
+  };
 
   // A Moonless Gown means nothing reached it, so nothing can put it down. This
   // is the same rule as Guard and Stalwart wearing a different coat: no damage
   // arrived, so no knockdown, and therefore no One More either.
   if (defender.warded || dealt <= 0) {
-    pushLog(state, `${nameOf(defender)} was never touched, and stays on its feet.`, 'knockdown');
+    say(`${nameOf(defender)} was never touched, and stays on its feet.`, 'knockdown');
     return false;
   }
   if (defender.guarding) {
-    pushLog(state, `${nameOf(defender)} guarded and stayed on its feet.`, 'attack');
+    say(`${nameOf(defender)} guarded and stayed on its feet.`, 'attack');
     return false;
   }
   if (preventsKnockdown(defender)) {
-    pushLog(state, `${nameOf(defender)} shrugged it off and stayed standing. (Stalwart)`, 'knockdown');
+    say(`${nameOf(defender)} shrugged it off and stayed standing. (Stalwart)`, 'knockdown');
     return false;
   }
   // Already down: there is no second knockdown to score off it.
@@ -679,7 +700,8 @@ function attemptKnockdown(state, attacker, defender, { qualifies, dealt }) {
 
   defender.knockedDown = true;
   bumpStat(state, attacker.owner, 'knockdowns');
-  pushLog(state, `${nameOf(defender)} is knocked down!`, 'knockdown');
+  // On a lethal blow the knockout log says this and more, one line later.
+  say(`${nameOf(defender)} is knocked down!`, 'knockdown');
 
   // The combo builds for the rest of the acting player's turn. Counted after
   // the hit that scored it has already resolved, so a knockdown never boosts
@@ -792,7 +814,18 @@ export function resolveAttack(
     attacker.charges = attacker.charges.filter((c) => c !== result.chargeUsed);
   }
 
-  const { dealt, ko } = applyDamage(state, defender, result.amount, attacker);
+  // ORDER OF RESOLUTION. The knockout is deliberately held back to the end.
+  //
+  // A blow lands, it is reported, and THEN the board is asked what the damage
+  // did. Resolving the knockout first — which is what used to happen, because
+  // applyDamage did it on the spot — put the log in reverse ("was knocked out"
+  // before "took 40 damage — Weakness!") and, worse, meant a weakness hit that
+  // killed its target scored no knockdown and so granted no One More. Hitting a
+  // weakness hard enough to kill was strictly worse than hitting it softly.
+  //
+  // So: apply the damage, say what happened, put the body down, and only then
+  // take it off the board.
+  const { dealt, lethal } = applyDamage(state, defender, result.amount, attacker, { deferKo: true });
 
   bumpStat(state, attacker.owner, 'attacks');
   recordTypeUsed(state, attacker.owner, damageType);
@@ -831,15 +864,26 @@ export function resolveAttack(
   if (dealt > 0 && revealsAllAffinities(attacker, defender)) revealAllTypes(state, defender);
 
   // Weakness knocks the target down, and so does a Shock Technical — hitting a
-  // twitching Persona with something solid puts it on the floor.
+  // twitching Persona with something solid puts it on the floor. This is asked
+  // while the body is still on the board, even when the blow was fatal: dying
+  // from a weakness hit earns the attacker the same One More that surviving one
+  // would have.
   const knockedDown = attemptKnockdown(state, attacker, defender, {
-    qualifies: (result.weak || technical === 'shock') && !ko,
+    qualifies: result.weak || technical === 'shock',
     dealt,
+    lethal,
   });
+
+  // The blow has been reported and the body has been put down. Now, and only
+  // now, is it taken off the board.
+  const ko = lethal;
+  if (lethal) koPersona(state, defender, attacker);
 
   // Counter: a physical hit on a standing holder comes back at the attacker.
   // Reflected damage is applied directly, so it can never counter a counter and
-  // can never itself grant a One More.
+  // can never itself grant a One More. A Persona that just died still gets its
+  // swing in — the reflection is the incoming hit turning around, not something
+  // the holder chooses to do afterwards.
   const reflected = counterReflection(defender, { damageType, dealt, wasStanding });
   if (reflected > 0 && !attacker.ko) {
     pushLog(state, `${nameOf(defender)} counters for ${reflected} damage! (Counter)`, 'attack');

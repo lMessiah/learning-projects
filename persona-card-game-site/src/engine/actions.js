@@ -202,11 +202,14 @@ function spendAction(state) {
  * Spend the action, then hand out a One More if the hit knocked a STANDING
  * Persona down with a weakness.
  *
- * DESIGN NOTE: a killing blow grants no One More. `knockedDown` is only set
- * when the target survives on its feet and is put on its back; a Persona that
- * is knocked out is off the board entirely, and the reward for that is the
- * level-up the killer already receives. This also makes the rule single-valued:
- * one flag decides it, and hitting something already down can never qualify.
+ * DESIGN NOTE: a KILLING weakness hit grants one too. resolveAttack knocks the
+ * target down before it turns the blow into a knockout, so `knockedDown` is set
+ * whether or not the body survived it — the target was standing, its weakness
+ * was found, and that is the whole of the rule. It used to be the other way
+ * round, and the result was perverse: hitting a weakness hard enough to kill
+ * paid less than hitting it softly, so the correct play against a nearly-dead
+ * Persona was to poke it with something it resisted. One flag still decides it,
+ * and hitting something already down still can never qualify.
  */
 function consumeAction(state, result, attacker) {
   spendAction(state);
@@ -1021,11 +1024,12 @@ const handlers = {
 
   FUSE(state, action) {
     requirePlaying(state, action);
-    // Free, like playing an Item or a Special — rationed per turn instead of
-    // out of the action budget, so it never has to beat an attack to happen.
+    // Fusion is rationed per turn AND paid for out of the action budget. Both
+    // gates are checked before anything is sacrificed — see FUSION_USES_ACTION.
     if (state.turnState.fusionsPerformed >= CONFIG.FUSIONS_PER_TURN) {
       fail(`only ${CONFIG.FUSIONS_PER_TURN} fusion per turn`);
     }
+    if (CONFIG.FUSION_USES_ACTION) requireAction(state);
     const player = state.players[action.player];
     const recipe = FUSION_RECIPES.find((r) => r.id === action.recipeId);
     if (!recipe) fail(`unknown fusion recipe "${action.recipeId}"`);
@@ -1165,6 +1169,10 @@ const handlers = {
 
     state.turnState.fusionsPerformed += 1;
     notePersonaEnteredField(state, action.player);
+    // Charged last, so that a fusion which fails partway through costs nothing.
+    // (It would cost nothing anyway — `fail` discards the whole draft — but the
+    // order keeps that guarantee true by construction rather than by accident.)
+    if (CONFIG.FUSION_USES_ACTION) spendAction(state);
     return state;
   },
 

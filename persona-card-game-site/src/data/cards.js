@@ -55,6 +55,20 @@ export const PERSONAS = raw.personas.map((p) => buildPersona(p, skillLibrary));
 export const ITEMS = raw.items.map((i) => ({ ...i, usesAction: Boolean(i.usesAction) }));
 export const SPECIALS = raw.specials.map((s) => ({ ...s, usesAction: Boolean(s.usesAction) }));
 export const FUSION_RECIPES = raw.fusionRecipes;
+
+/**
+ * What a fusion result is FOR, as a play pattern.
+ *
+ * Every recipe carries one of these. It is what lets a deck be built toward the
+ * fusion its archetype actually wants: an Aggressive deck is dealt the material
+ * for an aggressive result, a Defensive one the material for a defensive result.
+ *
+ * The tag describes the RESULT, not the parents — the parents are ordinary
+ * Personas of whatever Arcana the recipe asks for, and most of them feed both
+ * kinds of recipe. See FUSION_ALIGNMENT_EVIDENCE in archetypes.js for what each
+ * verdict was read off.
+ */
+export const FUSION_ALIGNMENTS = Object.freeze(['aggressive', 'defensive']);
 export const DECKS = raw.decks;
 export const STARTER_POOL = raw.starterPool;
 
@@ -194,6 +208,14 @@ export function validateDatabase() {
     if (!BY_ID.has(recipe.result)) errors.push(`Recipe ${recipe.id}: unknown result "${recipe.result}"`);
     for (const arcana of recipe.arcana) {
       if (!ARCANA.includes(arcana)) errors.push(`Recipe ${recipe.id}: unknown arcana "${arcana}"`);
+    }
+    // Untagged is not allowed to mean "neither": deck building sorts recipes by
+    // this, and a missing tag would quietly drop the recipe out of every
+    // archetype's plan instead of failing loudly here.
+    if (!FUSION_ALIGNMENTS.includes(recipe.alignment)) {
+      errors.push(
+        `Recipe ${recipe.id}: alignment must be one of ${FUSION_ALIGNMENTS.join(' | ')}, got ${JSON.stringify(recipe.alignment)}`
+      );
     }
   }
 

@@ -76,12 +76,137 @@ describe('what grants a One More', () => {
     expect(state.turnState.actionsRemaining).toBe(0);
   });
 
-  it('grants none for a killing blow — the reward for that is the level-up', () => {
+  it('grants one for a KILLING weakness hit — down first, dead second', () => {
     let state = elecChain({ hp: 1 });
     state = applyAction(state, zio());
 
     expect(state.players[1].field[0].ko).toBe(true);
+    expect(state.turnState.oneMoresGranted).toBe(1);
+    expect(state.turnState.actionsRemaining).toBe(1); // spent one, gained one
+  });
+
+  it('pays the same whether the weakness hit kills or not', () => {
+    // The rule this locks down: a weakness hit must never be worth LESS for
+    // landing harder. Before the fix, killing with it granted nothing, so
+    // poking a nearly-dead Persona was better than finishing it.
+    const survived = applyAction(elecChain({ hp: 900 }), zio());
+    const killed = applyAction(elecChain({ hp: 1 }), zio());
+
+    expect(survived.turnState.oneMoresGranted).toBe(killed.turnState.oneMoresGranted);
+    expect(survived.turnState.actionsRemaining).toBe(killed.turnState.actionsRemaining);
+    expect(survived.turnState.personaChangesRemaining).toBe(killed.turnState.personaChangesRemaining);
+  });
+
+  it('grants none when a killing blow finds no weakness', () => {
+    let state = setupMatch();
+    setField(state, 0, [{ cardId: 'pixie', active: true }]);
+    setField(state, 1, [{ cardId: 'orpheus', active: true, hp: 1, maxHp: 900 }]); // neutral to elec
+
+    state = applyAction(state, zio());
+
+    expect(state.players[1].field[0].ko).toBe(true);
     expect(state.turnState.oneMoresGranted).toBe(0);
+  });
+
+  it('grants none when a killing blow lands on a Persona already down', () => {
+    let state = elecChain();
+    state = applyAction(state, zio()); // knock Apsaras down, One More #1
+    state.players[1].field[0].hp = 1;
+
+    state = applyAction(state, zio(0, state.players[1].activeUid));
+
+    expect(state.players[1].field[0].ko).toBe(true);
+    expect(state.turnState.oneMoresGranted).toBe(1); // still just the first
+  });
+
+  it('grants none when a guard holds through a killing blow', () => {
+    // Guard prevents the knockdown, and preventing the knockdown is what costs
+    // the One More — even though the target died anyway.
+    let state = elecChain({ hp: 1 });
+    state = applyAction(state, { type: 'END_TURN', player: 0, discard: [] });
+    state = applyAction(state, { type: 'GUARD', player: 1 });
+    state = applyAction(state, { type: 'END_TURN', player: 1, discard: [] });
+
+    state = applyAction(state, zio());
+
+    expect(state.players[1].field[0].ko).toBe(true);
+    expect(state.turnState.oneMoresGranted).toBe(0);
+  });
+
+  it('lets a lethal weakness hit chain with Trickster', () => {
+    // Pixie kills the active outright, then reaches the bench on the One More
+    // its kill earned and knocks that down too.
+    let state = elecChain({ hp: 1 });
+    state = applyAction(state, zio());
+    expect(state.turnState.oneMoresGranted).toBe(1);
+
+    state = applyAction(state, zio(0, state.players[1].field[1].uid));
+
+    expect(state.turnState.oneMoresGranted).toBe(2);
+  });
+});
+
+/**
+ * Ordering. A blow is applied, reported, and only then turned into a knockout —
+ * so the log reads forwards. It used to read backwards, and the same inversion
+ * was what cost a lethal weakness hit its One More.
+ */
+describe('the order a killing blow resolves in', () => {
+  const textsOf = (state, since = 0) => state.log.slice(since).map((l) => l.text);
+  const indexOf = (texts, pattern) => texts.findIndex((t) => pattern.test(t));
+
+  it('reports the damage before the knockout', () => {
+    const before = elecChain({ hp: 1 }).log.length;
+    const state = applyAction(elecChain({ hp: 1 }), zio());
+    const texts = textsOf(state, before);
+
+    const damage = indexOf(texts, /took \d+ damage — Weakness!/);
+    const ko = indexOf(texts, /was knocked out!/);
+
+    expect(damage).toBeGreaterThanOrEqual(0);
+    expect(ko).toBeGreaterThanOrEqual(0);
+    expect(damage).toBeLessThan(ko);
+  });
+
+  it('reports the knockout before the One More it paid for', () => {
+    const before = elecChain({ hp: 1 }).log.length;
+    const state = applyAction(elecChain({ hp: 1 }), zio());
+    const texts = textsOf(state, before);
+
+    expect(indexOf(texts, /was knocked out!/)).toBeLessThan(indexOf(texts, /ONE MORE!/));
+  });
+
+  it('does not also announce a knockdown — the knockout line says it', () => {
+    const before = elecChain({ hp: 1 }).log.length;
+    const state = applyAction(elecChain({ hp: 1 }), zio());
+    const texts = textsOf(state, before);
+
+    expect(texts.some((t) => /is knocked down!/.test(t))).toBe(false);
+    expect(texts.some((t) => /was knocked out!/.test(t))).toBe(true);
+  });
+
+  it('never claims a Persona stayed on its feet in the same breath as killing it', () => {
+    // Guard blocks the knockdown but not the death, so the prevention branch
+    // must keep quiet rather than contradict the knockout line below it.
+    let state = elecChain({ hp: 1 });
+    state = applyAction(state, { type: 'END_TURN', player: 0, discard: [] });
+    state = applyAction(state, { type: 'GUARD', player: 1 });
+    state = applyAction(state, { type: 'END_TURN', player: 1, discard: [] });
+    const before = state.log.length;
+    state = applyAction(state, zio());
+    const texts = textsOf(state, before);
+
+    expect(texts.some((t) => /stayed on its feet|stays on its feet|stayed standing/.test(t))).toBe(false);
+    expect(texts.some((t) => /was knocked out!/.test(t))).toBe(true);
+  });
+
+  it('still reads forwards when the target survives', () => {
+    const before = elecChain().log.length;
+    const state = applyAction(elecChain(), zio());
+    const texts = textsOf(state, before);
+
+    expect(indexOf(texts, /took \d+ damage/)).toBeLessThan(indexOf(texts, /is knocked down!/));
+    expect(indexOf(texts, /is knocked down!/)).toBeLessThan(indexOf(texts, /ONE MORE!/));
   });
 });
 

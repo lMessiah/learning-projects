@@ -20,8 +20,9 @@ import {
   validateAll,
   completableRecipes,
   MIN_COMPLETABLE_RECIPES,
+  FUSION_ALIGNMENT_EVIDENCE,
 } from '../src/data/archetypes.js';
-import { DECKS, getCard, ARCHETYPE_TAGS } from '../src/data/cards.js';
+import { DECKS, getCard, ARCHETYPE_TAGS, FUSION_RECIPES, FUSION_ALIGNMENTS } from '../src/data/cards.js';
 import { createMatch, createRng, CONFIG } from '../src/engine/index.js';
 
 const FLAVOURS = DECKS.map((d) => d.id);
@@ -190,6 +191,138 @@ describe('every deck can actually fuse', () => {
     const own = leaning(expandDeck('p5', { archetype: 'aggressive', seed: 3 }), 'aggressive');
     const rival = leaning(expandDeck('p5', { archetype: 'defensive', seed: 3 }), 'aggressive');
     expect(own).toBeGreaterThan(rival);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Fusion alignment and the material weighting
+ * ------------------------------------------------------------------ */
+
+const SEEDS = Array.from({ length: 40 }, (_, i) => i * 137 + 11);
+
+/** Recipes a flavour+archetype can complete, averaged over SEEDS. */
+function reach(flavour, archetype, filter = () => true) {
+  const counts = SEEDS.map(
+    (seed) => completableRecipes(expandDeck(flavour, { archetype, seed })).filter(filter).length
+  );
+  return counts.reduce((a, b) => a + b, 0) / counts.length;
+}
+
+const isAligned = (alignment) => (recipe) => recipe.alignment === alignment;
+
+describe('every fusion result is marked aggressive or defensive', () => {
+  it('tags all of them, with nothing left to interpretation', () => {
+    for (const recipe of FUSION_RECIPES) {
+      expect(FUSION_ALIGNMENTS, `${recipe.id} alignment`).toContain(recipe.alignment);
+    }
+  });
+
+  it('records the evidence for every verdict, so none of them is folklore', () => {
+    for (const recipe of FUSION_RECIPES) {
+      expect(FUSION_ALIGNMENT_EVIDENCE[recipe.id], `${recipe.id} has no stated evidence`).toBeTruthy();
+    }
+    // The evidence table must not outlive the recipes it describes.
+    const ids = new Set(FUSION_RECIPES.map((r) => r.id));
+    for (const id of Object.keys(FUSION_ALIGNMENT_EVIDENCE)) expect(ids).toContain(id);
+  });
+
+  it('splits the roster evenly, so neither play style has more to build toward', () => {
+    const agg = FUSION_RECIPES.filter(isAligned('aggressive'));
+    const def = FUSION_RECIPES.filter(isAligned('defensive'));
+    expect(agg.length).toBe(def.length);
+  });
+
+  it('asks a comparable price on each side, so the split is not cosmetic', () => {
+    // A 7/7 count would mean nothing if one side's recipes all cost twice as
+    // much to reach. Compared on the combined-level bar, they must stay close.
+    const bar = (list) => list.reduce((sum, r) => sum + r.minCombinedLevel, 0) / list.length;
+    const agg = bar(FUSION_RECIPES.filter(isAligned('aggressive')));
+    const def = bar(FUSION_RECIPES.filter(isAligned('defensive')));
+    expect(Math.abs(agg - def)).toBeLessThan(4);
+  });
+});
+
+describe('a deck is dealt material for the fusion it actually wants', () => {
+  it('gives Tactical decks more reachable fusions than an unweighted deck, in every flavour', () => {
+    for (const flavour of FLAVOURS) {
+      expect(reach(flavour, 'tactical'), `${flavour}`).toBeGreaterThan(reach(flavour, null));
+    }
+  });
+
+  it('gives Tactical more reachable fusions than Swift, which wants none', () => {
+    // Swift out-reached Tactical before this weighting existed, purely by
+    // accident: a Swift deck is full of cheap low-level bodies spread thinly
+    // across Arcana, which is the shape that satisfies cheap recipes for free.
+    for (const flavour of FLAVOURS) {
+      expect(reach(flavour, 'tactical'), `${flavour}`).toBeGreaterThan(reach(flavour, 'swift'));
+    }
+  });
+
+  it('never leaves an archetype worse than unweighted at reaching its OWN alignment', () => {
+    // The honest measure of the alignment tilt, and the one that caught a real
+    // regression: at a weaker weight, P3 Defensive reached FEWER defensive
+    // fusions than an unweighted deck, because Defensive affinity spent its
+    // Persona slots on Unicorn — and Strength is one of only two Arcana that no
+    // recipe asks for. Concentrating material costs Arcana diversity, so this
+    // has to be checked rather than assumed.
+    for (const flavour of FLAVOURS) {
+      for (const archetype of ['aggressive', 'defensive']) {
+        const baseline = reach(flavour, null, isAligned(archetype));
+        expect(reach(flavour, archetype, isAligned(archetype)), `${flavour}/${archetype}`)
+          .toBeGreaterThanOrEqual(baseline);
+      }
+    }
+  });
+
+  it('tilts at least one flavour clearly toward each alignment', () => {
+    // Not every flavour can tilt far — several Arcana feed both an aggressive
+    // and a defensive recipe, so the material overlaps and no weighting can
+    // fully separate them. What must not happen is the tilt being zero
+    // everywhere, which would mean the tags were decorative.
+    const gains = (archetype) =>
+      FLAVOURS.map(
+        (f) => reach(f, archetype, isAligned(archetype)) - reach(f, null, isAligned(archetype))
+      );
+    expect(Math.max(...gains('aggressive'))).toBeGreaterThan(0.2);
+    expect(Math.max(...gains('defensive'))).toBeGreaterThan(0.2);
+  });
+
+  it('almost always leaves an Aggressive deck something aggressive to build', () => {
+    // The bug this closes: P4 Aggressive decks used to reach 0.00 aggressive
+    // fusions, every seed, because the repair sorted purely by cost and P4's
+    // cheapest reachable recipes are all defensive.
+    for (const flavour of FLAVOURS) {
+      for (const archetype of ['aggressive', 'defensive']) {
+        const hits = SEEDS.filter((seed) =>
+          completableRecipes(expandDeck(flavour, { archetype, seed })).some(isAligned(archetype))
+        ).length;
+        expect(hits / SEEDS.length, `${flavour}/${archetype}`).toBeGreaterThan(0.85);
+      }
+    }
+  });
+
+  it('leaves Swift alone, which wants none of this', () => {
+    // Swift's plan is acting more often, not spending a turn fusing. It still
+    // clears the MIN_COMPLETABLE_RECIPES floor, because every deck must.
+    for (const flavour of FLAVOURS) {
+      expect(reach(flavour, 'swift')).toBeGreaterThanOrEqual(MIN_COMPLETABLE_RECIPES);
+    }
+  });
+
+  it('does not buy fusion material with the archetype own identity', () => {
+    // The material weighting must colour the deck, never take it over: a deck
+    // of an archetype still has to lean toward that archetype harder than any
+    // rival deck does. (Compared deck-to-deck, not within one deck — a P3 deck
+    // leaning Tactical is FLAVOUR_LEAN_WEIGHT doing its job, not a bug.)
+    for (const flavour of FLAVOURS) {
+      for (const archetype of ARCHETYPE_IDS) {
+        const own = mean(SEEDS.map((seed) => leaning(expandDeck(flavour, { archetype, seed }), archetype)));
+        for (const rival of ARCHETYPE_IDS.filter((a) => a !== archetype)) {
+          const theirs = mean(SEEDS.map((seed) => leaning(expandDeck(flavour, { archetype: rival, seed }), archetype)));
+          expect(own, `${flavour}: ${archetype} deck vs ${rival} deck, on ${archetype}`).toBeGreaterThan(theirs);
+        }
+      }
+    }
   });
 });
 

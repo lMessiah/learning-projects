@@ -1307,7 +1307,7 @@
       "type": "persona",
       "arcana": "Magician",
       "level": 12,
-      "game": "p5",
+      "game": "common",
       "flavor": "A two-tailed cat demon with very sharp opinions.",
       "strength": 12,
       "magic": 10,
@@ -1815,7 +1815,7 @@
       "type": "persona",
       "arcana": "Priestess",
       "level": 19,
-      "game": "p5",
+      "game": "common",
       "flavor": "Goddess of knowledge, music and flowing water.",
       "strength": 8,
       "magic": 18,
@@ -3022,7 +3022,7 @@
       "id": "steak-skewer",
       "name": "Steak Skewer",
       "type": "item",
-      "usesAction": true,
+      "usesAction": false,
       "quality": 5,
       "exclusive": "p4",
       "affinity": {
@@ -3031,7 +3031,7 @@
         "tactical": 1,
         "swift": 0
       },
-      "description": "A meal worth stopping for. Fully restores one of your Personas and cures its ailments. Uses up your action.",
+      "description": "A meal worth stopping for. Fully restores one of your Personas and cures its ailments. Free — but it is the one Item your turn allows.",
       "effect": {
         "kind": "fullRestore",
         "target": "ownAny",
@@ -3698,6 +3698,7 @@
     {
       "id": "fuse-mithra",
       "result": "mithra",
+      "alignment": "aggressive",
       "arcana": [
         "Justice",
         "Hierophant"
@@ -3708,6 +3709,7 @@
     {
       "id": "fuse-kikuri-hime",
       "result": "kikuri-hime",
+      "alignment": "defensive",
       "arcana": [
         "Priestess",
         "Hierophant"
@@ -3718,6 +3720,7 @@
     {
       "id": "fuse-titania",
       "result": "titania",
+      "alignment": "defensive",
       "arcana": [
         "Lovers",
         "Star"
@@ -3728,6 +3731,7 @@
     {
       "id": "fuse-rangda",
       "result": "rangda",
+      "alignment": "aggressive",
       "arcana": [
         "Devil",
         "Moon"
@@ -3738,6 +3742,7 @@
     {
       "id": "fuse-girimehkala",
       "result": "girimehkala",
+      "alignment": "defensive",
       "arcana": [
         "Moon",
         "Hermit"
@@ -3748,6 +3753,7 @@
     {
       "id": "fuse-black-frost",
       "result": "black-frost",
+      "alignment": "aggressive",
       "arcana": [
         "Magician",
         "Priestess"
@@ -3758,6 +3764,7 @@
     {
       "id": "fuse-vasuki",
       "result": "vasuki",
+      "alignment": "defensive",
       "arcana": [
         "Chariot",
         "Star"
@@ -3768,6 +3775,7 @@
     {
       "id": "fuse-surt",
       "result": "surt",
+      "alignment": "aggressive",
       "arcana": [
         "Magician",
         "Chariot"
@@ -3778,6 +3786,7 @@
     {
       "id": "fuse-thanatos",
       "result": "thanatos",
+      "alignment": "aggressive",
       "arcana": [
         "Moon",
         "Devil"
@@ -3788,6 +3797,7 @@
     {
       "id": "fuse-odin",
       "result": "odin",
+      "alignment": "defensive",
       "arcana": [
         "Hierophant",
         "Chariot"
@@ -3798,6 +3808,7 @@
     {
       "id": "fuse-yoshitsune",
       "result": "yoshitsune",
+      "alignment": "aggressive",
       "arcana": [
         "Chariot",
         "Hermit"
@@ -3808,6 +3819,7 @@
     {
       "id": "fuse-messiah",
       "result": "messiah",
+      "alignment": "defensive",
       "arcana": [
         "Priestess",
         "Justice"
@@ -3818,6 +3830,7 @@
     {
       "id": "fuse-satanael",
       "result": "satanael",
+      "alignment": "aggressive",
       "arcana": [
         "Fool",
         "Devil"
@@ -3828,6 +3841,7 @@
     {
       "id": "fuse-izanagi-no-okami",
       "result": "izanagi-no-okami",
+      "alignment": "defensive",
       "arcana": [
         "Fool",
         "Justice"

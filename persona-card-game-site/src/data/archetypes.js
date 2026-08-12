@@ -18,6 +18,7 @@ import {
   DECKS,
   META,
   FUSION_RECIPES,
+  FUSION_ALIGNMENTS,
   getCard,
   getDeck,
   validateDatabase,
@@ -110,11 +111,147 @@ function retreatScale(personaCount) {
   return Math.min(1, personaCount / RETREAT_PIVOT);
 }
 
-function weightOf(card, archetype, flavour, personaCount = RETREAT_PIVOT) {
+/* ------------------------------------------------------------------ *
+ * Fusion material weighting
+ * ------------------------------------------------------------------ */
+
+/**
+ * Why each fusion result is tagged the way it is in cards.json.
+ *
+ * Kept next to the code that spends the tag so the reasoning is auditable
+ * rather than folklore. Every verdict was read off the printed card: its
+ * Endurance measured against its Strength + Magic, how many distinct damage
+ * types it can threaten, whether its kit heals or hurts, which direction its
+ * buffs point (Tarukaja/Rakunda push damage out, Rakukaja/Tarunda soak it), and
+ * what its passive does. The four closest calls are named because they are the
+ * ones a reasonable person could argue with.
+ */
+export const FUSION_ALIGNMENT_EVIDENCE = Object.freeze({
+  // Clear-cut aggressive: no healing, offensive buffs, low Endurance share.
+  'fuse-mithra': 'Lowest Endurance share in the set (16 vs 40 offence), two offensive buffs, no healing.',
+  'fuse-rangda': 'Lowest Endurance share of all (18 vs 48), four damage skills, no healing.',
+  'fuse-black-frost': 'Trickster — a combo passive — plus four damage types, the widest coverage in the game.',
+  'fuse-surt': 'Three damage types and Ragnarok at 110 power, on the second-lowest Endurance share.',
+  'fuse-thanatos': 'Bloodlust, an attack passive, on three damage types and no healing.',
+  'fuse-yoshitsune': 'Two offensive buffs and Hassou Tobi at 132; pure physical pressure.',
+  'fuse-satanael': 'Riot Gun and Megidolaon, three damage types, no healing.',
+  // Clear-cut defensive: healing, defensive buffs, or a high Endurance share.
+  'fuse-kikuri-hime': 'Three healing skills including Diarahan, Rakukaja, and the highest Endurance share.',
+  'fuse-titania': 'Mediarama and Diarahan — a healer that happens to hit.',
+  'fuse-vasuki': 'The only result with two defensive buffs (Rakukaja and Tarunda) and no healing to distract from them.',
+  // The close calls, decided on the single strongest defensive signal each.
+  'fuse-girimehkala':
+    'CLOSE CALL. Its kit is all offence, but it is the only result whose Endurance (24) exceeds its Magic (16) — it is built to be hit.',
+  'fuse-odin':
+    'CLOSE CALL. Counter is a purely reactive passive, and Rakukaja backs it up; the offence is real but it wins by being attacked.',
+  'fuse-messiah':
+    'CLOSE CALL. Diarahan AND Salvation — it is the only result that can undo a whole turn of damage, which outweighs its Megidolaon.',
+  'fuse-izanagi-no-okami':
+    'CLOSE CALL. The only Persona in the game with NO weakness, so it can never be knocked down for a One More; highest Endurance (32) and Rakukaja.',
+});
+
+/** Which fusion results each archetype is trying to build toward. */
+const WANTS_RECIPES = Object.freeze({
+  // Fusion IS the tactical plan, so it is dealt material for every recipe.
+  tactical: () => true,
+  aggressive: (recipe) => recipe.alignment === 'aggressive',
+  defensive: (recipe) => recipe.alignment === 'defensive',
+  // Swift wins by acting more often than you, not by spending a turn fusing.
+  swift: () => false,
+});
+
+/**
+ * How hard the fusion lean pulls, per archetype.
+ *
+ * Tactical pulls hardest because fusion is its plan rather than a bonus — it is
+ * the archetype with no damage race and no wall to hide behind, and turning two
+ * bodies into a better one is what it does instead. Aggressive and Defensive get
+ * a real lean toward their own results without it deciding what the deck is for.
+ *
+ * These sit ABOVE AFFINITY_WEIGHT (1.6) on purpose, which looks wrong until you
+ * notice the affinity term is multiplied by an affinity of up to 3 and this one
+ * by a score capped at 1 — so at full tilt the archetype's own identity still
+ * outweighs its fusion plan roughly two to one. At 1.3 the fusion lean lost
+ * outright: a P3 Defensive deck ended up reaching FEWER defensive fusions than
+ * an unweighted deck, because Defensive affinity kept buying it Unicorn, and
+ * Strength is one of the only two Arcana no recipe asks for.
+ *
+ * DESIGN NOTE: these started equal, and Tactical came out reaching FEWER recipes
+ * than Swift — which wants none at all. Wanting every recipe makes the score
+ * flatter, not stronger, because almost every Arcana feeds something; the
+ * archetype that wants everything needs the bigger multiplier to actually lead.
+ * Swift's incidental reach is real, by the way, and not a bug: a Swift deck is
+ * full of cheap low-level bodies spread thinly across Arcana, which is exactly
+ * the shape that satisfies the cheap recipes by accident.
+ *
+ * 3.2 was measured, not guessed. 2.4 still left Tactical behind Swift in P3;
+ * 4.0 bought almost nothing over 3.2 and starts making every Tactical deck look
+ * the same, which is the failure mode AFFINITY_WEIGHT's comment warns about.
+ */
+const FUSION_MATERIAL_WEIGHT = Object.freeze({
+  tactical: 3.2,
+  aggressive: 2.0,
+  defensive: 2.0,
+  swift: 0,
+});
+
+const recipesWantedBy = (archetype) => FUSION_RECIPES.filter(WANTS_RECIPES[archetype] ?? (() => false));
+
+/** Credit for a card that finishes a recipe the deck was one body short of. */
+const COMPLETES_PAIR = 1;
+/** Credit for a card that is only ever half of one. */
+const HALF_A_PAIR = 0.45;
+
+/**
+ * How much this Persona advances a fusion the archetype actually wants, given
+ * what the deck is already holding.
+ *
+ * Returns 0..1. A card scores full marks when it COMPLETES a recipe — the deck
+ * already holds a partner of the other Arcana, and the two of them clear the
+ * combined-level bar. Failing that it scores a fraction of how much of that bar
+ * it could carry on its own, so a deck with nothing yet still drifts toward
+ * usable material instead of picking at random.
+ *
+ * DESIGN NOTE: two earlier versions of this did not work, and both failed the
+ * same way. Scoring "does this Arcana feed any recipe at all" moved every weight
+ * by the same amount, because every Arcana but Strength and Empress feeds
+ * something. Scoring the card's level against the bar was flatter still, since
+ * any mid-level body maxes out the cheap recipes. What is scarce is not material
+ * and not levels — it is a MATCHING PAIR, and a pair is a fact about the deck,
+ * not about the card. That is why this reads `held`, and why it is the only
+ * weighting term in this file that does.
+ */
+function fusionMaterialScore(card, archetype, held) {
+  if (card.type !== 'persona' || !archetype) return 0;
+  const wanted = recipesWantedBy(archetype);
+  if (!wanted.length) return 0;
+
+  let best = 0;
+  for (const recipe of wanted) {
+    if (!recipe.arcana.includes(card.arcana)) continue;
+
+    // The other half of this recipe — the same Arcana again for the same-Arcana
+    // recipes, which is why this removes one match rather than filtering it out.
+    const partnerArcana = recipe.arcana[recipe.arcana.indexOf(card.arcana) === 0 ? 1 : 0];
+    const partners = held.filter((c) => c.arcana === partnerArcana);
+    const partner = partners.find((c) => c !== card) ?? partners[0];
+
+    if (partner && card.level + partner.level + FUSION_GROWTH_ALLOWANCE >= recipe.minCombinedLevel) {
+      return COMPLETES_PAIR; // nothing scores higher, so stop looking
+    }
+    // Half the growth allowance, because this body is only one of the two.
+    const carried = (card.level + FUSION_GROWTH_ALLOWANCE / 2) / recipe.minCombinedLevel;
+    best = Math.max(best, HALF_A_PAIR * Math.min(1, carried));
+  }
+  return best;
+}
+
+function weightOf(card, archetype, flavour, personaCount = RETREAT_PIVOT, held = []) {
   let weight = BASE_WEIGHT + AFFINITY_WEIGHT * affinityOf(card, archetype);
   const lean = leanOf(flavour);
   if (lean && lean !== archetype) weight += FLAVOUR_LEAN_WEIGHT * affinityOf(card, lean);
   if (card.exclusive) weight += EXCLUSIVE_WEIGHT;
+  weight += (FUSION_MATERIAL_WEIGHT[archetype] ?? 0) * fusionMaterialScore(card, archetype, held);
   if (card.effect?.kind === 'retreat') weight *= retreatScale(personaCount);
   return weight;
 }
@@ -165,14 +302,20 @@ function fillSlots(cards, count, archetype, rng, groups = new Map(), flavour = n
     return cap !== undefined && (groups.get(card.deckGroup) ?? 0) >= cap;
   };
 
+  // The Personas chosen so far, so the fusion weighting can see a half-finished
+  // pair and reach for the body that completes it. Rebuilding this from `out`
+  // on every slot would be quadratic over the pool for no benefit.
+  const held = [];
+
   for (let i = 0; i < count; i++) {
     const available = cards.filter((card) => !atCap(card));
     if (!available.length) break; // pool too small; the caller validates the size
-    const weights = available.map((card) => weightOf(card, archetype, flavour, personaCount));
+    const weights = available.map((card) => weightOf(card, archetype, flavour, personaCount, held));
     const [picked, next] = pickWeighted(available, weights, state);
     state = next;
     copies.set(picked.id, (copies.get(picked.id) ?? 0) + 1);
     if (picked.deckGroup) groups.set(picked.deckGroup, (groups.get(picked.deckGroup) ?? 0) + 1);
+    if (picked.type === 'persona') held.push(picked);
     out.push(picked.id);
   }
 
@@ -221,13 +364,24 @@ export const MIN_COMPLETABLE_RECIPES = 2;
  * Archetype weighting is free to ignore whole Arcana — a Swift deck has no
  * reason to want a level 19 Priestess — and the result was decks that could
  * never complete a single recipe. This swaps the deck's most redundant Persona
- * slots for the missing pieces, cheapest recipe first, until the deck can
- * complete MIN_COMPLETABLE_RECIPES of them. It only ever touches Persona slots,
- * so the 16/8/6 shape and the copy limits survive.
+ * slots for the missing pieces, until the deck can complete
+ * MIN_COMPLETABLE_RECIPES of them. It only ever touches Persona slots, so the
+ * 16/8/6 shape and the copy limits survive.
+ *
+ * Recipes the archetype WANTS are repaired toward first, and only then the
+ * cheapest of the rest. This matters more than the weighting does: the repair
+ * is what actually guarantees a deck can fuse, so sorting it purely by cost —
+ * which is what it used to do — handed several flavours a guaranteed defensive
+ * fusion and left their Aggressive decks with nothing to build toward. Cost
+ * still breaks ties, so a deck is never pushed at a recipe it cannot reach.
  */
 function repairFusionMaterial(cards, flavour, archetype) {
   const pool = poolFor(flavour).persona;
-  const recipes = [...FUSION_RECIPES].sort((a, b) => a.minCombinedLevel - b.minCombinedLevel);
+  const wanted = new Set(recipesWantedBy(archetype).map((r) => r.id));
+  const recipes = [...FUSION_RECIPES].sort(
+    (a, b) =>
+      Number(wanted.has(b.id)) - Number(wanted.has(a.id)) || a.minCombinedLevel - b.minCombinedLevel
+  );
 
   for (const recipe of recipes) {
     if (completableRecipes(cards).length >= MIN_COMPLETABLE_RECIPES) break;

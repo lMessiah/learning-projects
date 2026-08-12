@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getCard } from '../src/data/cards.js';
 import { renderHotseat, seatToAct } from '../src/ui/game/hotseat.js';
+import { loadHotseat, clearHotseat } from '../src/ui/game/hotseatSave.js';
 
 let root;
 
@@ -51,6 +52,9 @@ function beginPlay(options) {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // A hot-seat match persists itself, so without this every test after the
+  // first would land on the resume screen instead of setup.
+  clearHotseat();
   root = document.createElement('div');
   document.body.appendChild(root);
 });
@@ -61,6 +65,7 @@ afterEach(() => {
   root.remove();
   document.body.classList.remove('board-mode');
   document.querySelectorAll('.card-detail-overlay, .card-tooltip').forEach((n) => n.remove());
+  clearHotseat();
   vi.useRealTimers();
 });
 
@@ -222,6 +227,161 @@ describe('playing a hot-seat match', () => {
 
     // Sanity: the indicator uses turn numbers, not a first-person verdict.
     expect($('.turn-indicator').textContent).not.toMatch(/Victory|Defeat/);
+  });
+});
+
+/**
+ * Leaving and coming back.
+ *
+ * The whole point: one player hits Back by accident and the match is still
+ * there. "Leaving" is simulated the way it actually happens — the route is torn
+ * down and re-entered — because that is all navigating away does to this app.
+ */
+describe('resuming an abandoned match', () => {
+  /** Walk away, then reopen the local-multiplayer route. */
+  const leaveAndReturn = () => {
+    root.innerHTML = '';
+    renderHotseat(root);
+  };
+
+  const resume = () => {
+    const button = byText('.resume-card__actions .btn', /Resume match/);
+    expect(button, 'expected a resume screen').toBeTruthy();
+    click(button);
+  };
+
+  it('saves the match from the very first gate, before a card is played', () => {
+    startMatch();
+    const save = loadHotseat();
+
+    expect(save).toBeTruthy();
+    expect(save.state.phase).toBe('starterSelect');
+    expect(save.seats.map((s) => s.name)).toEqual(['Alice', 'Bob']);
+  });
+
+  it('offers to resume instead of showing setup', () => {
+    beginPlay();
+    leaveAndReturn();
+
+    expect($('.resume-card')).toBeTruthy();
+    expect($('.seat-name input')).toBe(null);
+    expect($('.resume-card').textContent).toContain('Alice');
+    expect($('.resume-card').textContent).toContain('Bob');
+  });
+
+  it('shows no hand on the resume screen — the returning player may be either seat', () => {
+    beginPlay();
+    leaveAndReturn();
+
+    expect($$('.hand-tile')).toHaveLength(0);
+    expect($('.board-play')).toBe(null);
+    expect($('.card')).toBe(null);
+  });
+
+  it('comes back behind the pass-the-device gate, not straight onto a board', () => {
+    beginPlay();
+    leaveAndReturn();
+    resume();
+
+    expect($('.pass-card__ready')).toBeTruthy();
+    expect($('.board-play')).toBe(null);
+  });
+
+  it('restores the board exactly as it was left', () => {
+    beginPlay();
+    // Spend the turn so there is something specific to check for.
+    click(byText('.action-bar .btn', /Pass \(/));
+    const before = {
+      hand: $$('.hand-tile').map((t) => t.dataset.cardId),
+      turn: $('.turn-indicator').textContent,
+      log: $$('.log__line').length,
+    };
+
+    leaveAndReturn();
+    resume();
+    takeSeat();
+
+    expect($$('.hand-tile').map((t) => t.dataset.cardId)).toEqual(before.hand);
+    expect($('.turn-indicator').textContent).toBe(before.turn);
+    expect($$('.log__line').length).toBe(before.log);
+  });
+
+  it('hands the device back to the seat that was mid-turn', () => {
+    beginPlay(); // Alice to act
+    click(byText('.action-bar .btn', /End turn/)); // now Bob
+    leaveAndReturn();
+    resume();
+
+    expect($('.pass-card__title').textContent).toBe('Pass the device to Bob');
+  });
+
+  it('keeps saving as the resumed match carries on', () => {
+    beginPlay();
+    leaveAndReturn();
+    resume();
+    takeSeat();
+    click(byText('.action-bar .btn', /End turn/));
+
+    const save = loadHotseat();
+    expect(save).toBeTruthy();
+    expect(save.state.turn).toBeGreaterThan(1);
+  });
+
+  it('discards the match on request and returns to setup', () => {
+    beginPlay();
+    leaveAndReturn();
+
+    click(byText('.resume-card__actions .btn', /Start a new match/));
+
+    expect($$('.seat-name input')).toHaveLength(2);
+    expect(loadHotseat()).toBe(null);
+  });
+
+  it('does not offer to resume a match nobody started', () => {
+    renderHotseat(root);
+    expect($('.resume-card')).toBe(null);
+    expect($$('.seat-name input')).toHaveLength(2);
+  });
+
+  it('drops a save written by an older version rather than resuming it', () => {
+    beginPlay();
+    const raw = JSON.parse(localStorage.getItem('pcg.hotseat.save'));
+    localStorage.setItem('pcg.hotseat.save', JSON.stringify({ ...raw, version: raw.version + 1 }));
+
+    expect(loadHotseat()).toBe(null);
+    leaveAndReturn();
+    expect($$('.seat-name input')).toHaveLength(2);
+  });
+
+  it('survives a corrupt save without taking the route down with it', () => {
+    localStorage.setItem('pcg.hotseat.save', '{not json');
+
+    expect(loadHotseat()).toBe(null);
+    renderHotseat(root);
+    expect($$('.seat-name input')).toHaveLength(2);
+  });
+
+  it('never offers to resume a finished match', () => {
+    // The match ending clears the save, and even if one survived some other
+    // way, a decided match is not something to hand anybody back.
+    beginPlay();
+    const raw = JSON.parse(localStorage.getItem('pcg.hotseat.save'));
+    raw.state.winner = 0;
+    localStorage.setItem('pcg.hotseat.save', JSON.stringify(raw));
+
+    expect(loadHotseat()).toBe(null);
+    leaveAndReturn();
+    expect($$('.seat-name input')).toHaveLength(2);
+  });
+
+  it('clears the save when a player resigns', () => {
+    beginPlay();
+    expect(loadHotseat()).toBeTruthy();
+
+    click($('.log-panel__resign'));
+    click(byText('.modal .btn', /Yes, resign/));
+
+    expect(loadHotseat()).toBe(null);
   });
 });
 

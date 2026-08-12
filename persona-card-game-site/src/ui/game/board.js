@@ -967,7 +967,9 @@ function renderActionBar(ctx) {
     () => setUi({ modal: fusionModal(), fusion: { recipeId: null, pairIndex: null, inherit: [] } }), {
       disabled: !yourTurn,
       title: ready
-        ? 'A fusion is available — it costs no action, so you can fuse and still attack'
+        ? CONFIG.FUSION_USES_ACTION
+          ? 'A fusion is available — it costs your action, so fuse or attack, not both'
+          : 'A fusion is available — it costs no action, so you can fuse and still attack'
         : 'Browse fusion recipes and see what each one needs',
     });
   if (ready) badgeButton(fusionBtn);
@@ -1054,13 +1056,21 @@ const GALLOWS_TIER_TEXT = {
   junk: `more than ${CONFIG.COMEBACK_FARM_GAP} levels below it`,
 };
 
-/** What a chosen meal is worth, in words, before anything is committed. */
+/**
+ * What a chosen meal is worth, in words, before anything is committed.
+ *
+ * The price is read off `usesAction`, which is the engine's own verdict, and
+ * never re-derived from the tier. The two agree today, but a label that works
+ * out the rule for itself is a label that can end up promising a cost the
+ * engine does not charge — see the fusion button for how that reads to a player.
+ */
 function gallowsPayoff(option) {
+  const price = option.usesAction ? 'costs your action' : 'free';
   if (option.tier === 'junk') {
-    return `+${Math.round(CONFIG.GALLOWS_JUNK_HEAL * 100)}% HP · free`;
+    return `+${Math.round(CONFIG.GALLOWS_JUNK_HEAL * 100)}% HP · ${price}`;
   }
   const bump = option.statBump ? ` · +${option.statBumpAmount} ${option.statBump}` : '';
-  return `+${option.levels} level${option.levels === 1 ? '' : 's'}${bump} · costs your action`;
+  return `+${option.levels} level${option.levels === 1 ? '' : 's'}${bump} · ${price}`;
 }
 
 const foodKey = (option) => `${option.food.zone}:${option.food.uid}`;

@@ -1765,6 +1765,19 @@ body.board-mode #app {
   font-size: 16px;
 }
 
+/* The "you left a match running" screen. It borrows the pass-the-device card
+   outright — same shape, same public-only information — and only has to add the
+   two-button row, since it asks a question the gate never does. */
+.resume-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.resume-card__actions .btn { padding: 14px 28px; }
+
 .seat-name {
   display: grid;
   gap: 5px;
@@ -1937,6 +1950,26 @@ body.board-mode #app {
 }
 
 .fusion-recipe__formula { font-size: 10.5px; color: var(--ink-faint); }
+
+/* What the result is for, beside its name. Sized off the name row rather than
+   given its own line, so tagging every recipe costs no vertical space. */
+.fusion-recipe__nameRow { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; min-width: 0; }
+
+.fusion-recipe__align {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+/* Themed rather than literally red/blue: every theme swaps --accent, so a
+   hard-coded pair would clash in at least one of them. Offence takes the
+   theme's signature colour, defence stays muted. */
+.fusion-recipe__align--aggressive { color: var(--accent); }
+.fusion-recipe__align--defensive { color: var(--ink-dim); }
 
 .fusion-recipe__badge {
   font-size: 9px;

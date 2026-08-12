@@ -176,17 +176,24 @@ describe('fusion', () => {
     expect(after.players[0].koCount).toBe(0);
   });
 
-  it('costs no action — you can fuse AND still attack', () => {
+  it('costs your action — you fuse OR you attack', () => {
     const state = fuse(fusionBoard());
-    expect(state.turnState.actionsRemaining).toBe(CONFIG.ACTIONS_PER_TURN);
+    expect(state.turnState.actionsRemaining).toBe(CONFIG.ACTIONS_PER_TURN - 1);
     expect(state.turnState.fusionsPerformed).toBe(1);
-    expect(getLegalActions(state, 0).some((a) => a.type === 'ATTACK')).toBe(true);
+    expect(getLegalActions(state, 0).some((a) => a.type === 'ATTACK')).toBe(false);
   });
 
-  it('is rationed per turn instead, like an Item or a Special', () => {
+  it('is rationed per turn as well as costing the action', () => {
+    // Two independent gates now, so this hands the action back before checking:
+    // otherwise it could not tell the ration from the empty action budget, and
+    // would keep passing if the ration were removed entirely. A One More does
+    // exactly this refund in a real match.
     const state = fuse(fusionBoard());
-    expect(getLegalActions(state, 0).some((a) => a.type === 'FUSE')).toBe(false);
     expect(state.turnState.fusionsPerformed).toBe(CONFIG.FUSIONS_PER_TURN);
+
+    const refunded = { ...state, turnState: { ...state.turnState, actionsRemaining: 1 } };
+    expect(getLegalActions(refunded, 0).some((a) => a.type === 'ATTACK')).toBe(true);
+    expect(getLegalActions(refunded, 0).some((a) => a.type === 'FUSE')).toBe(false);
   });
 
   it('offers fusion in the legal action list only when a recipe is satisfiable', () => {

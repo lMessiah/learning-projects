@@ -86,7 +86,7 @@ describe('the FAQ answers the questions the changes raise', () => {
   const questions = [
     /How do I actually land a Technical\?/,
     /Their weaknesses changed\. What happened\?/,
-    /Does fusion still cost my turn\?/,
+    /Does fusion cost my turn\?/,
     /Why can't I summon my Persona\?/,
     /How does fusion work/,
   ];

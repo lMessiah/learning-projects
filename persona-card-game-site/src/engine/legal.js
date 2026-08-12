@@ -423,6 +423,9 @@ function pairFits(state, playerId, a, b) {
 export function describeFusions(state, playerId) {
   const candidates = fusionCandidates(state, playerId);
   const spent = (state.turnState?.fusionsPerformed ?? 0) >= CONFIG.FUSIONS_PER_TURN;
+  // Two separate ways to be out of fusions, and they need separate wording: the
+  // ration is gone for the turn, or the action that pays for one is.
+  const noAction = CONFIG.FUSION_USES_ACTION && (state.turnState?.actionsRemaining ?? 0) <= 0;
 
   return FUSION_RECIPES.map((recipe) => {
     const pairs = [];
@@ -464,6 +467,8 @@ export function describeFusions(state, playerId) {
       else reason = 'No usable pair';
     } else if (spent) {
       reason = `Already fused this turn (${CONFIG.FUSIONS_PER_TURN} per turn)`;
+    } else if (noAction) {
+      reason = 'No action left — fusion costs your action';
     }
 
     return {
@@ -474,7 +479,12 @@ export function describeFusions(state, playerId) {
       arcana: recipe.arcana,
       pairs,
       bestCombined,
-      satisfiable: pairs.length > 0 && !spent,
+      satisfiable: pairs.length > 0 && !spent && !noAction,
+      usesAction: CONFIG.FUSION_USES_ACTION,
+      // What the result is FOR. Deck building already uses this to decide which
+      // material an archetype is dealt; surfacing it lets the player read the
+      // same plan off the panel instead of working it out from the statline.
+      alignment: recipe.alignment,
       reason,
     };
   });
@@ -505,6 +515,7 @@ export function fusionAvailable(state, playerId) {
 
 function fusionActions(state, playerId) {
   if (state.turnState.fusionsPerformed >= CONFIG.FUSIONS_PER_TURN) return [];
+  if (CONFIG.FUSION_USES_ACTION && state.turnState.actionsRemaining <= 0) return [];
   const candidates = fusionCandidates(state, playerId);
   const out = [];
   for (const recipe of FUSION_RECIPES) {
@@ -541,6 +552,11 @@ function fusionActions(state, playerId) {
           inheritOptions: options,
           resultPassive: printedPassive(recipe.result),
           needsChoice: true,
+          // The price, carried on the action itself, exactly as Items, Specials
+          // and Gallows meals carry theirs. The UI must read this and never work
+          // the rule out for itself — a label that re-derives the cost is how the
+          // fusion button ended up promising a price the engine did not charge.
+          usesAction: CONFIG.FUSION_USES_ACTION,
         });
       }
     }
