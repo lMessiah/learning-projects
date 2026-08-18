@@ -59,33 +59,81 @@ describe('the passive table', () => {
 });
 
 describe('Stalwart — onKnockdownAttempt', () => {
-  /** Apsaras (Bufu) against Ara Mitama, which is weak to ice and holds Stalwart. */
-  function iceOnStalwart(hp) {
+  /**
+   * Pixie (Zio) against Ara Mitama, which holds Stalwart and is weak to elec.
+   *
+   * Elec rather than ice on purpose: Ara Mitama's affinity chart is being
+   * retuned, and elec is the weakness it keeps. A fixture pinned to the
+   * weakness that is going away would fail for a reason that has nothing to do
+   * with the passive under test.
+   */
+  function elecOnStalwart({ hp, maxHp = 100 }) {
     const state = setupMatch();
-    setField(state, 0, [{ cardId: 'apsaras', active: true }]);
-    setField(state, 1, [{ cardId: 'ara-mitama', active: true, hp, maxHp: 100 }]);
+    setField(state, 0, [{ cardId: 'pixie', active: true }]);
+    setField(state, 1, [{ cardId: 'ara-mitama', active: true, hp, maxHp }]);
     return state;
   }
 
+  const hit = (state) => applyAction(state, { type: 'USE_SKILL', player: 0, skillId: 'zio' });
+  const half = (p) => p.maxHp * CONFIG.STALWART_HP_RATIO;
+
   it('refuses the knockdown while above half HP', () => {
-    let state = iceOnStalwart(100);
-    state = applyAction(state, { type: 'USE_SKILL', player: 0, skillId: 'bufu' });
+    let state = elecOnStalwart({ hp: 100 });
+    state = hit(state);
 
     const wall = activeOf(state, 1);
     expect(wall.hp).toBeLessThan(100); // it still takes the weakness damage
-    expect(wall.hp).toBeGreaterThan(50);
     expect(wall.knockedDown).toBe(false);
     expect(state.turnState.oneMoresGranted).toBe(0); // and grants no One More
     expect(state.log.some((l) => l.text.includes('Stalwart'))).toBe(true);
   });
 
-  it('goes down once the hit drops it to half HP or below', () => {
-    let state = iceOnStalwart(60);
-    state = applyAction(state, { type: 'USE_SKILL', player: 0, skillId: 'bufu' });
+  it('refuses it even when the blow CARRIES it past half — the test is pre-damage', () => {
+    // The bug this closes. Ara Mitama is comfortably above half when the hit
+    // lands and comfortably below it afterwards. Stalwart is a rule about the
+    // body the blow arrived at, so it holds.
+    let state = elecOnStalwart({ hp: 80 });
+    const before = activeOf(state, 1);
+    expect(before.hp).toBeGreaterThan(half(before));
+
+    state = hit(state);
+    const wall = activeOf(state, 1);
+
+    expect(wall.hp).toBeLessThan(half(wall)); // it really did cross the line
+    expect(wall.knockedDown).toBe(false); // ...and still shrugged it off
+    expect(state.turnState.oneMoresGranted).toBe(0);
+  });
+
+  it('goes down when it was ALREADY at or below half when struck', () => {
+    let state = elecOnStalwart({ hp: 50 }); // exactly half: the check is `>`, so this is not protected
+    state = hit(state);
 
     const wall = activeOf(state, 1);
-    expect(wall.hp).toBeLessThanOrEqual(50);
     expect(wall.knockedDown).toBe(true);
+    expect(state.turnState.oneMoresGranted).toBe(1);
+  });
+
+  it('dies standing when a lethal blow lands on a healthy body, and pays nothing', () => {
+    // The sharpest consequence of reading pre-damage HP: a lethal hit no longer
+    // slips past Stalwart just because 0 HP is not above anything.
+    let state = elecOnStalwart({ hp: 40, maxHp: 60 });
+    const before = activeOf(state, 1);
+    expect(before.hp).toBeGreaterThan(half(before));
+
+    state = hit(state);
+    const wall = state.players[1].field[0];
+
+    expect(wall.ko).toBe(true);
+    expect(wall.knockedDown).toBe(false);
+    expect(state.turnState.oneMoresGranted).toBe(0); // no knockdown, so no One More
+  });
+
+  it('still pays out when the lethal blow lands on an already-weakened body', () => {
+    let state = elecOnStalwart({ hp: 12, maxHp: 100 });
+    state = hit(state);
+    const wall = state.players[1].field[0];
+
+    expect(wall.ko).toBe(true);
     expect(state.turnState.oneMoresGranted).toBe(1);
   });
 });

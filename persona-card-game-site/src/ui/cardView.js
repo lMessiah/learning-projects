@@ -49,6 +49,34 @@ function powerLabel(skill) {
   return String(skill.power);
 }
 
+/**
+ * The Alacrity mark: two forward chevrons over a return arc — "strike, and come
+ * straight back". Drawn from primitives like every other piece of art here, so
+ * it inherits the card's arcana colour through `currentColor`, scales with the
+ * font rather than a fixed pixel size, and needs no asset.
+ *
+ * It has to survive being 8px tall next to the keyword, which is why it is two
+ * strokes and a curve and nothing more.
+ */
+function alacrityMark() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 20 16');
+  svg.setAttribute('class', 'keyword__mark');
+  // Decorative: the word ALACRITY sits right beside it and carries the meaning.
+  svg.setAttribute('aria-hidden', 'true');
+
+  const stroke = (d) => {
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', d);
+    svg.appendChild(path);
+  };
+  stroke('M3 2.5 L8 8 L3 13.5'); // chevron
+  stroke('M9 2.5 L14 8 L9 13.5'); // chevron, again — speed
+  stroke('M17 4 A5.5 5.5 0 1 1 12.5 13'); // the arc back round
+  return svg;
+}
+
 function renderSkillRow(skill, unlocked, badge = null) {
   const row = el('li', `skill${unlocked ? '' : ' skill--locked'}${badge ? ' skill--inherited' : ''}`);
   row.appendChild(el('span', 'skill__icon', typeIcon(skill.type)));
@@ -59,8 +87,10 @@ function renderSkillRow(skill, unlocked, badge = null) {
   // Keywords sit next to the name so they read as part of the skill, not as
   // fine print buried in the description.
   if (skill.alacrity) {
-    const tag = el('span', 'skill__keyword', 'ALACRITY');
-    tag.title = 'If this knocks the target down, your Persona change this turn is refunded.';
+    const tag = el('span', 'skill__keyword skill__keyword--alacrity');
+    tag.appendChild(alacrityMark());
+    tag.appendChild(el('span', null, 'ALACRITY'));
+    tag.title = 'Using this refunds your Persona change for the turn.';
     top.appendChild(tag);
   }
   top.appendChild(el('span', 'skill__lv', badge || `Lv${skill.unlockLevel}`));

@@ -338,7 +338,7 @@ function gridPass(perCell) {
 const MATCHES = arg('matches', 200);
 const PER_CELL = arg('grid', 25);
 
-console.log(`Persona card game — balance simulation`);
+console.log(`Velvet Duel — balance simulation`);
 console.log(`Engine config: KO_TARGET ${CONFIG.KO_TARGET}, FIELD_CAP ${CONFIG.FIELD_CAP}, ` +
   `MAX_ONE_MORE_PER_TURN ${CONFIG.MAX_ONE_MORE_PER_TURN}, FARM_GAP ${CONFIG.COMEBACK_FARM_GAP}`);
 

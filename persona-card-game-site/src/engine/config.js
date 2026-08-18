@@ -120,6 +120,20 @@ export const CONFIG = Object.freeze({
   SHOCK_DURATION: 1, // expires at the end of the victim's next turn
   BUFF_DURATION: 3,
 
+  // How many skills one Persona may know at once — printed and inherited
+  // together, exactly as the games count them.
+  //
+  // Nothing in the printed data comes close: the fattest card prints 6, and most
+  // print 5. The cap exists because INHERITED skills accumulate — a fusion hands
+  // down two, and every Gallows meal, Skill Card and Evolve adds another with no
+  // natural stop. Measured over 120 bot matches it binds rarely but really: 11
+  // Personas reached 8 and 2 got to 9.
+  //
+  // At the cap, a learn the player CHOSE has to name what it replaces. A printed
+  // skill unlocking on level-up cannot ask, so it is declined and logged — see
+  // levelUp in effects.js.
+  MAX_SKILLS_PER_PERSONA: 8,
+
   // Levelling
   LEVEL_UP_GAP: 3, // victim level >= killer level + this  ->  +2 levels instead of +1
 
@@ -209,9 +223,13 @@ export const CONFIG = Object.freeze({
   MOMENTUM_SP_THRESHOLD: 6,
   MOMENTUM_DRAW: 1,
 
-  // Alacrity: a skill with this keyword refunds a Persona change when it knocks
-  // the target down. Cheap, fast skills carry it; it is what lets a Swift board
-  // hit, rotate and hit again inside one turn.
+  // Alacrity: a skill with this keyword refunds a Persona change, every time it
+  // is used. Cheap, fast skills carry it; it is what lets a Swift board hit and
+  // then rotate out before the answer lands.
+  //
+  // DESIGN NOTE: it was once gated on knocking the target down, which made it
+  // redundant — a knockdown grants a One More, and a One More already refunds a
+  // change. See the note in actions.js.
   ALACRITY_REFUND: 1,
 
   // --- Flavour-exclusive Specials --------------------------------------

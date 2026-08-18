@@ -26,6 +26,7 @@ import {
   emptyFieldStage,
   emptyFieldTurnsLeft,
   passiveDefinition,
+  PASSIVE_CHOICE_PREFIX,
 } from '../../engine/index.js';
 import { getCard, getPersona, PERSONAS } from '../../data/cards.js';
 import { renderCard } from '../cardView.js';
@@ -842,7 +843,49 @@ function whyUnplayable(state, viewer, card) {
 }
 
 /** SP Transfer needs two Personas, so it gets a two-step selection. */
-function playHandCard(card, candidates, act, setUi, settings, { state, viewer } = {}) {
+/**
+ * "This Persona already knows eight skills — what does it forget?"
+ *
+ * Shown whenever a legal action arrives carrying `dropOptions`. The engine has
+ * already chosen a sensible default, so this is a chance to overrule it rather
+ * than a demand; cancelling backs out of the play entirely.
+ */
+function skillDropModal(card, action, dispatch, setUi) {
+  return () => {
+    const body = el('div', 'modal__body');
+    body.appendChild(
+      el('p', 'modal__hint', `That Persona already knows ${CONFIG.MAX_SKILLS_PER_PERSONA} skills. Choose one to forget.`)
+    );
+
+    const row = el('div', 'option-choices');
+    for (const option of action.dropOptions) {
+      const node = button('', `btn option-choice${option.id === action.dropSkillId ? ' option-choice--default' : ''}`,
+        () => dispatch({ ...action, dropSkillId: option.id }));
+      node.appendChild(el('span', 'option-choice__label', `Forget ${option.name}`));
+      const parts = [];
+      if (option.power) parts.push(`power ${option.power}`);
+      parts.push(option.inherited ? 'inherited' : 'printed');
+      if (option.id === action.dropSkillId) parts.push('suggested');
+      node.appendChild(el('span', 'option-choice__hint', parts.join(' · ')));
+      row.appendChild(node);
+    }
+    body.appendChild(row);
+    body.appendChild(button('Cancel', 'btn btn--ghost', () => setUi({ modal: null })));
+
+    return modalShell(`${card.name} — make room`, body, () => setUi({ modal: null }));
+  };
+}
+
+function playHandCard(card, candidates, dispatch, setUi, settings, { state, viewer } = {}) {
+  // A Persona at the skill cap has to say what it gives up. Wrapping the
+  // dispatch — rather than adding a branch to each effect below — means every
+  // route into a learn asks the same question in the same place, including any
+  // added later.
+  const act = (action) => {
+    if (!action?.dropOptions?.length) return dispatch(action);
+    return setUi({ modal: skillDropModal(card, action, dispatch, setUi) });
+  };
+
   // Fortune's Draw asks for an Arcana, not a Persona on the board, so the
   // board-targeting overlay has nothing to highlight — it gets a list instead.
   if (card.effect?.kind === 'guaranteedDraw') {
@@ -1161,15 +1204,34 @@ function gallowsConfirm(option, eater, draft, { act, setUi }) {
     );
   }
 
+  // The eater may already be at the skill cap, in which case taking a skill
+  // costs it one it already has. Same modal the Skill Card uses, so the question
+  // is asked once in the game and always looks the same.
+  const takingSkill = option.canInherit && chosen && !String(chosen).startsWith(PASSIVE_CHOICE_PREFIX);
+  const needsDrop = takingSkill && option.dropOptions?.length > 0;
+  if (needsDrop) {
+    box.appendChild(
+      el(
+        'p',
+        'gallows-confirm__warning',
+        `${nameOf(eater)} already knows ${CONFIG.MAX_SKILLS_PER_PERSONA} skills — it will have to forget one.`
+      )
+    );
+  }
+
   const buttons = el('div', 'gallows__row gallows__row--confirm');
   buttons.appendChild(
-    button(replacing ? 'Feed it and replace the passive' : 'Feed it', 'btn btn--primary', () =>
-      act({
+    button(replacing ? 'Feed it and replace the passive' : 'Feed it', 'btn btn--primary', () => {
+      const built = {
         ...option,
         inherit: option.canInherit ? chosen ?? null : null,
         replacePassive: replacing,
-      })
-    )
+      };
+      if (!needsDrop) return act({ ...built, dropSkillId: undefined });
+      return setUi({
+        modal: skillDropModal({ name: 'The Gallows' }, built, act, setUi),
+      });
+    })
   );
   buttons.appendChild(
     button('Pick something else', 'btn btn--ghost', () =>

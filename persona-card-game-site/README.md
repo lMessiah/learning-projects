@@ -1,4 +1,4 @@
-# Persona Card Game (Unofficial, Patch 3)
+# Velvet Duel — a Persona card game (Unofficial, Patch 3)
 
 A browser card game inspired by the **mechanics** of ATLUS's Persona series, played as a TCG.
 Fan project — not affiliated with or endorsed by ATLUS or SEGA. **All card art is placeholder

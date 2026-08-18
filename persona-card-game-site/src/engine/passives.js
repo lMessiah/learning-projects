@@ -48,8 +48,20 @@ export const PASSIVE_DEFS = Object.freeze({
     id: 'stalwart',
     name: 'Stalwart',
     description: `Cannot be knocked down while above ${Math.round(CONFIG.STALWART_HP_RATIO * 100)}% HP.`,
-    onKnockdownAttempt: ({ persona }) =>
-      persona.hp > persona.maxHp * CONFIG.STALWART_HP_RATIO ? 'prevent' : null,
+    /**
+     * Reads the HP the Persona had when the blow LANDED, not what is left of it.
+     *
+     * DESIGN NOTE: this used to read `persona.hp`, which resolveAttack has
+     * already decremented by the time the knockdown is judged — so the card said
+     * "cannot be knocked down while above 50%" and the game asked "is it above
+     * 50% now that I have hit it?". Two consequences, both wrong: a Persona at
+     * FULL health was knocked down by any blow that crossed the halfway line,
+     * and a lethal hit always beat the passive outright because 0 is not above
+     * anything. `hp` is passed in explicitly rather than read off the instance,
+     * because the instance no longer holds the number this rule is about.
+     */
+    onKnockdownAttempt: ({ persona, hp }) =>
+      (hp ?? persona.hp) > persona.maxHp * CONFIG.STALWART_HP_RATIO ? 'prevent' : null,
   },
 
   counter: {
@@ -164,7 +176,15 @@ export function runHook(persona, hookName, ctx = {}, fallback = null) {
 
 /* --- Convenience wrappers, so callers read as rules rather than plumbing --- */
 
-export const preventsKnockdown = (persona) => runHook(persona, 'onKnockdownAttempt', {}) === 'prevent';
+/**
+ * Would a knockdown be refused?
+ *
+ * `hp` is the HP the Persona had when the blow landed. Callers that ask BEFORE
+ * any damage is applied — the bot, sizing up a hit it has not thrown yet — can
+ * leave it out and get the current value, which is the same number.
+ */
+export const preventsKnockdown = (persona, hp = undefined) =>
+  runHook(persona, 'onKnockdownAttempt', { hp }) === 'prevent';
 
 export const chainsOneMore = (persona) => Boolean(runHook(persona, 'oneMoreChain', {}, false));
 

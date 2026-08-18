@@ -103,3 +103,49 @@ describe('the FAQ answers the questions the changes raise', () => {
     for (const entry of faqs) expect(entry.querySelector('summary')).toBeTruthy();
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * The rules screen must not contradict the engine
+ * ------------------------------------------------------------------ */
+
+/**
+ * SPEC.md is the authoritative rules document, and it holds one rule above all
+ * others: where the rules text and the engine disagree, the TEXT is wrong.
+ *
+ * These are written against CONFIG rather than against whichever answer is
+ * current, so flipping a switch fails here in both directions instead of
+ * leaving a stale sentence on screen. Every assertion below corresponds to a
+ * contradiction that was actually found and fixed — see SPEC.md Appendix B.
+ */
+describe('the rules screen agrees with the engine', () => {
+  it('quotes the real price of a fusion, in both directions', () => {
+    const text = rules();
+    if (CONFIG.FUSION_USES_ACTION) {
+      // The exact sentences that were wrong: a heading reading "Fusion is free"
+      // and an FAQ telling the player fusion survives a spent action.
+      expect(text).not.toMatch(/fusion is free/i);
+      expect(text).not.toMatch(/fusion is a free play/i);
+      expect(text).toMatch(/fusion[^.]{0,80}costs? (you )?your action/i);
+    } else {
+      expect(text).toMatch(/fusion[^.]{0,80}(is free|costs no action)/i);
+    }
+  });
+
+  it('lists every route to the enemy bench, and no more', () => {
+    // canTargetBench() is `turn.canTargetBench || turn.oneMoreActive`, so a One
+    // More is a real route and the text may not imply Ambush is the only one.
+    const text = rules();
+    expect(text).toMatch(/One More/);
+    expect(text).toMatch(/Ambush/);
+    // It also may not claim One More is the SOLE exception, which contradicted
+    // the Ambush answer three screens further down.
+    expect(text).not.toMatch(/the one exception to active-only targeting/i);
+  });
+
+  it('does not describe a mechanic the engine no longer has', () => {
+    const text = rules();
+    // Nothing in the rules may promise crits or damage variance: damage is
+    // deterministic by design (SPEC.md Appendix C).
+    expect(text).not.toMatch(/critical hit|crit chance|damage range|randomly deals/i);
+  });
+});

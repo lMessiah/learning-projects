@@ -16,7 +16,7 @@
       "RULE: decks are GENERATED, not hand-built. A deck entry here is a flavour (P3/P4/P5) and nothing more; the 30 cards are drawn from that flavour's pool (its own cards plus every `common` one) and weighted by the archetype the player chose. See src/data/archetypes.js. `affinity` on each card is that weighting, 0-3 per archetype.",
       "RULE: every Persona ENTERS PLAY AT FULL SP — starters, cards played from hand, fusion results and revivals alike. SP then regenerates in the ACTIVE SLOT ONLY (CONFIG.SP_REGEN_PER_TURN); benched Personas neither gain nor lose SP. Scarcity is a spending problem, not an arrival problem. Skill costs are tuned against that tap: ~6 is a light probe, 8 a workhorse, 14+ something you save for or pay for with an item.",
       "RULE: `deckGroup` puts cards under a shared per-deck cap (meta.deckGroupCaps). SP-restore items are capped at 2 per deck between them, so no deck can paper over the SP economy.",
-      "RULE: `alacrity: true` on a skill means a knockdown from it refunds a Persona change (CONFIG.ALACRITY_REFUND). It is the Swift keyword: hit, rotate, hit again.",
+      "RULE: `alacrity: true` on a skill refunds a Persona change every time the skill is used (CONFIG.ALACRITY_REFUND) — no knockdown required. It is the Swift keyword: hit, then rotate out.",
       "RULE: `exclusive: 'p3'|'p4'|'p5'` locks a card to one flavour's pool. Each flavour also declares a `flavourLean` archetype axis, which the deck builder weights on top of the player's own archetype choice — that is what makes P3 swing, P4 grind and P5 scout.",
       "RULE: no skill has a random chance to knock a Persona out. The Hama and Mudo lines are ordinary Light/Dark damage skills with a deterministic `execute` rider (CONFIG.EXECUTE_MULT) — Hama against a knocked-down target, Mudo against one below 40% HP.",
       "RULE: drain SKILLS, not drain affinities. `drain: \"hp\"` on a damage effect heals the attacker for exactly the damage dealt; `kind: \"drainSp\"` deals no damage and moves up to `amount` SP from the enemy active to yours. Both are Almighty, so neither has any weakness, resist or Technical interaction.",
@@ -90,7 +90,7 @@
       "type": "phys",
       "power": 40,
       "hpCost": 6,
-      "description": "Light physical damage to the enemy active Persona. Alacrity: a knockdown refunds your Persona change.",
+      "description": "Light physical damage to the enemy active Persona. Alacrity: refunds your Persona change.",
       "effect": {
         "kind": "damage"
       },
@@ -249,7 +249,7 @@
       "type": "elec",
       "power": 38,
       "spCost": 6,
-      "description": "Light Elec damage. 40% chance to inflict Shock. Alacrity: a knockdown refunds your Persona change.",
+      "description": "Light Elec damage. 40% chance to inflict Shock. Alacrity: refunds your Persona change.",
       "effect": {
         "kind": "damage",
         "ailment": "shock",
@@ -298,7 +298,7 @@
       "type": "wind",
       "power": 38,
       "spCost": 6,
-      "description": "Light Wind damage to the enemy active Persona. Alacrity: a knockdown refunds your Persona change.",
+      "description": "Light Wind damage to the enemy active Persona. Alacrity: refunds your Persona change.",
       "effect": {
         "kind": "damage"
       },
@@ -985,7 +985,7 @@
         "elec"
       ],
       "resists": [
-        "phys"
+        "fire"
       ],
       "statGrowth": {
         "strength": 1,

@@ -134,16 +134,22 @@ describe('empty-opponent-field reward draw', () => {
  * 1a-ii — the knockdown combo
  * ------------------------------------------------------------------ */
 
-/** Seat 0 holds an ice user; seat 1 holds two Personas weak to ice. */
+/**
+ * Seat 0 holds an ice user; seat 1 holds two Personas weak to ice.
+ *
+ * Orpheus rather than Ara Mitama, whose affinity chart has been retuned twice
+ * during balancing. This fixture is about the knockdown combo, not about any one
+ * card's weaknesses, so it leans on a Persona nobody is currently tuning.
+ */
 function comboBoard() {
   let state = setupMatch();
   state = setField(state, 0, [{ cardId: 'jack-frost', level: 12, active: true }]);
   state = setField(state, 1, [
-    { cardId: 'ara-mitama', level: 5, active: true },
-    { cardId: 'ara-mitama', level: 5 },
+    { cardId: 'orpheus', level: 5, active: true },
+    { cardId: 'orpheus', level: 5 },
   ]);
   for (const persona of state.players[1].field) {
-    persona.passive = null; // Stalwart would prevent the knockdown we are measuring
+    persona.passive = null; // a passive could prevent the knockdown we are measuring
     persona.maxHp = 400;
     persona.hp = 400;
     persona.endurance = 30;

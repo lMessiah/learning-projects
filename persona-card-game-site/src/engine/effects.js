@@ -671,7 +671,12 @@ function recordBiggestHit(state, attacker, defender, dealt, sourceName) {
  *
  * @returns {boolean} whether a knockdown actually occurred
  */
-function attemptKnockdown(state, attacker, defender, { qualifies, dealt, lethal = false }) {
+function attemptKnockdown(
+  state,
+  attacker,
+  defender,
+  { qualifies, dealt, lethal = false, hpBeforeHit = undefined }
+) {
   if (!qualifies) return false;
 
   // Nothing below may claim the Persona "stayed on its feet" when the same blow
@@ -691,7 +696,11 @@ function attemptKnockdown(state, attacker, defender, { qualifies, dealt, lethal 
     say(`${nameOf(defender)} guarded and stayed on its feet.`, 'attack');
     return false;
   }
-  if (preventsKnockdown(defender)) {
+  // Judged on the HP the blow arrived at, so a Persona that was healthy when it
+  // was hit shrugs the knockdown off whatever the hit then did to it — including
+  // killing it. Dying on your feet is still dying, but it is not a knockdown,
+  // and so it pays the attacker no One More.
+  if (preventsKnockdown(defender, hpBeforeHit)) {
     say(`${nameOf(defender)} shrugged it off and stayed standing. (Stalwart)`, 'knockdown');
     return false;
   }
@@ -825,6 +834,12 @@ export function resolveAttack(
   //
   // So: apply the damage, say what happened, put the body down, and only then
   // take it off the board.
+  //
+  // The one thing that must be read BEFORE the damage lands is the defender's
+  // HP, because Stalwart is a rule about the body the blow arrived at, not about
+  // the wreckage afterwards. Captured here and threaded through; see the DESIGN
+  // NOTE on the passive.
+  const hpBeforeHit = defender.hp;
   const { dealt, lethal } = applyDamage(state, defender, result.amount, attacker, { deferKo: true });
 
   bumpStat(state, attacker.owner, 'attacks');
@@ -872,6 +887,7 @@ export function resolveAttack(
     qualifies: result.weak || technical === 'shock',
     dealt,
     lethal,
+    hpBeforeHit,
   });
 
   // The blow has been reported and the body has been put down. Now, and only
@@ -1010,11 +1026,29 @@ export function levelUp(state, persona, levels) {
   }
   pushLog(state, `${nameOf(persona)} grew to level ${persona.level}!`, 'levelup');
 
+  // Skills the new levels unlocked. A level-up is the one route to a skill that
+  // the player did not ask for and cannot be prompted about — it fires from a
+  // knockout, a Gallows meal, a fusion bonus — so a Persona already holding
+  // MAX_SKILLS_PER_PERSONA simply has no room, and the skill is declined and
+  // said out loud. Everywhere the player DID choose to learn something, the cap
+  // asks which skill to replace instead; see learnSkill in actions.js.
   const unlocked = card.skills.filter((s) => s.unlockLevel > before && s.unlockLevel <= persona.level);
+  const learned = [];
   for (const skill of unlocked) {
+    if (personaSkills(state, persona).length >= CONFIG.MAX_SKILLS_PER_PERSONA) {
+      if (!persona.forgottenSkills) persona.forgottenSkills = [];
+      if (!persona.forgottenSkills.includes(skill.id)) persona.forgottenSkills.push(skill.id);
+      pushLog(
+        state,
+        `${nameOf(persona)} could not take on ${skill.name} — it already knows ${CONFIG.MAX_SKILLS_PER_PERSONA} skills.`,
+        'levelup'
+      );
+      continue;
+    }
+    learned.push(skill);
     pushLog(state, `${nameOf(persona)} learned ${skill.name}!`, 'levelup');
   }
-  return unlocked;
+  return learned;
 }
 
 /* ------------------------------------------------------------------ *

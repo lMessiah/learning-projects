@@ -42,6 +42,10 @@ export function createPersonaInstance(state, cardId, owner, opts = {}) {
     // the card definition every time.
     passive: opts.passive !== undefined ? opts.passive : card.passive || null,
     inheritedSkills: opts.inheritedSkills ? [...opts.inheritedSkills] : [],
+    // Skills this Persona has given up to stay under MAX_SKILLS_PER_PERSONA.
+    // Printed skills live on the card, so forgetting one has to be recorded on
+    // the instance; an inherited skill is simply dropped from the list above.
+    forgottenSkills: [],
     // Damage types the OPPONENT has already struck this Persona with. Its
     // weakness/resist to those types is public knowledge from then on.
     revealedTypes: [],
@@ -218,7 +222,7 @@ export function createTurnState() {
     oneMoreUsed: false, // convenience mirror of `oneMoresGranted > 0`
     itemsPlayed: 0,
     specialsPlayed: 0,
-    fusionsPerformed: 0, // fusion is free, but rationed like an Item or Special
+    fusionsPerformed: 0, // fusion costs the action AND is rationed — see FUSION_USES_ACTION
     // Two separate rations: one nourishing meal (which costs the action) and
     // one free junk disposal. See the CONFIG comment for why they don't share.
     gallowsUsed: 0,
@@ -433,18 +437,72 @@ export function handPersonaLevel(entry, fallbackCardId = null) {
 /** Every skill a Persona can currently use: printed (unlocked) + inherited. */
 export function personaSkills(state, persona) {
   const card = getPersona(persona.cardId);
-  const printed = card.skills.filter((s) => s.unlockLevel <= persona.level);
-  if (!persona.inheritedSkills.length) return printed;
+  // `forgottenSkills` is undefined on states written before the cap existed, so
+  // an old save or a hand-built fixture reads as "has forgotten nothing".
+  const forgotten = persona.forgottenSkills;
+  const gone = forgotten?.length ? new Set(forgotten) : null;
+  let printed = card.skills.filter((s) => s.unlockLevel <= persona.level);
+  if (gone) printed = printed.filter((s) => !gone.has(s.id));
+  const inheritedIds = gone
+    ? persona.inheritedSkills.filter((id) => !gone.has(id))
+    : persona.inheritedSkills;
+  if (!inheritedIds.length) return printed;
 
   const known = new Set(printed.map((s) => s.id));
   const inherited = [];
-  for (const skillId of persona.inheritedSkills) {
+  for (const skillId of inheritedIds) {
     if (known.has(skillId)) continue;
     known.add(skillId);
     const source = findSkillDefinition(skillId);
     if (source) inherited.push({ ...source, unlockLevel: 1, inherited: true });
   }
   return [...printed, ...inherited];
+}
+
+/* ------------------------------------------------------------------ *
+ * The skill cap
+ *
+ * One accessor per question, so the engine, the bot and the UI all price a full
+ * Persona the same way. Nothing else may count skills for itself.
+ * ------------------------------------------------------------------ */
+
+/** How many skills this Persona currently knows. */
+export function skillCount(state, persona) {
+  return personaSkills(state, persona).length;
+}
+
+/** Is there no room for another one? */
+export function isSkillFull(state, persona) {
+  return skillCount(state, persona) >= CONFIG.MAX_SKILLS_PER_PERSONA;
+}
+
+/**
+ * What this Persona could give up to make room, as full skill objects.
+ *
+ * Everything it knows is on the table — a printed skill is no more sacred than
+ * an inherited one, which is what the games do and what stops a Persona being
+ * permanently wedged by five printed skills it has outgrown.
+ */
+export function droppableSkills(state, persona) {
+  return personaSkills(state, persona);
+}
+
+/**
+ * Record that a Persona has given up a skill. Inherited ones leave the list;
+ * printed ones cannot, so they are remembered as forgotten instead.
+ *
+ * Pure bookkeeping — the caller decides whether a drop was legal.
+ */
+export function forgetSkill(persona, skillId) {
+  if (!persona.forgottenSkills) persona.forgottenSkills = [];
+  const wasInherited = persona.inheritedSkills.includes(skillId);
+  if (wasInherited) {
+    persona.inheritedSkills = persona.inheritedSkills.filter((id) => id !== skillId);
+  }
+  // Recorded either way: an inherited skill can also be a printed one the card
+  // unlocks later, and forgetting it must survive that.
+  if (!persona.forgottenSkills.includes(skillId)) persona.forgottenSkills.push(skillId);
+  return wasInherited;
 }
 
 /** Look a skill definition up by id. Single source of truth: the card data. */

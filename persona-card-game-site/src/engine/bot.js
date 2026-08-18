@@ -259,16 +259,18 @@ function scoreAction(state, action, difficulty) {
       // A knockdown is only worth a One More when it lands on a STANDING
       // Persona: a guard and an already-downed target pay nothing. A KILLING
       // blow does pay — the engine knocks the target down before it removes it,
-      // so a lethal weakness hit earns the One More too. Stalwart is read at the
-      // target's CURRENT HP, which is why a lethal hit slips past it: at 0 HP
-      // there is nothing left for it to shrug off. A Shock Technical knocks down
-      // in its own right, so it earns the same bonus without needing a weakness.
-      // The cap applies unless the attacker chains.
+      // so a lethal weakness hit earns the One More too. A Shock Technical
+      // knocks down in its own right, so it earns the same bonus without needing
+      // a weakness. The cap applies unless the attacker chains.
+      //
+      // Stalwart is judged on the HP the target has RIGHT NOW, because that is
+      // the HP the blow would arrive at. A lethal hit no longer slips past it:
+      // if the target is healthy when it is struck, it shrugs the knockdown off
+      // and dies standing, and the attacker collects nothing for it.
       const knocksDown = affinity === 'weak' || technical === 'shock';
       if (knocksDown && target && oneMoreAvailable(state, active, turn)) {
-        const lethal = amount >= target.hp && !enduresFatalBlow(target);
         const wouldKnockDown =
-          !target.knockedDown && !target.guarding && (lethal || !preventsKnockdown(target));
+          !target.knockedDown && !target.guarding && !preventsKnockdown(target);
         if (wouldKnockDown) score += brutal ? 55 : 35;
       }
       if (affinity === 'resist') score -= 10;

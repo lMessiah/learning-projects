@@ -357,6 +357,27 @@
   letter-spacing: 0.1em;
 }
 
+/* A keyword that carries a mark lays it out beside the word. Kept off the base
+   class so a future text-only keyword is unaffected. */
+.skill__keyword--alacrity {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Sized in em so the mark tracks the keyword's font size rather than pinning
+   itself to one. currentColor means it inherits the arcana tint for free. */
+.keyword__mark {
+  width: 1.5em;
+  height: 1.2em;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* ---------- Passive ---------- */
 
 .card__passive {

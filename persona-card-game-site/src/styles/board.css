@@ -2513,6 +2513,10 @@ body.board-mode #app {
 .option-choice__label { font-weight: 700; font-size: 13px; }
 .option-choice__hint { font-size: 10.5px; font-weight: 400; color: var(--ink-dim); line-height: 1.4; }
 
+/* The engine's suggestion, marked so the eye lands on it first. It is only a
+   suggestion — every option in the row is one click away. */
+.option-choice--default { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+
 .arcana-choice {
   border-color: color-mix(in srgb, var(--arcana) 60%, transparent);
   color: var(--arcana);

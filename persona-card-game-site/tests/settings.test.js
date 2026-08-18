@@ -57,7 +57,7 @@ describe('tab identity', () => {
   const html = readFileSync(fromRoot('index.html'), 'utf8');
 
   it('names the game and marks it as a fan project', () => {
-    expect(html).toMatch(/<title>Persona Card Game/);
+    expect(html).toMatch(/<title>Velvet Duel/);
     expect(html).toMatch(/Unofficial/i);
   });
 

@@ -21,6 +21,8 @@ import {
   fusionLevelCap,
   fusionUnlocked,
   personaSkills,
+  isSkillFull,
+  droppableSkills,
   hasAilment,
   canTargetBench,
   remainingPersonaArcana,
@@ -315,6 +317,33 @@ function effectIsUseful(state, playerId, effect) {
 }
 
 /** Expand a card play into one action per legal target. */
+/**
+ * What a Persona would give up to learn one more skill, when it is already at
+ * MAX_SKILLS_PER_PERSONA.
+ *
+ * Follows the same contract as every other choice in this file: a sensible
+ * default is filled in so the bot and a one-click UI both work, and the full
+ * list rides along as metadata so the player can pick something else. Below the
+ * cap it returns nothing at all, and the engine rejects a drop nobody needs.
+ *
+ * The default is the WEAKEST thing it knows — lowest power first, then whatever
+ * it learned earliest. Support skills have no power and so go first, which is
+ * the right instinct for an auto-pick: a Persona at eight skills is a fighter,
+ * and the buff it has not cast in twenty turns is the cheapest thing to lose.
+ */
+function skillDropFor(state, persona, learningSkillId = null) {
+  if (!persona || !isSkillFull(state, persona)) return null;
+  const options = droppableSkills(state, persona).filter((s) => s.id !== learningSkillId);
+  if (!options.length) return null;
+  const ranked = [...options].sort(
+    (a, b) => (a.power ?? 0) - (b.power ?? 0) || (a.unlockLevel ?? 0) - (b.unlockLevel ?? 0)
+  );
+  return {
+    dropSkillId: ranked[0].id,
+    dropOptions: ranked.map((s) => ({ id: s.id, name: s.name, power: s.power ?? 0, inherited: Boolean(s.inherited) })),
+  };
+}
+
 function cardActions(state, playerId, entry, card, actionType) {
   if (!effectIsUseful(state, playerId, card.effect)) return [];
 
@@ -354,12 +383,34 @@ function cardActions(state, playerId, entry, card, actionType) {
     });
   }
 
+  // Evolve teaches the ACTIVE Persona its next printed skill, so the skill cap
+  // has to be answered here rather than at a chosen target.
+  if (card.effect.kind === 'evolve') {
+    const active = getActive(state, playerId);
+    const known = new Set(active ? personaSkills(state, active).map((s) => s.id) : []);
+    const next = active
+      ? getPersona(active.cardId)
+          .skills.filter((s) => !known.has(s.id))
+          .sort((a, b) => a.unlockLevel - b.unlockLevel)[0]
+      : null;
+    const drop = skillDropFor(state, active, next?.id ?? null);
+    return [{ ...base, ...(drop ?? {}), needsChoice: Boolean(drop) }];
+  }
+
   const choices = effectChoices(state, playerId, card.effect);
   if (choices) return choices.map((choice) => ({ ...base, ...choice }));
 
   const targets = effectTargets(state, playerId, card.effect);
   if (!targets) return [base];
-  return targets.map((target) => ({ ...base, targetUid: target.uid }));
+  return targets.map((target) => {
+    const action = { ...base, targetUid: target.uid };
+    // A Skill Card can land on a Persona that is already full.
+    if (card.effect.kind === 'teachSkill') {
+      const drop = skillDropFor(state, target, card.effect.skillId);
+      if (drop) return { ...action, ...drop, needsChoice: true };
+    }
+    return action;
+  });
 }
 
 /**
@@ -667,6 +718,8 @@ export function gallowsActions(state, playerId) {
       // Taking a passive over one the eater already has is a real loss, so it
       // needs the same explicit confirmation fusion demands.
       const skillOptions = inheritOptions.filter((option) => option.kind !== 'passive');
+      const defaultInherit = skillOptions.length ? skillOptions[skillOptions.length - 1].id : null;
+      const drop = defaultInherit ? skillDropFor(state, eater.persona ?? eater, defaultInherit) : null;
       out.push({
         type: 'GALLOWS',
         player: playerId,
@@ -696,8 +749,11 @@ export function gallowsActions(state, playerId) {
         // nothing, so "take the best one" is the sensible default. A passive is
         // never the default even when it is on offer: it can overwrite what the
         // eater already has, and that is a decision, not a freebie.
-        inherit: skillOptions.length ? skillOptions[skillOptions.length - 1].id : null,
-        needsChoice: inheritOptions.length > 0,
+        inherit: defaultInherit,
+        // If the eater is already full, taking that skill costs it another —
+        // same contract as `inherit`: a default now, the alternatives attached.
+        ...(drop ?? {}),
+        needsChoice: inheritOptions.length > 0 || Boolean(drop),
       });
     }
   }
@@ -751,9 +807,10 @@ export function getLegalActions(state, playerId) {
     }
   }
 
-  // Fusion costs no action, so it sits with the other free plays and is
-  // available even after you have attacked — and even to a Persona that cannot
-  // act, because fusing is something the player does, not the active Persona.
+  // Fusion costs the action (see FUSION_USES_ACTION), and fusionActions checks
+  // for one itself. It still sits here rather than in the action block below,
+  // because it is something the PLAYER does — a Persona that cannot act is no
+  // obstacle to it.
   actions.push(...fusionActions(state, playerId));
 
   // The Gallows sits with fusion for the same reason, and because its bottom

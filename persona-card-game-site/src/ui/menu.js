@@ -51,8 +51,10 @@ export function renderMenu(root) {
 
   const topbar = el('div', 'topbar');
   const titleWrap = el('div');
-  titleWrap.appendChild(el('h1', 'topbar__title', 'Persona Card Game'));
-  titleWrap.appendChild(el('div', 'topbar__sub', 'Unofficial fan project · Patch 3'));
+  titleWrap.appendChild(el('h1', 'topbar__title', 'Velvet Duel'));
+  // The subtitle carries the disclaimer, so the name can stand on its own while
+  // the fan-project status stays on screen rather than buried in Settings.
+  titleWrap.appendChild(el('div', 'topbar__sub', 'A Persona card game · Unofficial fan project · Patch 3'));
   topbar.appendChild(titleWrap);
   topbar.appendChild(el('div', 'topbar__spacer'));
 

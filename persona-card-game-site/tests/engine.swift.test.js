@@ -115,7 +115,11 @@ describe('Alacrity', () => {
     expect(state.log.some((l) => l.text.includes('Alacrity'))).toBe(true);
   });
 
-  it('gives nothing when the hit does not knock anything down', () => {
+  it('pays out even when the hit knocks nothing down', () => {
+    // The whole point of the rework: Alacrity is the EXIT, and you need the exit
+    // most on the turns the hit achieved nothing. It used to pay only on a
+    // knockdown, which meant it only ever fired on turns that had already paid
+    // you a One More — see the DESIGN NOTE in actions.js.
     let state = setupMatch();
     setField(state, 0, [{ cardId: 'pixie', active: true }]);
     setField(state, 1, [{ cardId: 'orpheus', active: true, hp: 900, maxHp: 900 }]); // neutral to elec
@@ -123,7 +127,21 @@ describe('Alacrity', () => {
 
     state = applyAction(state, use('zio'));
 
-    expect(state.turnState.personaChangesRemaining).toBe(before);
+    expect(state.turnState.oneMoresGranted).toBe(0); // nothing was knocked down
+    expect(state.turnState.personaChangesRemaining).toBe(before + CONFIG.ALACRITY_REFUND);
+    expect(state.log.some((l) => l.text.includes('Alacrity'))).toBe(true);
+  });
+
+  it('pays out against a target that RESISTS it', () => {
+    // A resisted hit is the weakest outcome in the game and still buys the exit.
+    let state = setupMatch();
+    setField(state, 0, [{ cardId: 'pixie', active: true }]);
+    setField(state, 1, [{ cardId: 'izanagi', active: true, hp: 900, maxHp: 900 }]); // resists elec
+    const before = state.turnState.personaChangesRemaining;
+
+    state = applyAction(state, use('zio'));
+
+    expect(state.turnState.personaChangesRemaining).toBe(before + CONFIG.ALACRITY_REFUND);
   });
 
   it('pays out on a killing weakness hit too — it knocks down before it kills', () => {
@@ -138,7 +156,7 @@ describe('Alacrity', () => {
     expect(state.turnState.personaChangesRemaining).toBe(before + 1 + CONFIG.ALACRITY_REFUND);
   });
 
-  it('gives nothing when the killing hit found no weakness', () => {
+  it('pays out on a killing hit that found no weakness', () => {
     let state = setupMatch();
     setField(state, 0, [{ cardId: 'pixie', active: true }]);
     setField(state, 1, [{ cardId: 'orpheus', active: true, hp: 1, maxHp: 900 }]); // neutral to elec
@@ -147,7 +165,36 @@ describe('Alacrity', () => {
     state = applyAction(state, use('zio'));
 
     expect(state.players[1].field[0].ko).toBe(true);
+    expect(state.turnState.oneMoresGranted).toBe(0); // no weakness, so no One More
+    expect(state.turnState.personaChangesRemaining).toBe(before + CONFIG.ALACRITY_REFUND);
+  });
+
+  it('is the skill that pays, not the outcome — every use costs one action', () => {
+    // Alacrity's only price is the action, and there is one of those per turn.
+    // That is what stops it becoming an unbounded rotation engine.
+    let state = setupMatch();
+    setField(state, 0, [{ cardId: 'pixie', active: true }, { cardId: 'jack-frost' }]);
+    setField(state, 1, [{ cardId: 'orpheus', active: true, hp: 900, maxHp: 900 }]);
+
+    state = applyAction(state, use('zio'));
+    expect(state.turnState.actionsRemaining).toBe(0);
+    expect(state.turnState.personaChangesRemaining).toBe(1 + CONFIG.ALACRITY_REFUND - 0);
+
+    // No action left, so the keyword cannot fire again however many changes remain.
+    expect(getLegalActions(state, 0).some((a) => a.type === 'USE_SKILL')).toBe(false);
+  });
+
+  it('does not fire on a skill that lacks the keyword', () => {
+    let state = setupMatch();
+    setField(state, 0, [{ cardId: 'pixie', active: true }]);
+    setField(state, 1, [{ cardId: 'orpheus', active: true, hp: 900, maxHp: 900 }]);
+    const before = state.turnState.personaChangesRemaining;
+
+    // A basic attack: same damage pipeline, no keyword on it.
+    state = applyAction(state, { type: 'ATTACK', player: 0 });
+
     expect(state.turnState.personaChangesRemaining).toBe(before);
+    expect(state.log.some((l) => l.text.includes('Alacrity'))).toBe(false);
   });
 
   it('lets you actually rotate after the knockdown', () => {

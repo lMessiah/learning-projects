@@ -333,7 +333,7 @@ function renderHowToPlay() {
     ])
   );
 
-  wrap.appendChild(el('h3', 'rules__heading', 'Fusion is free; the Gallows is not'));
+  wrap.appendChild(el('h3', 'rules__heading', 'Fusion and the Gallows both cost your action'));
   wrap.appendChild(
     para([
       b('Fusion'),
@@ -573,11 +573,18 @@ function renderFaq() {
         para([
           'Attacks and offensive skills can only target the opponent\'s ',
           b('active'),
-          ' Persona. Two Specials change that: ',
+          ' Persona. Three things change that: a ',
+          b('One More'),
+          ' opens the bench for the one extra action it granted, ',
           b('Ambush'),
-          ' lets you target any single enemy Persona for the rest of the turn, and ',
+          ' opens it for the rest of the turn, and ',
           b('Armageddon'),
           ' hits every enemy Persona at once.',
+        ])
+      );
+      body.appendChild(
+        para([
+          'The One More route is the narrow one: the bench closes again the moment you spend an action, whatever you spend it on — so the extra action is the only one that can reach past their active Persona.',
         ])
       );
     })
@@ -590,7 +597,7 @@ function renderFaq() {
           [b('Shocked'), ' — it cannot act at all this turn. Swap it out or pass.'],
           [b('Knocked down'), ' — it stands up automatically at the start of your next turn.'],
           [b('Not enough SP'), ' (or HP, for physical skills). Physical skills can never kill their own user, so a skill costing more HP than you have is refused.'],
-          [b('No action left'), ' — you already attacked, guarded, fed the Gallows or passed this turn. (Fusion is free, so it is still available.)'],
+          [b('No action left'), ' — you already attacked, guarded, fused, fed the Gallows or passed this turn. (Playing Personas, Items and Specials is still free, and so is a junk Gallows disposal.)'],
         ])
       );
     })
@@ -835,7 +842,7 @@ function renderFaq() {
           b('Baton Pass'),
           '), and the right to aim that action at ',
           b('any'),
-          ' enemy Persona — bench included. It is the one exception to active-only targeting.',
+          ' enemy Persona — bench included. Ambush is the other way to reach a bench; this one lasts for the granted action only, and closes the moment you spend an action.',
         ])
       );
       body.appendChild(
@@ -853,6 +860,60 @@ function renderFaq() {
             ' passive lifts that cap, so knockdowns scored during a One More keep the chain alive.',
           ],
           ['Downed Personas — bench ones too — stand back up at the start of their owner\'s turn.'],
+        ])
+      );
+    })
+  );
+
+  wrap.appendChild(
+    faq('Why was I asked to make my Persona forget a skill?', (body) => {
+      body.appendChild(
+        para([
+          'A Persona can know ',
+          b(`${CONFIG.MAX_SKILLS_PER_PERSONA} skills`),
+          ' at once — the ones printed on its card and everything it has picked up since, counted together. Nothing is printed with that many; you get there by ',
+          b('inheriting'),
+          ': a fusion hands down two, and every Gallows meal, Skill Card and Evolve adds another.',
+        ])
+      );
+      body.appendChild(
+        bullets([
+          ['At the cap, learning one more means ', b('giving one up'), ' — and it is your choice which. A printed skill is no safer than an inherited one.'],
+          ['The game suggests the weakest thing it knows, but that is only a suggestion. Every skill it has is one click away.'],
+          [
+            'A skill that would unlock from ',
+            b('levelling up'),
+            ' is the exception: there is nothing to click, because a level-up happens in the middle of a knockout. A full Persona simply cannot take it on, and the log says so.',
+          ],
+          ['Forgetting is not final — a skill given up can be taught again later.'],
+        ])
+      );
+    })
+  );
+
+  wrap.appendChild(
+    faq('What does ALACRITY on a skill mean?', (body) => {
+      body.appendChild(
+        para([
+          'It refunds your ',
+          b('Persona change'),
+          ' for the turn — every time you use the skill, whatever the hit did. It does ',
+          b('not'),
+          ' need a knockdown, it does not need to hit a weakness, and it still pays out against something that resists it.',
+        ])
+      );
+      body.appendChild(
+        para([
+          'What it buys you is the exit. You spend your action attacking, get the change handed back, and rotate the attacker to the bench before the reply lands — so a fragile Persona can throw a punch without having to stand there and take one. It is the ',
+          b('Swift'),
+          ' keyword, and it is printed on cheap, fast skills only.',
+        ])
+      );
+      body.appendChild(
+        bullets([
+          ['It costs an ', b('action'), ', and you only get one, so it fires once a turn — twice if a One More hands you a second action.'],
+          ['It ', b('stacks with Baton Pass'), '. Knock something down with an Alacrity skill and you get both refunds: the One More\'s change and this one.'],
+          ['The refund is a Persona ', b('change'), ', not an action. It lets you move, not attack again.'],
         ])
       );
     })

@@ -23,6 +23,9 @@ import {
   fusionLevelCap,
   fusionUnlocked,
   personaSkills,
+  isSkillFull,
+  droppableSkills,
+  forgetSkill,
   getSkill,
   hasAilment,
   handCard,
@@ -139,6 +142,66 @@ function resolveEnemyTarget(state, playerId, targetUid) {
     fail("only the opponent's active Persona can be targeted (a One More or Ambush opens up the bench)");
   }
   return target;
+}
+
+/**
+ * Teach a Persona a skill, respecting MAX_SKILLS_PER_PERSONA.
+ *
+ * The ONE place a skill is added to an instance by player choice — the Skill
+ * Card, the Evolve Special and a Gallows meal all come through here, so the cap
+ * is decided once and the three of them cannot drift apart.
+ *
+ * At the cap the action must say what it replaces, via `action.dropSkillId`.
+ * Refusing rather than silently dropping something is the point: which skill
+ * goes is a real decision, and the engine has no business guessing it. The
+ * failure names every candidate so the UI can build the picker from the error
+ * path alone if it has to.
+ *
+ * A fusion RESULT never comes through here — it is built with its inherited
+ * skills already attached, and cannot exceed the cap at creation: the fattest
+ * result unlocks 4 printed skills at its printed level and inherits 2.
+ *
+ * @returns {boolean} whether a skill was dropped to make room
+ */
+function learnSkill(state, persona, skillId, { dropSkillId = null, announce = null, logKind = 'levelup' } = {}) {
+  const skill = getSkillDefinition(skillId) || fail(`unknown skill "${skillId}"`);
+  if (personaSkills(state, persona).some((s) => s.id === skill.id)) {
+    fail(`${nameOf(persona)} already knows ${skill.name}`);
+  }
+
+  let dropped = null;
+  if (isSkillFull(state, persona)) {
+    const options = droppableSkills(state, persona);
+    if (!dropSkillId) {
+      fail(
+        `${nameOf(persona)} already knows ${CONFIG.MAX_SKILLS_PER_PERSONA} skills — ` +
+          `choose one to forget (${options.map((s) => s.id).join(', ')})`
+      );
+    }
+    dropped = options.find((s) => s.id === dropSkillId);
+    if (!dropped) fail(`${nameOf(persona)} does not know "${dropSkillId}", so it cannot forget it`);
+    if (dropped.id === skill.id) fail(`${skill.name} is the skill being learned; pick a different one to forget`);
+    forgetSkill(persona, dropped.id);
+  } else if (dropSkillId) {
+    fail(`${nameOf(persona)} has room for ${skill.name}; nothing needs to be forgotten`);
+  }
+
+  persona.inheritedSkills.push(skill.id);
+  // Learning is reversible in principle, so a skill forgotten earlier and taught
+  // again must come back rather than being filtered out by the tombstone.
+  if (persona.forgottenSkills?.length) {
+    persona.forgottenSkills = persona.forgottenSkills.filter((id) => id !== skill.id);
+  }
+
+  // The caller owns the sentence — "broke through", "inherited from", "learned
+  // from the card" all read differently and all matter. The cap only appends
+  // what it took to make room.
+  const sentence = announce ? announce(skill) : `${nameOf(persona)} learned ${skill.name}!`;
+  pushLog(state, sentence, logKind);
+  if (dropped) {
+    pushLog(state, `${nameOf(persona)} forgot ${dropped.name} to make room.`, logKind);
+  }
+  return Boolean(dropped);
 }
 
 /* ------------------------------------------------------------------ *
@@ -297,12 +360,10 @@ function applyEffect(state, playerId, effect, action, sourceName) {
      */
     case 'teachSkill': {
       const student = requireOwnPersona(state, playerId, action.targetUid);
-      const skill = getSkillDefinition(effect.skillId) || fail(`unknown skill "${effect.skillId}"`);
-      if (personaSkills(state, student).some((s) => s.id === skill.id)) {
-        fail(`${nameOf(student)} already knows ${skill.name}`);
-      }
-      student.inheritedSkills.push(skill.id);
-      pushLog(state, `${nameOf(student)} learned ${skill.name} from the card!`, 'levelup');
+      learnSkill(state, student, effect.skillId, {
+        dropSkillId: action.dropSkillId ?? null,
+        announce: (skill) => `${nameOf(student)} learned ${skill.name} from the card!`,
+      });
       return { kind: 'teachSkill' };
     }
 
@@ -706,8 +767,10 @@ function applyEffect(state, playerId, effect, action, sourceName) {
         .filter((s) => !known.has(s.id))
         .sort((a, b) => a.unlockLevel - b.unlockLevel)[0];
       if (!next) fail(`${nameOf(target)} already knows everything it can learn`);
-      target.inheritedSkills.push(next.id);
-      pushLog(state, `${nameOf(target)} broke through and learned ${next.name}!`, 'levelup');
+      learnSkill(state, target, next.id, {
+        dropSkillId: action.dropSkillId ?? null,
+        announce: (skill) => `${nameOf(target)} broke through and learned ${skill.name}!`,
+      });
       return { kind: 'evolve' };
     }
 
@@ -996,9 +1059,18 @@ const handlers = {
 
     consumeAction(state, result, attacker);
 
-    // Alacrity: a knockdown from a fast skill hands your Persona change back,
-    // so a Swift board can hit, rotate and hit again inside one turn.
-    if (skill.alacrity && result?.knockedDown) {
+    // Alacrity: a fast skill hands your Persona change back, so a Swift board
+    // can hit and then rotate out of the counter-punch.
+    //
+    // DESIGN NOTE: this used to require a KNOCKDOWN, and that was the wrong
+    // gate. A knockdown needs a weakness hit, which already grants a One More —
+    // and a One More already refunds a Persona change. So the old Alacrity only
+    // ever paid out on turns that had just paid you anyway, and did nothing at
+    // all on the turns a Swift deck actually needed help: the ones where you hit
+    // something you had no answer to and wanted to get out. It is unconditional
+    // now. The action it costs is the whole of its price, and actions are the
+    // scarce resource, so it cannot be used more than once per action.
+    if (skill.alacrity) {
       state.turnState.personaChangesRemaining += CONFIG.ALACRITY_REFUND;
       pushLog(state, `${skill.name} was over before they could react — Persona change refunded. (Alacrity)`, 'swap');
     }
@@ -1309,10 +1381,12 @@ const handlers = {
       }
       levelUp(state, eater, meal.levels);
 
-      if (inheritSkillId) {
-        if (!eater.inheritedSkills.includes(inheritSkillId)) eater.inheritedSkills.push(inheritSkillId);
-        const skillName = getSkillDefinition(inheritSkillId)?.name ?? inheritSkillId;
-        pushLog(state, `${nameOf(eater)} inherited ${skillName} from ${name}.`, 'gallows');
+      if (inheritSkillId && !personaSkills(state, eater).some((s) => s.id === inheritSkillId)) {
+        learnSkill(state, eater, inheritSkillId, {
+          dropSkillId: action.dropSkillId ?? null,
+          announce: (skill) => `${nameOf(eater)} inherited ${skill.name} from ${name}.`,
+          logKind: 'gallows',
+        });
       }
 
       // The top tier can hand over the food's whole nature instead of one of
