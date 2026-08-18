@@ -30,6 +30,8 @@ import {
   preventsKnockdown,
   enduresFatalBlow,
   counterReflection,
+  enduranceScaleFor,
+  weaknessScaleFor,
   revealsAllAffinities,
   passiveDamageMultiplier,
   spRegenFor,
@@ -780,7 +782,11 @@ export function resolveAttack(
   // which is also what refunds the skill's SP back in the caller.
   const darkHour = state.darkHour?.turnsLeft > 0 ? CONFIG.DARK_HOUR_MULT : 1;
   const phantomArmed = Boolean(state.turnState?.phantomStrike) && attacker.owner === state.activePlayer;
-  const preview = computeDamage({ attacker, defender, power, damageType, category, flat });
+  const preview = computeDamage({
+    attacker, defender, power, damageType, category, flat,
+    enduranceScale: enduranceScaleFor(attacker, damageType),
+    weaknessScale: weaknessScaleFor(defender),
+  });
   const phantomHit = phantomArmed && preview.weak;
 
   // The knockdown combo belongs to the turn, so it only pays the side whose
@@ -800,6 +806,8 @@ export function resolveAttack(
     damageType,
     category,
     flat,
+    enduranceScale: enduranceScaleFor(attacker, damageType),
+    weaknessScale: weaknessScaleFor(defender),
     // A Technical from Shock replaces the plain Shock damage bonus rather than
     // stacking with it — they are the same idea, and x1.5 twice on top of a
     // free knockdown is not a combo, it is a coin flip that ends the game.

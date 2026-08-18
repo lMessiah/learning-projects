@@ -11,6 +11,7 @@ import { applyAction, getLegalActions, CONFIG, passiveOf } from '../src/engine/i
 import { setupMatch, setField, setHand, activeOf, handUidOf } from './helpers.js';
 
 const zio = (player = 0, targetUid) => ({ type: 'USE_SKILL', player, skillId: 'zio', targetUid });
+const bufu = (player = 0, targetUid) => ({ type: 'USE_SKILL', player, skillId: 'bufu', targetUid });
 const agi = (player = 0, targetUid) => ({ type: 'USE_SKILL', player, skillId: 'agi', targetUid });
 
 /**
@@ -340,10 +341,10 @@ describe('chaining', () => {
  * never off the weakness.
  */
 describe('a prevented knockdown pays out nothing', () => {
-  /** Zio into Ara Mitama (Stalwart, weak to elec) at a chosen HP fraction. */
+  /** Bufu into Ara Mitama (Stalwart, weak to ice) at a chosen HP fraction. */
   const stalwart = (hpFraction) => {
     const state = setupMatch();
-    setField(state, 0, [{ cardId: 'omoikane', active: true }]); // knows Zio, no passive
+    setField(state, 0, [{ cardId: 'apsaras', active: true }]); // knows Bufu, no knockdown passive
     setField(state, 1, [{ cardId: 'ara-mitama', active: true, maxHp: 900, hp: Math.round(900 * hpFraction) }]);
     return state;
   };
@@ -352,7 +353,7 @@ describe('a prevented knockdown pays out nothing', () => {
     let state = stalwart(0.9);
     expect(passiveOf(activeOf(state, 1))).toBe('stalwart');
 
-    state = applyAction(state, zio());
+    state = applyAction(state, bufu());
 
     // The hit still landed and still read as a weakness — only the knockdown died.
     expect(activeOf(state, 1).hp).toBeLessThan(810);
@@ -364,7 +365,7 @@ describe('a prevented knockdown pays out nothing', () => {
 
   it('the same hit below half HP grants both', () => {
     let state = stalwart(0.3);
-    state = applyAction(state, zio());
+    state = applyAction(state, bufu());
 
     expect(activeOf(state, 1).knockedDown).toBe(true);
     expect(state.turnState.oneMoresGranted).toBe(1);
@@ -435,7 +436,7 @@ describe('a prevented knockdown pays out nothing', () => {
 
   it('scores no knockdown stat for a prevented one', () => {
     let state = stalwart(0.9);
-    state = applyAction(state, zio());
+    state = applyAction(state, bufu());
     expect(state.players[0].stats.knockdowns).toBe(0);
   });
 });

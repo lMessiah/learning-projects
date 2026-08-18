@@ -27,7 +27,30 @@ seed.
 Both players draw an **opening hand of 5** and choose a starting Persona from three
 offered options. Then turns alternate.
 
-### 1.1 Winning
+### 1.1 Signature starters and the triad
+
+Each flavour always has one **signature** Persona among its three starter offers —
+**Pixie** (P3), **Slime** (P4), **Ara Mitama** (P5). The other two are sampled, so
+the choice remains a choice; the signature is guaranteed so a player can plan around
+it rather than hope for it.
+
+The three beat each other in a cycle, and it is the game's introductory lesson:
+
+| | answers | via |
+|---|---|---|
+| **Slime** | Ara Mitama | Corrosive treats Endurance as 70% lower, so a wall made of Endurance stops working |
+| **Pixie** | Slime | Zio hits his Elec weakness for ×2 before his Strength matters |
+| **Ara Mitama** | Pixie | Endurance +2 per level plus a heal — her chip damage buys turns and nothing else |
+
+**Read the cycle in turns, not knockouts.** Ara Mitama's Strength is frozen; he is not
+trying to knock anything out. He costs the opponent turns while his owner develops a
+board, which is why the tests measure *turns to remove* rather than who wins a duel.
+
+The cycle does not hold at every level — see `tests/engine.triangle.test.js`, which
+pins the bands where it does and records the ones where it does not. A future tutorial
+match will teach the triad by playing it.
+
+### 1.2 Winning
 
 A match ends in exactly four ways.
 
@@ -414,6 +437,7 @@ Persona.
 | **Trickster** | One Mores chain — lifts the per-turn cap entirely |
 | **Stalwart** | Cannot be knocked down while above 50% HP — **see below** |
 | **Counter** | Reflects 25% of physical damage taken while standing |
+| **Corrosive** | Its physical attacks treat the target's Endurance as 70% lower — a wall-breaker |
 | **Analyst** | Damaging an enemy reveals its whole affinity chart |
 | **Bloodlust** | ×1.2 damage while behind on the KO tally |
 | **Soul Battery** | ×2 SP regen |
@@ -463,7 +487,7 @@ for board control, not a comeback lever.
 
 Running out of deck does not lose the match. The deck reshuffles from the discard and
 the player takes a **Fatigue** stack; every subsequent turn of theirs deals
-`5 × stacks` to all their living Personas. Death arrives via §1.1, not as its own
+`5 × stacks` to all their living Personas. Death arrives via §1.2, not as its own
 condition.
 
 ---
@@ -580,6 +604,7 @@ keeps this document true; nothing else hard-codes these.
 | `STALWART_HP_RATIO` | 0.5 |
 | `ALACRITY_REFUND` | 1 |
 | `COUNTER_REFLECT` | 0.25 |
+| `CORROSIVE_END_SCALE` | 0.3 |
 | `EMPTY_FIELD_LOSS_TURNS` | 3 |
 | `GALLOWS_PER_TURN` / `GALLOWS_JUNK_PER_TURN` | 1 / 1 |
 | `COMEBACK_FARM_GAP` | 5 |

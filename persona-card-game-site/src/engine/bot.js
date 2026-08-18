@@ -38,6 +38,8 @@ import {
 import {
   chainsOneMore,
   preventsKnockdown,
+  enduranceScaleFor,
+  weaknessScaleFor,
   enduresFatalBlow,
   koDeficit,
   fusionLevelBonus,
@@ -96,10 +98,15 @@ function perceivedAffinity(persona, damageType, difficulty) {
 function estimateDamage(attacker, defender, { power, damageType, category, execute, comboMult = 1 }, difficulty) {
   const cat = category || skillCategory(damageType);
   const atkStat = Math.max(1, cat === 'phys' ? attacker.strength : attacker.magic);
-  const base = (power * atkStat) / (atkStat + Math.max(0, defender.endurance));
+  // Mirrors computeDamage's Endurance scaling. Without this the bot would
+  // undervalue its own Corrosive attacker against exactly the walls the passive
+  // exists to beat.
+  const defStat = Math.max(0, defender.endurance * enduranceScaleFor(attacker, damageType));
+  const base = (power * atkStat) / (atkStat + defStat);
 
   const affinity = perceivedAffinity(defender, damageType, difficulty);
-  const affinityMult = affinity === 'weak' ? CONFIG.WEAK_MULT : affinity === 'resist' ? CONFIG.RESIST_MULT : 1;
+  const affinityMult =
+    affinity === 'weak' ? CONFIG.WEAK_MULT * weaknessScaleFor(defender) : affinity === 'resist' ? CONFIG.RESIST_MULT : 1;
 
   const atkBuff = buffOf(attacker, 'atk');
   const attackMult = !atkBuff ? 1 : atkBuff.direction === 'up' ? CONFIG.BUFF_MULT : 1 / CONFIG.BUFF_MULT;
@@ -191,7 +198,8 @@ function actionDamage(state, action, difficulty) {
 /** Flat Special damage: weakness, resist and guard, and nothing else. */
 function estimateFlat(defender, effect, difficulty) {
   const affinity = perceivedAffinity(defender, effect.damageType, difficulty);
-  const affinityMult = affinity === 'weak' ? CONFIG.WEAK_MULT : affinity === 'resist' ? CONFIG.RESIST_MULT : 1;
+  const affinityMult =
+    affinity === 'weak' ? CONFIG.WEAK_MULT * weaknessScaleFor(defender) : affinity === 'resist' ? CONFIG.RESIST_MULT : 1;
   const guardMult = defender.guarding ? CONFIG.GUARD_MULT : 1;
   return { amount: Math.max(0, Math.round((effect.amount ?? effect.power ?? 0) * affinityMult * guardMult)), affinity };
 }

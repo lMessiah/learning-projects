@@ -60,25 +60,25 @@ describe('the passive table', () => {
 
 describe('Stalwart — onKnockdownAttempt', () => {
   /**
-   * Pixie (Zio) against Ara Mitama, which holds Stalwart and is weak to elec.
+   * Apsaras (Bufu) against Ara Mitama, which holds Stalwart and is weak to ice.
    *
-   * Elec rather than ice on purpose: Ara Mitama's affinity chart is being
-   * retuned, and elec is the weakness it keeps. A fixture pinned to the
-   * weakness that is going away would fail for a reason that has nothing to do
-   * with the passive under test.
+   * ICE on purpose. Ara Mitama's affinity chart has been retuned three times
+   * during balancing and ice is the one weakness that has survived every pass,
+   * so a fixture anchored to it fails only when the PASSIVE breaks — which is
+   * the thing under test here.
    */
-  function elecOnStalwart({ hp, maxHp = 100 }) {
+  function iceOnStalwart({ hp, maxHp = 100 }) {
     const state = setupMatch();
-    setField(state, 0, [{ cardId: 'pixie', active: true }]);
+    setField(state, 0, [{ cardId: 'apsaras', active: true }]);
     setField(state, 1, [{ cardId: 'ara-mitama', active: true, hp, maxHp }]);
     return state;
   }
 
-  const hit = (state) => applyAction(state, { type: 'USE_SKILL', player: 0, skillId: 'zio' });
+  const hit = (state) => applyAction(state, { type: 'USE_SKILL', player: 0, skillId: 'bufu' });
   const half = (p) => p.maxHp * CONFIG.STALWART_HP_RATIO;
 
   it('refuses the knockdown while above half HP', () => {
-    let state = elecOnStalwart({ hp: 100 });
+    let state = iceOnStalwart({ hp: 100 });
     state = hit(state);
 
     const wall = activeOf(state, 1);
@@ -92,7 +92,7 @@ describe('Stalwart — onKnockdownAttempt', () => {
     // The bug this closes. Ara Mitama is comfortably above half when the hit
     // lands and comfortably below it afterwards. Stalwart is a rule about the
     // body the blow arrived at, so it holds.
-    let state = elecOnStalwart({ hp: 80 });
+    let state = iceOnStalwart({ hp: 80 });
     const before = activeOf(state, 1);
     expect(before.hp).toBeGreaterThan(half(before));
 
@@ -105,7 +105,7 @@ describe('Stalwart — onKnockdownAttempt', () => {
   });
 
   it('goes down when it was ALREADY at or below half when struck', () => {
-    let state = elecOnStalwart({ hp: 50 }); // exactly half: the check is `>`, so this is not protected
+    let state = iceOnStalwart({ hp: 50 }); // exactly half: the check is `>`, so this is not protected
     state = hit(state);
 
     const wall = activeOf(state, 1);
@@ -116,7 +116,7 @@ describe('Stalwart — onKnockdownAttempt', () => {
   it('dies standing when a lethal blow lands on a healthy body, and pays nothing', () => {
     // The sharpest consequence of reading pre-damage HP: a lethal hit no longer
     // slips past Stalwart just because 0 HP is not above anything.
-    let state = elecOnStalwart({ hp: 40, maxHp: 60 });
+    let state = iceOnStalwart({ hp: 40, maxHp: 60 });
     const before = activeOf(state, 1);
     expect(before.hp).toBeGreaterThan(half(before));
 
@@ -129,7 +129,7 @@ describe('Stalwart — onKnockdownAttempt', () => {
   });
 
   it('still pays out when the lethal blow lands on an already-weakened body', () => {
-    let state = elecOnStalwart({ hp: 12, maxHp: 100 });
+    let state = iceOnStalwart({ hp: 12, maxHp: 100 });
     state = hit(state);
     const wall = state.players[1].field[0];
 

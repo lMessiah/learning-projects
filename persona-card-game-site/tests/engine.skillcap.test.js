@@ -138,19 +138,27 @@ describe('a learn the player chose', () => {
     ).toThrow(/cannot forget it/i);
   });
 
-  it('refuses a drop when there is room, so the UI cannot ask for one needlessly', () => {
+  it('ignores a drop when the Persona turns out to have room', () => {
+    // Deliberately lenient. Whether a drop is needed is decided when the legal
+    // action is built, and on the Gallows path a level-up lands in between —
+    // it can unlock a printed skill or make the offered one redundant. Failing
+    // there would reject a legal action for a reason the player never saw.
     const state = pixieWith([]);
     setHand(state, 0, ['skill-card-agilao']);
-    expect(isSkillFull(state, activeOf(state, 0))).toBe(false);
+    const p = activeOf(state, 0);
+    expect(isSkillFull(state, p)).toBe(false);
+    const before = personaSkills(state, p).map((s) => s.id);
 
-    expect(() =>
-      applyAction(state, {
-        type: 'PLAY_ITEM', player: 0,
-        handUid: card(state).uid,
-        targetUid: activeOf(state, 0).uid,
-        dropSkillId: personaSkills(state, activeOf(state, 0))[0].id,
-      })
-    ).toThrow(/nothing needs to be forgotten/i);
+    const after = applyAction(state, {
+      type: 'PLAY_ITEM', player: 0,
+      handUid: card(state).uid,
+      targetUid: p.uid,
+      dropSkillId: before[0],
+    });
+
+    const now = personaSkills(after, activeOf(after, 0)).map((s) => s.id);
+    expect(now).toContain(before[0]); // nothing was forgotten
+    expect(now).toContain('agilao'); // and it still learned
   });
 });
 

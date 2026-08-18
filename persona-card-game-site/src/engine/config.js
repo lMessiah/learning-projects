@@ -213,6 +213,21 @@ export const CONFIG = Object.freeze({
   FATIGUE_DAMAGE: 5, // per stack, to all of that player's Personas, each of their turns
 
   // --- Passives ---------------------------------------------------------
+  // Corrosive: physical attacks from the holder treat the target's Endurance as
+  // this fraction of its real value.
+  //
+  // It scales the DENOMINATOR of the damage ratio rather than multiplying the
+  // result, and that is the whole point of the passive. A flat damage bonus
+  // would help equally against everything; piercing Endurance helps most
+  // against the bodies built out of it — +7% against a 4-END Pixie, +44%
+  // against a 39-END Ara Mitama. The card is a wall-breaker, so its passive has
+  // to care about walls.
+  CORROSIVE_END_SCALE: 0.3,
+
+  // Stalwart, second clause: the fraction of WEAKNESS damage its holder takes.
+  // 1 disables it. A wall that shrugs off knockdowns but folds to its weakness
+  // is only half a wall, so this is the other half.
+  STALWART_WEAK_SCALE: 1,
   STALWART_HP_RATIO: 0.5, // Stalwart: cannot be knocked down above this HP fraction
   COUNTER_REFLECT: 0.25, // Counter: fraction of physical damage reflected
   BLOODLUST_MULT: 1.2, // Bloodlust: damage multiplier while behind on KOs

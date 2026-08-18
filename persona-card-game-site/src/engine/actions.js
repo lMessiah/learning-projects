@@ -182,9 +182,13 @@ function learnSkill(state, persona, skillId, { dropSkillId = null, announce = nu
     if (!dropped) fail(`${nameOf(persona)} does not know "${dropSkillId}", so it cannot forget it`);
     if (dropped.id === skill.id) fail(`${skill.name} is the skill being learned; pick a different one to forget`);
     forgetSkill(persona, dropped.id);
-  } else if (dropSkillId) {
-    fail(`${nameOf(persona)} has room for ${skill.name}; nothing needs to be forgotten`);
   }
+  // A `dropSkillId` on a Persona that turns out to have room is IGNORED, not an
+  // error. The legal-action list decides whether a drop is needed before the
+  // action resolves, and on the Gallows path a level-up happens in between — it
+  // can unlock a printed skill, or the eater can turn out to already know the
+  // one on offer. Refusing there would make a legal action fail for a reason the
+  // player never saw. Nothing is forgotten, and that is the whole effect.
 
   persona.inheritedSkills.push(skill.id);
   // Learning is reversible in principle, so a skill forgotten earlier and taught

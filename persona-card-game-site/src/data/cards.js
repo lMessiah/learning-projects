@@ -72,6 +72,33 @@ export const FUSION_ALIGNMENTS = Object.freeze(['aggressive', 'defensive']);
 export const DECKS = raw.decks;
 export const STARTER_POOL = raw.starterPool;
 
+/**
+ * The Persona each flavour is ALWAYS offered as one of its three starters.
+ *
+ * A signature is the card that flavour is about — the one a player should be
+ * able to build around from turn one rather than hope to be dealt. The other two
+ * offers are still sampled from the pool, so the choice stays a choice.
+ *
+ * THE TRIAD. The three signatures beat each other in a cycle, and it is the
+ * first thing the game teaches:
+ *
+ *   Slime (P4)      answers Ara Mitama — Corrosive treats Endurance as 70%
+ *                   lower, so the wall's one stat stops mattering
+ *   Pixie (P3)      answers Slime      — Zio hits his Elec weakness for x2
+ *                   before his Strength has time to matter
+ *   Ara Mitama (P5) blunts  Pixie      — Endurance +2 a level and a heal, so
+ *                   her chip damage buys her turns and nothing else
+ *
+ * Read it in TURNS, not knockouts. Ara Mitama has his Strength frozen and is
+ * not trying to knock anyone out; he costs the opponent turns while his owner
+ * builds a board behind him. That is why the tests measure turns-to-remove.
+ *
+ * See tests/engine.triangle.test.js, which pins the cycle and records the level
+ * bands where it currently holds. A future tutorial match will teach the triad
+ * by playing it.
+ */
+export const STARTER_SIGNATURES = Object.freeze({ ...(raw.meta.starterSignatures ?? {}) });
+
 /** Every card of every type, in one flat list. */
 export const ALL_CARDS = [...PERSONAS, ...ITEMS, ...SPECIALS];
 

@@ -62,6 +62,8 @@ export const PASSIVE_DEFS = Object.freeze({
      */
     onKnockdownAttempt: ({ persona, hp }) =>
       (hp ?? persona.hp) > persona.maxHp * CONFIG.STALWART_HP_RATIO ? 'prevent' : null,
+    /** Weakness damage the holder actually takes. 1 = the usual x2. */
+    weaknessDamageScale: () => CONFIG.STALWART_WEAK_SCALE,
   },
 
   counter: {
@@ -75,6 +77,25 @@ export const PASSIVE_DEFS = Object.freeze({
       const reflect = Math.round(dealt * CONFIG.COUNTER_REFLECT);
       return reflect > 0 ? { reflect } : null;
     },
+  },
+
+  corrosive: {
+    id: 'corrosive',
+    name: 'Corrosive',
+    description: `Its physical attacks treat the target's Endurance as ${Math.round(
+      (1 - CONFIG.CORROSIVE_END_SCALE) * 100
+    )}% lower than it is.`,
+    /**
+     * Scales the defender's Endurance INSIDE the damage ratio, physical only.
+     *
+     * The only hook in this table that reaches into the formula rather than
+     * multiplying its result, and it has to: `base = power × atk / (atk + END)`,
+     * so a bonus applied afterwards would be worth the same against every
+     * target. Reaching the denominator is what makes the holder specifically
+     * good against high-Endurance bodies and unremarkable against soft ones.
+     */
+    damageEnduranceScale: ({ damageType }) =>
+      damageType === 'phys' ? CONFIG.CORROSIVE_END_SCALE : 1,
   },
 
   analyst: {
@@ -196,6 +217,14 @@ export const counterReflection = (defender, { damageType, dealt, wasStanding }) 
 
 export const passiveDamageMultiplier = (state, attacker) =>
   runHook(attacker, 'damageMultiplier', { state }, 1) ?? 1;
+
+/** How much WEAKNESS damage the DEFENDER's passive lets through. */
+export const weaknessScaleFor = (defender) =>
+  runHook(defender, 'weaknessDamageScale', {}, 1) ?? 1;
+
+/** How much of the defender's Endurance the ATTACKER's passive lets through. */
+export const enduranceScaleFor = (attacker, damageType) =>
+  runHook(attacker, 'damageEnduranceScale', { damageType }, 1) ?? 1;
 
 export const spRegenFor = (persona, spRegen) =>
   runHook(persona, 'onTurnStart', { spRegen }, null)?.spRegen ?? spRegen;

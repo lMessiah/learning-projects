@@ -831,6 +831,43 @@ function renderFaq() {
   );
 
   wrap.appendChild(
+    faq('Why is the same Persona always offered to me at the start?', (body) => {
+      body.appendChild(
+        para([
+          'Each deck has a ',
+          b('signature'),
+          ' Persona that is always one of your three starting choices — ',
+          b('Pixie'),
+          ' for P3, ',
+          b('Slime'),
+          ' for P4, ',
+          b('Ara Mitama'),
+          ' for P5. The other two are drawn at random, so the choice is still yours; the signature is there so you can plan around it instead of hoping for it.',
+        ])
+      );
+      body.appendChild(
+        para([
+          'The three of them beat each other in a ring, and it is the quickest way to learn how the game thinks:',
+        ])
+      );
+      body.appendChild(
+        bullets([
+          [b('Slime'), ' breaks ', b('Ara Mitama'), ' — its Corrosive passive treats Endurance as far lower than it is, so a wall built out of Endurance stops being a wall.'],
+          [b('Pixie'), ' beats ', b('Slime'), ' — Zio hits his Elec weakness for double before his Strength has time to matter.'],
+          [b('Ara Mitama'), ' blunts ', b('Pixie'), ' — he is not trying to knock her out. He soaks her chip damage and heals, so every turn she spends on him is a turn you spend building a board.'],
+        ])
+      );
+      body.appendChild(
+        para([
+          'That last one is the important habit: a Persona does not have to win a fight to be doing its job. Costing your opponent turns ',
+          b('is'),
+          ' the job. A tutorial match will walk you through all three.',
+        ])
+      );
+    })
+  );
+
+  wrap.appendChild(
     faq('What is One More, and what is Baton Pass?', (body) => {
       body.appendChild(
         para([

@@ -25,7 +25,8 @@
       "RULE: `kind: \"inflict\"` applies a named ailment with certainty and deals no damage. It is the only guaranteed way to start a Technical — every other source is a percentage rider on a fire or electric skill, and every one of those prints its odds.",
       "RULE: `percentOfTargetHp` on a damage effect replaces the power curve entirely: the hit deals that fraction of the target's CURRENT HP, modified only by weakness, resist and guard, exactly like a flat Special. Taking a share of what remains can never reduce it to zero, so a percentage skill never lands a knockout.",
       "RULE: `rewriteAffinities` replaces a Persona INSTANCE's weakness and resist lists, preserving the count of each, clearing everything anyone had revealed, and setting `rewritten`. Every reader goes through state.affinitiesOf, and a rewritten Persona is opaque even to the Brutal bot — its cheat is reading the card, and the card no longer describes it. One exclusive per flavour: Turn of the Moon (P3), Jester's Trickery (P4), Change of Heart (P5).",
-      "RULE: `traesto` is the tactical retreat. Its effect `{ kind: \"retreat\" }` returns one of your field Personas to your hand as the SAME INSTANCE — a hand entry carrying a `persona` blob — so its level, skills and passive survive. Capped at 1 per deck by meta.deckGroupCaps."
+      "RULE: `traesto` is the tactical retreat. Its effect `{ kind: \"retreat\" }` returns one of your field Personas to your hand as the SAME INSTANCE — a hand entry carrying a `persona` blob — so its level, skills and passive survive. Capped at 1 per deck by meta.deckGroupCaps.",
+      "RULE: `meta.starterSignatures` names the Persona each flavour is ALWAYS offered as one of its three starters — pixie/p3, slime/p4, ara-mitama/p5. The three form a deliberate cycle: Slime breaks Ara Mitama (Corrosive ignores Endurance), Pixie beats Slime (Elec weakness), Ara Mitama blunts Pixie (Endurance growth + Dia — he buys turns rather than knockouts). Measured in turns-to-remove in tests/engine.triangle.test.js. A future tutorial match teaches it."
     ],
     "damageTypes": [
       "phys",
@@ -64,6 +65,7 @@
       "trickster",
       "stalwart",
       "counter",
+      "corrosive",
       "analyst",
       "bloodlust",
       "soul-battery",
@@ -82,6 +84,11 @@
       "skill-card": 2,
       "twist-fate": 1,
       "traesto": 1
+    },
+    "starterSignatures": {
+      "p3": "pixie",
+      "p4": "slime",
+      "p5": "ara-mitama"
     }
   },
   "skillLibrary": {
@@ -982,21 +989,25 @@
       "sp": 18,
       "weaknesses": [
         "ice",
-        "elec"
+        "dark"
       ],
       "resists": [
         "fire"
       ],
       "statGrowth": {
-        "strength": 1,
+        "strength": 0,
         "magic": 0,
-        "endurance": 1,
+        "endurance": 2,
         "hp": 4,
         "sp": 1
       },
       "skills": [
         {
           "skill": "bash",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "dia",
           "unlockLevel": 1
         },
         {
@@ -1021,6 +1032,62 @@
         "defensive": 3,
         "tactical": 1,
         "swift": 3
+      }
+    },
+    {
+      "id": "slime",
+      "name": "Slime",
+      "type": "persona",
+      "arcana": "Strength",
+      "level": 5,
+      "game": "p4",
+      "flavor": "It does not hit hard so much as keep hitting until something gives.",
+      "passive": "corrosive",
+      "strength": 12,
+      "magic": 3,
+      "endurance": 6,
+      "hp": 56,
+      "sp": 16,
+      "weaknesses": [
+        "elec"
+      ],
+      "resists": [
+        "phys"
+      ],
+      "statGrowth": {
+        "strength": 2,
+        "magic": 0,
+        "endurance": 1,
+        "hp": 4,
+        "sp": 1
+      },
+      "skills": [
+        {
+          "skill": "bash",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "tarukaja",
+          "unlockLevel": 1
+        },
+        {
+          "skill": "assault-dive",
+          "unlockLevel": 8
+        },
+        {
+          "skill": "heat-wave",
+          "unlockLevel": 12
+        },
+        {
+          "skill": "gigantic-fist",
+          "unlockLevel": 16
+        }
+      ],
+      "affinity": {
+        "aggressive": 1,
+        "defensive": 3,
+        "tactical": 1,
+        "swift": 1
       }
     },
     {
@@ -3858,7 +3925,8 @@
     "izanagi",
     "arsene",
     "ara-mitama",
-    "angel"
+    "angel",
+    "slime"
   ],
   "decks": [
     {

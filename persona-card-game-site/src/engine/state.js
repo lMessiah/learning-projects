@@ -6,7 +6,7 @@
  */
 import { CONFIG, PASSIVE_CHOICE_PREFIX } from './config.js';
 import { createRng, shuffle, sample } from './rng.js';
-import { getCard, getPersona, getSkillDefinition, STARTER_POOL } from '../data/cards.js';
+import { getCard, getPersona, getSkillDefinition, STARTER_POOL, STARTER_SIGNATURES } from '../data/cards.js';
 import { buildDeck } from '../data/archetypes.js';
 
 /* ------------------------------------------------------------------ *
@@ -200,10 +200,18 @@ export function createMatch({ seed = 1, players }) {
     player.deck = deck;
   }
 
+  // Starter offers. Each flavour's SIGNATURE Persona is always one of the three
+  // — the card that flavour is about should be a decision on turn one, not a
+  // lucky roll — and the other two are sampled from the rest of the pool, so
+  // choosing is still choosing. A flavour with no signature gets three sampled,
+  // exactly as before.
   for (let i = 0; i < 2; i++) {
-    const [options, rng] = sample(state.rng, STARTER_POOL, 3);
+    const signature = STARTER_SIGNATURES[state.players[i].deckId] ?? null;
+    const rest = signature ? STARTER_POOL.filter((id) => id !== signature) : STARTER_POOL;
+    const [sampled, rng] = sample(state.rng, rest, signature ? 2 : 3);
     state.rng = rng;
-    state.starterOptions[i] = options;
+    // Signature first, so the eye lands on it before the alternatives.
+    state.starterOptions[i] = signature ? [signature, ...sampled] : sampled;
   }
 
   pushLog(state, 'Match start. Choose your starting Persona.', 'system');

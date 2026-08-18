@@ -58,13 +58,20 @@ export function computeDamage({
   // player is most likely to be surprised by.
   comboMult = 1,
   ignoreShockBonus = false,
+  // How much of the defender's Endurance actually applies. Corrosive lowers it.
+  // Passed in rather than read here so damage.js stays free of passives.js —
+  // the caller already assembles passiveMult the same way.
+  enduranceScale = 1,
+  // How much weakness damage the defender's own passive lets through.
+  weaknessScale = 1,
 }) {
   const cat = category || skillCategory(damageType);
   const atkStat = Math.max(1, attackStatOf(attacker, cat));
-  const defStat = Math.max(0, defender.endurance);
+  const defStat = Math.max(0, defender.endurance * enduranceScale);
 
   const affinity = affinityOf(defender, damageType);
-  const affinityMult = affinity === 'weak' ? CONFIG.WEAK_MULT : affinity === 'resist' ? CONFIG.RESIST_MULT : 1;
+  const affinityMult =
+    affinity === 'weak' ? CONFIG.WEAK_MULT * weaknessScale : affinity === 'resist' ? CONFIG.RESIST_MULT : 1;
 
   // FLAT damage: a card that prints "deal 60 damage" deals 60, full stop —
   // modified only by weakness, resist and guard. Nothing else touches it, so
@@ -119,7 +126,7 @@ export function computeDamage({
     resisted: affinity === 'resist',
     chargeUsed,
     flat: false,
-    breakdown: { base, affinityMult, attackMult, defenseMult, comboMult, guardMult, shockMult, chargeMult, passiveMult },
+    breakdown: { base, affinityMult, attackMult, defenseMult, comboMult, guardMult, shockMult, chargeMult, passiveMult, enduranceScale },
   };
 }
 

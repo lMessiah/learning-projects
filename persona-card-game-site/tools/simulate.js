@@ -445,6 +445,7 @@ console.log(`  ${pad('passive', 20)}${pad('holder', 16)}${pad('seeds', 8)}${pad(
 const ABLATION_HOLDERS = {
   trickster: ['pixie', 'p3'],
   stalwart: ['ara-mitama', 'p4'],
+  corrosive: ['slime', 'p4'],
   analyst: ['orpheus', 'p3'],
   'soul-battery': ['apsaras', 'p3'],
   bloodlust: ['take-minakata', 'p3'],
