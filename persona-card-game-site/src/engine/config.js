@@ -120,6 +120,16 @@ export const CONFIG = Object.freeze({
   SHOCK_DURATION: 1, // expires at the end of the victim's next turn
   BUFF_DURATION: 3,
 
+  // Recasting a buff you already hold EXTENDS it rather than refreshing it:
+  // two turns left plus a fresh Tarukaja is five, not three. The cap is what
+  // stops that from becoming a permanent field-wide buff — with two copies of
+  // Tarukaja and a 3-turn base, an uncapped extend costs one card every three
+  // turns to never expire, which is not a cost.
+  //
+  // 2x the base duration, because that is exactly one "banked" recast: you may
+  // stack ahead by one cast and no further.
+  BUFF_MAX_DURATION: 6,
+
   // How many skills one Persona may know at once — printed and inherited
   // together, exactly as the games count them.
   //
@@ -208,6 +218,22 @@ export const CONFIG = Object.freeze({
   DRAW_SCALE_RATE: 2,
   DRAW_SCALE_CAP: 20,
   DRAW_SCALE_PENALTY: 0.35, // how hard each level below the floor divides the weight
+
+  // --- Signature Personas ------------------------------------------------
+  // Pixie, Slime and Ara Mitama are the cards their flavours are ABOUT, and a
+  // player picks one on turn one because they want to play that plan. Two rules
+  // stop the plan being taken away — see SIGNATURE_* in state.js.
+  //
+  // 1. You never draw one while you already hold one, so copies never clog your
+  //    hand and the deck saves them for when you actually have none.
+  // 2. The one you CHOSE as your starter is then the likeliest Persona in the
+  //    deck, so losing it costs you turns rather than the rest of the match.
+  //
+  // 6 is a weight multiplier over a plain card's 1. It has to beat the momentum
+  // and floor weighting that also runs here without erasing it — at 6 the
+  // signature is reliably the next Persona you see without the deck becoming
+  // nothing else.
+  SIGNATURE_DRAW_WEIGHT: 6,
 
   // Deck out
   FATIGUE_DAMAGE: 5, // per stack, to all of that player's Personas, each of their turns

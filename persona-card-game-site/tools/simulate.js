@@ -20,7 +20,7 @@
 import { createMatch, applyAction, getLegalActions, createRng, CONFIG } from '../src/engine/index.js';
 import { canAffordBestSkill, drawLevelFloor } from '../src/engine/effects.js';
 import { chooseBotAction } from '../src/engine/bot.js';
-import { ARCHETYPE_IDS } from '../src/data/archetypes.js';
+import { ARCHETYPE_IDS, poolFor } from '../src/data/archetypes.js';
 import { DECKS, getPersona } from '../src/data/cards.js';
 import { PASSIVE_LIST } from '../src/engine/passives.js';
 
@@ -441,10 +441,19 @@ console.log('  Identical seed, identical deck, identical starter — one differe
 console.log('');
 console.log(`  ${pad('passive', 20)}${pad('holder', 16)}${pad('seeds', 8)}${pad('with', 10)}${pad('without', 10)}${pad('delta', 10)}diverged`);
 
-/** A deck-legal Persona that prints each passive, and the flavour it lives in. */
+/**
+ * A deck-legal Persona that prints each passive, and the flavour it lives in.
+ *
+ * The flavour half of each pair is a fact about `cards.json`, not a preference,
+ * and it goes stale silently: moving a card between pools leaves the ablation
+ * forcing a starter the named deck can no longer draw a second copy of, which
+ * quietly weakens every number in this table. `assertHolder` below checks each
+ * pair against the real pool rather than trusting this list — Ara Mitama moved
+ * from p4 to p5 and nothing here noticed until it was looked at by hand.
+ */
 const ABLATION_HOLDERS = {
   trickster: ['pixie', 'p3'],
-  stalwart: ['ara-mitama', 'p4'],
+  stalwart: ['ara-mitama', 'p5'],
   corrosive: ['slime', 'p4'],
   analyst: ['orpheus', 'p3'],
   'soul-battery': ['apsaras', 'p3'],
@@ -455,6 +464,30 @@ const ABLATION_HOLDERS = {
   // Counter has no deck-legal holder: Odin is fusion-only.
 };
 
+/**
+ * Is this holder actually in the flavour it is paired with, and does it still
+ * print the passive being measured?
+ *
+ * Loud on purpose. A wrong pairing does not crash — it produces a plausible
+ * number that means something other than what the column header says, which is
+ * the worst failure a balance tool can have.
+ */
+function assertHolder(passive, cardId, flavour) {
+  const card = getPersona(cardId);
+  if (!card) throw new Error(`ABLATION_HOLDERS: no Persona "${cardId}" for ${passive.id}`);
+  if (card.passive !== passive.id) {
+    throw new Error(
+      `ABLATION_HOLDERS: ${cardId} is paired with ${passive.id} but prints ${card.passive ?? 'no passive'}`
+    );
+  }
+  if (!poolFor(flavour).persona.some((p) => p.id === cardId)) {
+    throw new Error(
+      `ABLATION_HOLDERS: ${cardId} is paired with ${flavour}, but ${flavour}'s pool cannot draw it ` +
+        `(its game is "${card.game}"). Fix the pairing or the card.`
+    );
+  }
+}
+
 const ABLATION_SEEDS = 80;
 for (const passive of PASSIVE_LIST) {
   const holder = ABLATION_HOLDERS[passive.id];
@@ -464,6 +497,7 @@ for (const passive of PASSIVE_LIST) {
     continue;
   }
   const [cardId, flavour] = holder;
+  assertHolder(passive, cardId, flavour);
 
   let paired = 0;
   let withWins = 0;

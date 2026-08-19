@@ -24,7 +24,7 @@ export const STRATEGY_TIPS = Object.freeze([
   {
     id: 'turtle',
     title: 'Turtle up',
-    text: 'A high-Endurance active with Guard and Rakukaja can wall while you stockpile cards and fusion material.',
+    text: 'A high-Endurance active with Guard and Rakukaja can wall while you stockpile cards and fusion material — and Rakukaja covers your bench too, so whatever steps up next is already behind the same wall.',
   },
   {
     id: 'coverage',
@@ -69,6 +69,11 @@ export const GENERAL_TIPS = Object.freeze([
     id: 'free-plays',
     title: 'Play before you act',
     text: `Persona cards, ${CONFIG.ITEMS_PER_TURN} Item and ${CONFIG.SPECIALS_PER_TURN} Special are all free — none of them costs your one action. Empty your hand first, then decide what to do with it.`,
+  },
+  {
+    id: 'buff-order',
+    title: 'Bodies down, then buff',
+    text: `A kaja covers every Persona you have on the field, bench included — but only the ones already out when you cast it. Play your Personas first and the same Tarukaja is worth two or three times as much. Recasting adds turns rather than stacking, up to ${CONFIG.BUFF_MAX_DURATION}.`,
   },
   {
     id: 'one-more',

@@ -714,6 +714,9 @@ function skillButton(skill, candidates, act, setUi, enabled, title, settings) {
   node.type = 'button';
   node.disabled = !enabled;
   node.title = title || '';
+  // A stable hook for anything that needs to point at one specific control —
+  // today the How to Play coach. Class names are styling and move; this does not.
+  if (skill.id) node.dataset.skillId = skill.id;
 
   node.appendChild(el('span', 'skill-btn__icon', typeIcon(skill.type)));
   const body = el('span', 'skill-btn__body');
@@ -986,22 +989,34 @@ function playHandCard(card, candidates, dispatch, setUi, settings, { state, view
  * Action bar
  * ------------------------------------------------------------------ */
 
+/**
+ * Stamp a stable identifier on a control.
+ *
+ * Class names here are styling and are free to change; `data-act` is a contract.
+ * The How to Play coach points at these to highlight the move it is describing,
+ * and it must not break the next time this bar is restyled.
+ */
+function tag(name, node) {
+  node.dataset.act = name;
+  return node;
+}
+
 function renderActionBar(ctx) {
   const { legal, yourTurn, act, setUi, settings } = ctx;
   const bar = el('div', 'action-bar');
   const byType = (type) => legal.filter((a) => a.type === type);
 
   const guard = byType('GUARD');
-  bar.appendChild(button('🛡️ Guard', 'btn', () => act(guard[0]), {
+  bar.appendChild(tag('guard', button('🛡️ Guard', 'btn', () => act(guard[0]), {
     disabled: !yourTurn || !guard.length,
     title: 'Take half damage and resist knockdown until your next turn',
-  }));
+  })));
 
   const pass = byType('PASS');
-  bar.appendChild(button('⏭️ Pass (+1 card)', 'btn', () => act(pass[0]), {
+  bar.appendChild(tag('pass', button('⏭️ Pass (+1 card)', 'btn', () => act(pass[0]), {
     disabled: !yourTurn || !pass.length,
     title: 'Give up your action and draw an extra card',
-  }));
+  })));
 
   // Fusion is always reachable on your turn: the panel itself explains what a
   // recipe still needs, which is the only way to learn the system.
@@ -1016,7 +1031,7 @@ function renderActionBar(ctx) {
         : 'Browse fusion recipes and see what each one needs',
     });
   if (ready) badgeButton(fusionBtn);
-  bar.appendChild(fusionBtn);
+  bar.appendChild(tag('fusion', fusionBtn));
 
   // The Gallows: the small sibling of fusion, and reachable the same way.
   const gallows = byType('GALLOWS');
@@ -1036,7 +1051,7 @@ function renderActionBar(ctx) {
     }
   );
   if (worthALevel) badgeButton(gallowsBtn);
-  bar.appendChild(gallowsBtn);
+  bar.appendChild(tag('gallows', gallowsBtn));
 
   const endTurn = byType('END_TURN')[0];
   // With auto-end off, hint that the turn is spent instead of ending it for
@@ -1044,10 +1059,10 @@ function renderActionBar(ctx) {
   const playable = legal.filter((a) => a.type !== 'RESIGN');
   const onlyMoveLeft = yourTurn && playable.length === 1 && playable[0].type === 'END_TURN';
   const endClass = `btn btn--primary${onlyMoveLeft && !settings?.autoEndTurn ? ' btn--suggested' : ''}`;
-  bar.appendChild(button('End turn ▸', endClass, () => {
+  bar.appendChild(tag('endturn', button('End turn ▸', endClass, () => {
     if (endTurn.needsChoice) setUi({ modal: discardModal(endTurn, act, setUi) });
     else act(endTurn);
-  }, { disabled: !yourTurn || !endTurn, title: 'Pass the turn to your opponent' }));
+  }, { disabled: !yourTurn || !endTurn, title: 'Pass the turn to your opponent' })));
 
   return bar;
 }

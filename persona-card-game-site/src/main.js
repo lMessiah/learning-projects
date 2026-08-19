@@ -17,12 +17,14 @@ import { renderGallery } from './ui/gallery.js';
 import { renderBotGame } from './ui/game/botGame.js';
 import { renderHotseat } from './ui/game/hotseat.js';
 import { renderOnline, joinCodeFromHash } from './ui/game/online.js';
+import { renderHowTo, lessonIdFromHash } from './ui/tutorial/index.js';
 import { renderSettings } from './ui/settingsView.js';
 import { applyThemeFor } from './ui/theme.js';
 
 const routes = {
   '#/': renderMenu,
   '#/gallery': renderGallery,
+  '#/howto': renderHowTo,
   '#/bot': renderBotGame,
   '#/local': renderHotseat,
   '#/online': renderOnline,
@@ -30,12 +32,14 @@ const routes = {
 };
 
 /**
- * `#/join/ABC234` is the shareable match link, so it is the one route that
- * carries a parameter. Everything else is an exact match.
+ * Two routes carry a parameter: `#/join/ABC234`, the shareable match link, and
+ * `#/howto/<lesson>`, one tutorial battle. Everything else is an exact match.
  */
 function resolve(hash) {
   const joinCode = joinCodeFromHash(hash);
   if (joinCode) return (root) => renderOnline(root, { joinCode });
+  const lessonId = lessonIdFromHash(hash);
+  if (lessonId) return (root) => renderHowTo(root, { lessonId });
   return routes[hash] || renderMenu;
 }
 

@@ -563,12 +563,12 @@
       "type": "buff",
       "power": 0,
       "spCost": 6,
-      "description": "Raise your active Persona's attack for 3 turns.",
+      "description": "Raise the attack of EVERY Persona on your field for 3 turns, bench included.",
       "effect": {
         "kind": "buff",
         "stat": "atk",
         "direction": "up",
-        "target": "ownActive",
+        "target": "ownField",
         "duration": 3
       }
     },
@@ -577,12 +577,12 @@
       "type": "buff",
       "power": 0,
       "spCost": 6,
-      "description": "Raise your active Persona's defense for 3 turns.",
+      "description": "Raise the defense of EVERY Persona on your field for 3 turns, bench included.",
       "effect": {
         "kind": "buff",
         "stat": "def",
         "direction": "up",
-        "target": "ownActive",
+        "target": "ownField",
         "duration": 3
       }
     },
@@ -591,12 +591,12 @@
       "type": "debuff",
       "power": 0,
       "spCost": 6,
-      "description": "Lower the enemy active Persona's attack for 3 turns.",
+      "description": "Lower the attack of EVERY Persona on the enemy field for 3 turns, bench included.",
       "effect": {
         "kind": "buff",
         "stat": "atk",
         "direction": "down",
-        "target": "enemyActive",
+        "target": "enemyField",
         "duration": 3
       }
     },
@@ -605,12 +605,12 @@
       "type": "debuff",
       "power": 0,
       "spCost": 6,
-      "description": "Lower the enemy active Persona's defense for 3 turns.",
+      "description": "Lower the defense of EVERY Persona on the enemy field for 3 turns, bench included.",
       "effect": {
         "kind": "buff",
         "stat": "def",
         "direction": "down",
-        "target": "enemyActive",
+        "target": "enemyField",
         "duration": 3
       }
     },
@@ -979,7 +979,7 @@
       "type": "persona",
       "arcana": "Chariot",
       "level": 4,
-      "game": "p4",
+      "game": "p5",
       "flavor": "A rough soul. All courage, no subtlety.",
       "passive": "stalwart",
       "strength": 10,
@@ -1028,10 +1028,10 @@
         }
       ],
       "affinity": {
-        "aggressive": 3,
+        "aggressive": 0,
         "defensive": 3,
-        "tactical": 1,
-        "swift": 3
+        "tactical": 2,
+        "swift": 0
       }
     },
     {
@@ -3030,12 +3030,12 @@
       "type": "item",
       "usesAction": false,
       "quality": 2,
-      "description": "Lower the enemy active Persona's defense for 3 turns (Rakunda).",
+      "description": "Lower the defense of every Persona on the enemy field for 3 turns (Rakunda).",
       "effect": {
         "kind": "buff",
         "stat": "def",
         "direction": "down",
-        "target": "enemyActive",
+        "target": "enemyField",
         "duration": 3
       },
       "affinity": {
@@ -3051,12 +3051,12 @@
       "type": "item",
       "usesAction": false,
       "quality": 2,
-      "description": "Raise your active Persona's attack for 3 turns (Tarukaja).",
+      "description": "Raise the attack of every Persona on your field for 3 turns (Tarukaja).",
       "effect": {
         "kind": "buff",
         "stat": "atk",
         "direction": "up",
-        "target": "ownActive",
+        "target": "ownField",
         "duration": 3
       },
       "affinity": {
@@ -3270,11 +3270,11 @@
       "type": "special",
       "usesAction": false,
       "quality": 2,
-      "description": "Remove all buffs from the enemy active Persona.",
+      "description": "Remove all buffs from every Persona on the enemy field.",
       "effect": {
         "kind": "dispel",
         "remove": "buffs",
-        "target": "enemyActive"
+        "target": "enemyField"
       },
       "affinity": {
         "aggressive": 1,
@@ -3289,11 +3289,11 @@
       "type": "special",
       "usesAction": false,
       "quality": 2,
-      "description": "Remove all debuffs from your active Persona.",
+      "description": "Remove all debuffs from every Persona on your field.",
       "effect": {
         "kind": "dispel",
         "remove": "debuffs",
-        "target": "ownActive"
+        "target": "ownField"
       },
       "affinity": {
         "aggressive": 0,

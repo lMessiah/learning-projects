@@ -73,6 +73,10 @@ function createPlayer(id, { name, deckId, archetype = null, controller = 'human'
     controller, // 'human' | 'bot'
     difficulty, // bot only
     lastSkillId: null, // the last skill this player used, for Wild Card
+    // The Persona chosen from the opening three. When it is one of the three
+    // SIGNATURE_CARDS it is also the player's declared plan, which is what the
+    // signature draw priority and level scaling key off.
+    starterCardId: null,
     pendingDraw: null, // reserved by Fortune's Draw
     deck: [],
     hand: [], // [{ uid, cardId }]
@@ -377,6 +381,81 @@ export function highestFieldLevel(state, playerId) {
 export function playableLevelCap(state, playerId) {
   return highestFieldLevel(state, playerId) + CONFIG.PLAY_LEVEL_GAP;
 }
+
+/* ------------------------------------------------------------------ *
+ * Signature Personas
+ * ------------------------------------------------------------------ *
+ *
+ * Pixie, Slime and Ara Mitama are the three cards their flavours are ABOUT.
+ * Every flavour is guaranteed one of them among its opening three offers, and
+ * the player picks one because they want to play that plan.
+ *
+ * The problem this solves: a signature is a low-level card. Once it dies, a
+ * replacement drawn fifteen turns later is a level-4 body walking into a level-
+ * 15 board — legal to play, useless to play. The plan the player chose on turn
+ * one is gone for the rest of the match, which is a bad thing to do to someone
+ * for the crime of losing one Persona.
+ *
+ * Two rules, and both are about ACCESS, not power:
+ *
+ *   1. SUPPRESSION — you never draw a signature while you already hold one
+ *      (alive on the field, or in hand). Applies to all three cards, for
+ *      anyone. Copies never clog a hand, and the deck keeps them for when you
+ *      have none.
+ *   2. PRIORITY — the signature you CHOSE as your starter is the likeliest
+ *      Persona in your deck once you have none.
+ *
+ * What you get back is the CARD, at its printed level — not the Persona you
+ * lost. A signature that died at level 15 returns as a level 4 body, and every
+ * level it had is gone with it.
+ *
+ * That is deliberate and it is the design's centre of gravity. A third rule was
+ * built and then removed: it scaled the returning copy to the player's own
+ * board level, which made the plan fully recoverable and, measured, turned
+ * losing your signature into barely a setback. Losing the Persona you built
+ * your match around is supposed to HURT. These two rules only guarantee you can
+ * start rebuilding — through the Gallows and knockout levelling, like anything
+ * else — rather than spending the rest of the match unable to draw the card at
+ * all.
+ */
+
+/** The three cards. Read off the data, so adding a flavour needs no edit here. */
+export const SIGNATURE_CARDS = Object.freeze([...new Set(Object.values(STARTER_SIGNATURES))]);
+
+export const isSignatureCard = (cardId) => SIGNATURE_CARDS.includes(cardId);
+
+/**
+ * Does this player already have this signature? Alive on the field or in hand.
+ *
+ * KO'd copies deliberately do NOT count: a dead Ara Mitama is the situation the
+ * whole mechanism exists for, not a reason to keep withholding the card.
+ */
+export function holdsSignature(state, playerId, cardId) {
+  const player = state.players[playerId];
+  return (
+    player.field.some((p) => p.cardId === cardId && !p.ko) ||
+    player.hand.some((c) => c.cardId === cardId)
+  );
+}
+
+/**
+ * Is this the signature this player actually chose on turn one?
+ *
+ * The plan is the pick, not the flavour. A P5 player who passed on Ara Mitama
+ * for Orpheus did not choose the wall, and does not get it handed back.
+ */
+export function isChosenSignature(state, playerId, cardId) {
+  return isSignatureCard(cardId) && state.players[playerId].starterCardId === cardId;
+}
+
+/*
+ * There is deliberately no `signatureEntryLevel` here.
+ *
+ * A signature enters play at its printed level like every other Persona card —
+ * the draw rules above hand back the CARD, and nothing hands back the levels.
+ * Traesto is the one exception to that, and it is not a signature rule: it
+ * carries a Persona's real level home because that body never left your side.
+ */
 
 /** Can this Persona card be played to the field yet? */
 export function canPlayPersonaCard(state, playerId, cardId, entry = null) {

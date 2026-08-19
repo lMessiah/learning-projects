@@ -4,8 +4,9 @@
 import { DECKS } from '../../data/cards.js';
 import { ARCHETYPES } from '../../data/archetypes.js';
 import { DIFFICULTIES } from '../../engine/bot.js';
+import { PLAYSTYLES } from '../../engine/playstyles.js';
 import { getProfileName } from '../profile.js';
-import { renderArchetypeRow, ARCHETYPE_HEADING, ARCHETYPE_NOTE } from '../archetypeRow.js';
+import { renderArchetypeRow, ARCHETYPE_NOTE } from '../archetypeRow.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -17,7 +18,7 @@ function el(tag, className, text) {
 const DECK_SYMBOL = { p3: '🌙', p4: '🌫️', p5: '🎭' };
 
 export function renderBotSetup(root, { onStart, onExit }) {
-  const choice = { deckId: DECKS[0].id, archetype: ARCHETYPES[0].id, difficulty: 'medium' };
+  const choice = { deckId: DECKS[0].id, archetype: ARCHETYPES[0].id, difficulty: 'medium', playstyle: 'normal' };
   root.innerHTML = '';
 
   const topbar = el('div', 'topbar');
@@ -55,7 +56,10 @@ export function renderBotSetup(root, { onStart, onExit }) {
   wrap.appendChild(deckRow);
 
   // --- Archetype --------------------------------------------------------
-  wrap.appendChild(el('h2', 'setup__heading', ARCHETYPE_HEADING));
+  // Not ARCHETYPE_HEADING ("Choose a play style") on this screen only: the bot
+  // has its own playstyle row below, and two headings saying "play style" three
+  // inches apart is a genuinely confusing screen.
+  wrap.appendChild(el('h2', 'setup__heading', "Choose your deck's play style"));
   wrap.appendChild(renderArchetypeRow({ value: choice.archetype, onPick: (id) => { choice.archetype = id; } }));
   wrap.appendChild(el('p', 'setup__note', ARCHETYPE_NOTE));
 
@@ -78,11 +82,38 @@ export function renderBotSetup(root, { onStart, onExit }) {
   diffButtons.get(choice.difficulty).classList.add('setup-card--on');
   wrap.appendChild(diffRow);
 
+  // --- Bot playstyle ----------------------------------------------------
+  // Difficulty is how WELL it plays; this is what it is trying to do. The two
+  // are independent — a Brutal Defensive bot walls at full strength.
+  wrap.appendChild(el('h2', 'setup__heading', "Choose the bot's playstyle"));
+  const styleRow = el('div', 'setup__row');
+  const styleButtons = new Map();
+  for (const style of PLAYSTYLES) {
+    const node = el('button', `setup-card setup-card--playstyle setup-card--ps-${style.id}`);
+    node.type = 'button';
+    node.dataset.playstyle = style.id;
+    node.appendChild(el('span', 'setup-card__icon', style.icon));
+    node.appendChild(el('span', 'setup-card__title', style.label));
+    node.appendChild(el('span', 'setup-card__desc', style.blurb));
+    node.addEventListener('click', () => {
+      choice.playstyle = style.id;
+      for (const [id, btn] of styleButtons) btn.classList.toggle('setup-card--on', id === style.id);
+    });
+    styleButtons.set(style.id, node);
+    styleRow.appendChild(node);
+  }
+  styleButtons.get(choice.playstyle).classList.add('setup-card--on');
+  wrap.appendChild(styleRow);
+
   wrap.appendChild(
     el(
       'p',
       'setup__note',
-      'Your opponent draws one of the other two decks at random. Both of you will pick a starting Persona from 3 offered before the first turn.'
+      'A playstyle locks the bot to the deck and signature Persona it is built around, and it will ' +
+        'happily mirror your own deck — the plan is the point. On top of that it still rolls a random ' +
+        'deck play style of its own, so the 30 cards are never the same twice. Normal is the original ' +
+        'behaviour: no plan, and one of the decks you did not pick. Both of you choose a starting ' +
+        'Persona from 3 offered before the first turn, and your flavour’s signature is always one of them.'
     )
   );
 

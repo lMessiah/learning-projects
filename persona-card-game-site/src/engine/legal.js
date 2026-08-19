@@ -93,8 +93,9 @@ function effectTargets(state, playerId, effect) {
       return skill ? effectTargets(state, playerId, skill.effect) : null;
     }
     default:
-      // buff / dispel / charge / grant / growth / forceSwitch / reveal /
-      // peekHand / swapHpSp all hit fixed slots.
+      // charge / grant / growth / forceSwitch / reveal / peekHand / swapHpSp
+      // all hit fixed slots, and buff / dispel cover a whole side at once — so
+      // none of them asks the player to pick anything.
       return null;
   }
 }
@@ -171,12 +172,16 @@ function effectIsUseful(state, playerId, effect) {
       return livingField(state, playerId).some((p) => p.ailments.length > 0);
     case 'revive':
       return koedField(state, playerId).length > 0 && hasFieldRoom(state, playerId);
+    // Buffs and dispels cover a whole side, so what they need is a BODY on that
+    // side — not an active one. A player who just lost their active still has a
+    // bench worth buffing.
     case 'buff':
-      return effect.target === 'enemyActive' ? Boolean(getActive(state, foeId)) : Boolean(getActive(state, playerId));
+      return livingField(state, effect.target === 'enemyField' ? foeId : playerId).length > 0;
     case 'dispel': {
-      const target = effect.target === 'enemyActive' ? getActive(state, foeId) : getActive(state, playerId);
-      if (!target) return false;
-      return target.buffs.some((b) => (effect.remove === 'buffs' ? b.direction === 'up' : b.direction === 'down'));
+      const side = effect.target === 'enemyField' ? foeId : playerId;
+      return livingField(state, side).some((p) =>
+        p.buffs.some((b) => (effect.remove === 'buffs' ? b.direction === 'up' : b.direction === 'down'))
+      );
     }
     case 'charge': {
       const active = getActive(state, playerId);

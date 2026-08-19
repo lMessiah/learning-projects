@@ -18,6 +18,7 @@
  */
 import { arcanaStyle, typeIcon, typeLabel, CARD_TYPE_STYLE } from './arcana.js';
 import { getSkillDefinition } from '../data/cards.js';
+import { CONFIG } from '../engine/config.js';
 import { passiveDefinition } from '../engine/passives.js';
 
 function el(tag, className, text) {
@@ -44,7 +45,12 @@ function powerLabel(skill) {
   const { effect } = skill;
   if (effect.kind === 'heal') return effect.amount >= 9999 ? 'Full' : `+${effect.amount}`;
   if (effect.kind === 'drainSp') return `${effect.amount} SP`;
-  if (effect.kind === 'buff') return effect.direction === 'up' ? '+40%' : '−40%';
+  // Read off BUFF_MULT rather than printed: this used to say "+40%" in text and
+  // drifted the moment the constant moved.
+  if (effect.kind === 'buff') {
+    const pct = Math.round((CONFIG.BUFF_MULT - 1) * 100);
+    return effect.direction === 'up' ? `+${pct}%` : `−${pct}%`;
+  }
   if (!skill.power) return '—';
   return String(skill.power);
 }

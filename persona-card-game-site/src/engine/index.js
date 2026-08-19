@@ -8,6 +8,15 @@
 export { CONFIG, skillCategory, MAGIC_TYPES } from './config.js';
 export { createRng, nextFloat, nextInt, rollChance, shuffle, sample } from './rng.js';
 export {
+  PLAYSTYLES,
+  PLAYSTYLE_IDS,
+  CONCRETE_PLAYSTYLES,
+  getPlaystyle,
+  resolvePlaystyle,
+  applyPlaystyle,
+  preferredStarter,
+} from './playstyles.js';
+export {
   createMatch,
   createPersonaInstance,
   opponentOf,
@@ -18,6 +27,10 @@ export {
   koedField,
   fieldCount,
   hasFieldRoom,
+  SIGNATURE_CARDS,
+  isSignatureCard,
+  holdsSignature,
+  isChosenSignature,
   highestFieldLevel,
   playableLevelCap,
   canPlayPersonaCard,
@@ -56,10 +69,10 @@ export {
 } from './passives.js';
 export { computeDamage, executeMultiplier, technicalFor, affinityOf, attackStatOf } from './damage.js';
 export {
-  applyBuff,
+  applyBuffToField,
   applyAilment,
   cureAilments,
-  dispelBuffs,
+  dispelField,
   addCharge,
   healPersona,
   restoreSp,

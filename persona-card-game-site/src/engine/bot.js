@@ -46,6 +46,7 @@ import {
   passiveOf,
 } from './passives.js';
 import { executeMultiplier, technicalFor } from './damage.js';
+import { applyPlaystyle, preferredStarter } from './playstyles.js';
 
 export const DIFFICULTIES = Object.freeze([
   { id: 'easy', label: 'Easy', blurb: 'Plays at random. Never goes looking for your weaknesses.' },
@@ -570,20 +571,41 @@ function scoreSupportEffect(state, action, effect, difficulty, source) {
       return livingField(state, playerId).length <= 2 ? 70 : 35;
     }
 
+    /**
+     * A buff covers a whole side, so it is worth roughly what it covers: a
+     * Tarukaja into three bodies is a far better card than the same Tarukaja
+     * into a lone active. The per-body value is scaled down from the old
+     * single-target number so a full field lands near where it used to and a
+     * thin one lands below — otherwise the bot would buff a solo Persona at
+     * triple the old price.
+     */
     case 'buff': {
-      const target = effect.target === 'enemyActive' ? enemyActive : active;
-      if (!target) return 0;
-      const existing = buffOf(target, effect.stat);
-      if (existing && existing.direction === effect.direction) return 1; // just a refresh
-      const base = existing ? 26 : 18; // cancelling an enemy's buff is worth more
-      return brutal ? base * 1.5 : difficulty === 'medium' ? base * 0.7 : base * 0.4;
+      const side = effect.target === 'enemyField' ? foeId : playerId;
+      const targets = livingField(state, side);
+      if (!targets.length) return 0;
+
+      let value = 0;
+      for (const target of targets) {
+        const existing = buffOf(target, effect.stat);
+        if (!existing) value += 12;
+        // Opposite direction: this cast cancels it, which is the good case.
+        else if (existing.direction !== effect.direction) value += 18;
+        // Same direction already at the ceiling: this body gains nothing.
+        else if (existing.turnsLeft >= CONFIG.BUFF_MAX_DURATION) value += 0;
+        // Same direction with room: extending is real, but only worth the turns.
+        else value += 3;
+      }
+      return brutal ? value * 1.5 : difficulty === 'medium' ? value * 0.7 : value * 0.4;
     }
 
     case 'dispel': {
-      const target = effect.target === 'enemyActive' ? enemyActive : active;
-      if (!target) return 0;
-      const hits = target.buffs.filter((b) => (effect.remove === 'buffs' ? b.direction === 'up' : b.direction === 'down'));
-      return hits.length * (brutal ? 30 : 18);
+      const side = effect.target === 'enemyField' ? foeId : playerId;
+      const hits = livingField(state, side).reduce(
+        (n, p) =>
+          n + p.buffs.filter((b) => (effect.remove === 'buffs' ? b.direction === 'up' : b.direction === 'down')).length,
+        0
+      );
+      return hits * (brutal ? 22 : 13);
     }
 
     case 'charge': {
@@ -870,12 +892,19 @@ function pickRandom(list, rng) {
   return [list[index], next];
 }
 
-/** Highest score wins; ties are broken randomly so the bot isn't robotic. */
-function pickBest(state, actions, difficulty, rng) {
+/**
+ * Highest score wins; ties are broken randomly so the bot isn't robotic.
+ *
+ * The playstyle is laid over the score HERE and nowhere else. Keeping it to one
+ * seam means a playstyle can never disagree with the rules or with the scorer's
+ * judgement of what is possible — it only re-ranks what the scorer already
+ * approved of. See playstyles.js.
+ */
+function pickBest(state, actions, difficulty, rng, playstyle = 'normal') {
   let best = -Infinity;
   let bestActions = [];
   for (const action of actions) {
-    const score = scoreAction(state, action, difficulty);
+    const score = applyPlaystyle(scoreAction(state, action, difficulty), action, playstyle);
     if (score > best + 1e-9) {
       best = score;
       bestActions = [action];
@@ -932,9 +961,16 @@ const endTurnFrom = (legal, fallback) => legal.find((a) => a.type === 'END_TURN'
  * Score every legal action, highest first. Exposed for debugging — the UI logs
  * this each bot turn when the ?debugBot flag is set.
  */
-export function explainBotActions(state, playerId, difficulty) {
+export function explainBotActions(state, playerId, difficulty, playstyle = 'normal') {
   return botLegalActions(state, playerId)
-    .map((action) => ({ action, score: Number(scoreAction(state, action, difficulty).toFixed(2)) }))
+    .map((action) => {
+      const base = scoreAction(state, action, difficulty);
+      return {
+        action,
+        base: Number(base.toFixed(2)),
+        score: Number(applyPlaystyle(base, action, playstyle).toFixed(2)),
+      };
+    })
     .sort((a, b) => b.score - a.score);
 }
 
@@ -946,16 +982,28 @@ export function explainBotActions(state, playerId, difficulty) {
  * unless it is the only thing left — passing used to sit in their random pools,
  * which made them look asleep roughly one turn in seven.
  *
+ * @param playstyle a RESOLVED playstyle id — see playstyles.js. 'random' must be
+ *                  resolved once at setup, not here, or the bot changes its mind
+ *                  every turn.
  * @returns {[object|null, object]} the action (null if there is nothing to do) and the next RNG
  */
-export function chooseBotAction(state, playerId, difficulty, rng) {
+export function chooseBotAction(state, playerId, difficulty, rng, playstyle = 'normal') {
   const legal = botLegalActions(state, playerId);
   if (!legal.length) return [null, rng];
   if (legal.length === 1) return [legal[0], rng];
 
   if (state.phase === 'starterSelect') {
+    // A playstyle built around a signature Persona takes it whenever it is on
+    // offer, at every difficulty — the plan is the point, and an Easy Defensive
+    // bot that opened on something other than Ara Mitama would not be playing
+    // the playstyle the player picked. The signature is guaranteed to be offered
+    // to its own flavour (STARTER_SIGNATURES), so this almost always fires.
+    const wanted = preferredStarter(playstyle);
+    const signature = wanted && legal.find((a) => a.type === 'CHOOSE_STARTER' && a.cardId === wanted);
+    if (signature) return [signature, rng];
+
     if (difficulty === 'easy' || difficulty === 'chaos') return pickRandom(legal, rng);
-    return pickBest(state, legal, difficulty, rng);
+    return pickBest(state, legal, difficulty, rng, playstyle);
   }
 
   const productive = productiveActions(legal);
@@ -976,15 +1024,15 @@ export function chooseBotAction(state, playerId, difficulty, rng) {
   }
 
   // --- medium / brutal --------------------------------------------------
-  const [choice, next] = pickBest(state, legal, difficulty, rng);
+  const [choice, next] = pickBest(state, legal, difficulty, rng, playstyle);
 
   if (!isPassive(choice)) return [choice, next];
 
   // The scorer wanted to give up the turn. Only allow that if there is really
   // nothing better: an available attack always wins over passing.
-  if (hasAction && damaging.length) return pickBest(state, damaging, difficulty, next);
+  if (hasAction && damaging.length) return pickBest(state, damaging, difficulty, next, playstyle);
 
-  const [bestProductive, next2] = pickBest(state, productive, difficulty, next);
+  const [bestProductive, next2] = pickBest(state, productive, difficulty, next, playstyle);
   if (scoreAction(state, bestProductive, difficulty) > 0) return [bestProductive, next2];
 
   return [endTurnFrom(legal, choice), next2];
@@ -994,7 +1042,7 @@ export function chooseBotAction(state, playerId, difficulty, rng) {
  * Play out a bot's entire turn, returning the actions in order. The UI applies
  * them one at a time so the player can follow along.
  */
-export function planBotTurn(state, playerId, difficulty, rng, applyAction) {
+export function planBotTurn(state, playerId, difficulty, rng, applyAction, playstyle = 'normal') {
   const actions = [];
   let current = state;
   let currentRng = rng;
@@ -1002,7 +1050,7 @@ export function planBotTurn(state, playerId, difficulty, rng, applyAction) {
   for (let i = 0; i < MAX_ACTIONS_PER_TURN; i++) {
     if (current.winner !== null) break;
     if (current.phase === 'playing' && current.activePlayer !== playerId) break;
-    const [action, nextRng] = chooseBotAction(current, playerId, difficulty, currentRng);
+    const [action, nextRng] = chooseBotAction(current, playerId, difficulty, currentRng, playstyle);
     currentRng = nextRng;
     if (!action) break;
     actions.push(action);

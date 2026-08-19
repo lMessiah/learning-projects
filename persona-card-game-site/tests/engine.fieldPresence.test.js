@@ -574,7 +574,10 @@ describe('an empty field is not a deficit', () => {
     // Two Personas of very different quality plus filler. Deep in the hole, the
     // stronger Persona should come up more often than the weaker one — but an
     // Item should never come up at all.
-    const deck = ['jack-frost', 'pixie', 'medicine', 'medicine', 'medicine', 'medicine'];
+    // Orpheus rather than Pixie as the weak half: Pixie is a SIGNATURE, and a
+    // boardless player whose starter was one draws it on priority — a real rule
+    // (see state.js) but an unrelated confound for a test about the filter.
+    const deck = ['jack-frost', 'orpheus', 'medicine', 'medicine', 'medicine', 'medicine'];
     let strong = 0;
     let items = 0;
     for (let seed = 0; seed < 200; seed++) {
@@ -593,7 +596,10 @@ describe('an empty field is not a deficit', () => {
   });
 
   it('draws uniformly among Personas for a boardless player at even score', () => {
-    const deck = ['jack-frost', 'pixie', 'medicine', 'medicine', 'medicine', 'medicine'];
+    // Orpheus rather than Pixie as the weak half: Pixie is a SIGNATURE, and a
+    // boardless player whose starter was one draws it on priority — a real rule
+    // (see state.js) but an unrelated confound for a test about the filter.
+    const deck = ['jack-frost', 'orpheus', 'medicine', 'medicine', 'medicine', 'medicine'];
     let strong = 0;
     for (let seed = 0; seed < 200; seed++) {
       const state = emptyBoardFor(0, { deck });

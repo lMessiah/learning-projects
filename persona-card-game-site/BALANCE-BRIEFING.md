@@ -1,4 +1,17 @@
-# Persona Card Game — Balance & Design Briefing
+# Velvet Duel — Balance & Design Briefing
+
+> ## ⚠️ SNAPSHOT — SUPERSEDED. Do not treat any number here as current.
+>
+> This was generated for one design conversation, before the game was named
+> **Velvet Duel** and before Waves 1–3 landed. It has NOT been maintained, and
+> several of its headline numbers are now wrong — Ara Mitama's affinities, stat
+> growth and flavour; the Alacrity rules; fusion's action cost; the whole buff
+> system. Every line number in it is stale.
+>
+> **`SPEC.md` is the authoritative rules document.** `src/engine/config.js` is the
+> authority on constants. Use this file only as a record of what was *asked* and
+> *decided* in that conversation — §0 SCOPE is still the useful part — and verify
+> anything else against the code before acting on it.
 
 Generated from the working tree. Every extract is prefixed with its file path and
 line range. Line numbers are accurate as of generation; treat them as anchors, not

@@ -5,11 +5,21 @@
 import { getProfileName, setProfileName } from './profile.js';
 
 const BOXES = [
+  // First on purpose: a new player's eye lands here before it lands on a
+  // difficulty picker they have no way to judge yet.
+  {
+    id: 'howto',
+    icon: '📖',
+    label: 'How to Play',
+    desc: 'Five guided tutorial battles, from your first attack to reading a position two turns ahead.',
+    route: '#/howto',
+    enabled: true,
+  },
   {
     id: 'bot',
     icon: '🎭',
     label: 'Against Bot',
-    desc: 'Take on the AI across four difficulties: Easy, Medium, Brutal and Chaos.',
+    desc: 'Four difficulties and five playstyles — Normal, Defensive, All-Rounder, Combo, or Random.',
     route: '#/bot',
     enabled: true,
   },

@@ -196,6 +196,47 @@ export function skillsAtLevel(persona, level) {
  * Data integrity check. Used by the gallery banner and by the engine tests so
  * a bad card edit fails loudly instead of producing a weird match.
  */
+/**
+ * A flavour's SIGNATURE Persona has to be one that flavour can actually draw.
+ *
+ * "Signature" is spread across two fields that nothing connected:
+ * `meta.starterSignatures` decides who is GUARANTEED the card on turn one, and
+ * `game` decides whose deck it is shuffled into. They came apart — Ara Mitama
+ * was P5's guaranteed starter with `game: "p4"`, so a P5 player was handed one
+ * on turn one and could never draw a second, while P4 decks filled up with the
+ * Persona that flavour is not about.
+ *
+ * Takes the mapping as an argument purely so this can be tested against a bad
+ * one. A validator nobody has watched fail is a decoration.
+ *
+ * @param signatures flavour -> card id; defaults to the shipped mapping
+ */
+export function checkStarterSignatures(signatures = STARTER_SIGNATURES) {
+  const errors = [];
+
+  for (const [flavour, id] of Object.entries(signatures)) {
+    if (!BY_ID.has(id)) {
+      errors.push(`Starter signature: ${flavour} names unknown card "${id}"`);
+      continue;
+    }
+    if (!STARTER_POOL.includes(id)) {
+      errors.push(`Starter signature: ${flavour}'s ${id} is not in the starter pool, so it can never be offered`);
+    }
+    const card = getPersona(id);
+    if (card.game !== flavour && card.game !== 'common') {
+      errors.push(
+        `Starter signature: ${flavour}'s signature ${id} has game "${card.game}", so ${flavour} cannot draw it — ` +
+          `set its game to "${flavour}" or "common"`
+      );
+    }
+    if (card.exclusive && card.exclusive !== flavour) {
+      errors.push(`Starter signature: ${flavour}'s signature ${id} is exclusive to ${card.exclusive}`);
+    }
+  }
+
+  return errors;
+}
+
 export function validateDatabase() {
   const errors = [];
   const seen = new Set();
@@ -285,6 +326,8 @@ export function validateDatabase() {
     if (!BY_ID.has(id)) errors.push(`Starter pool: unknown card "${id}"`);
     else if (getPersona(id).level > 10) errors.push(`Starter pool: ${id} is too strong to be a starter`);
   }
+
+  errors.push(...checkStarterSignatures());
 
   return errors;
 }

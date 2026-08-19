@@ -339,7 +339,13 @@ describe('draw-level floor', () => {
         state.players[0].hand = [];
         // Half openers, half mid-tier, interleaved so the top of the deck is
         // never the answer by itself.
-        state.players[0].deck = Array.from({ length: 20 }, (_, i) => (i % 2 ? 'anzu' : 'pixie'));
+        //
+        // Orpheus rather than Pixie for the opener half: Pixie is a SIGNATURE,
+        // and setupMatch's starter IS the signature, so a deck topped with one
+        // would be skipped by the draw suppression (see state.js) — which would
+        // make this test pass or fail for a reason that has nothing to do with
+        // the draw-level floor it is measuring.
+        state.players[0].deck = Array.from({ length: 20 }, (_, i) => (i % 2 ? 'anzu' : 'orpheus'));
         const next = applyAction(state, { type: 'PASS', player: 0 });
         if (next.players[0].hand[0].cardId === 'anzu') hits++;
       }

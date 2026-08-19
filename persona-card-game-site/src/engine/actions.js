@@ -60,8 +60,8 @@ import {
   revivePersona,
   cureAilments,
   applyAilment,
-  applyBuff,
-  dispelBuffs,
+  applyBuffToField,
+  dispelField,
   addCharge,
   resolveAttack,
   applyDamage,
@@ -332,21 +332,26 @@ function applyEffect(state, playerId, effect, action, sourceName) {
       return { kind: 'revive' };
     }
 
+    /**
+     * Buffs and debuffs land on a SIDE, not a slot — see applyBuffToField.
+     * The requirement is a body on that field, not an active one, because a
+     * player mid-swap with only a bench still has Personas to affect.
+     */
     case 'buff': {
-      const target =
-        effect.target === 'enemyActive'
-          ? getActive(state, foeId) || fail('the opponent has no active Persona')
-          : getActive(state, playerId) || fail('you have no active Persona');
-      applyBuff(state, target, effect.stat, effect.direction, effect.duration ?? CONFIG.BUFF_DURATION);
+      const side = effect.target === 'enemyField' ? foeId : playerId;
+      if (livingField(state, side).length === 0) {
+        fail(side === playerId ? 'you have no Personas on the field' : 'the opponent has no Personas on the field');
+      }
+      applyBuffToField(state, side, effect.stat, effect.direction, effect.duration ?? CONFIG.BUFF_DURATION);
       return { kind: 'buff' };
     }
 
     case 'dispel': {
-      const target =
-        effect.target === 'enemyActive'
-          ? getActive(state, foeId) || fail('the opponent has no active Persona')
-          : getActive(state, playerId) || fail('you have no active Persona');
-      dispelBuffs(state, target, effect.remove);
+      const side = effect.target === 'enemyField' ? foeId : playerId;
+      if (livingField(state, side).length === 0) {
+        fail(side === playerId ? 'you have no Personas on the field' : 'the opponent has no Personas on the field');
+      }
+      dispelField(state, side, effect.remove);
       return { kind: 'dispel' };
     }
 
@@ -871,6 +876,9 @@ const handlers = {
     const persona = createPersonaInstance(state, action.cardId, action.player);
     player.field.push(persona);
     player.activeUid = persona.uid;
+    // Remembered for the rest of the match: this is the player's declared plan,
+    // and it is what the signature draw priority and level scaling key off.
+    player.starterCardId = action.cardId;
     pushLog(state, `${player.name} chose ${nameOf(persona)} as their starting Persona.`, 'system');
 
     if (state.players.every((p) => p.field.length > 0)) {

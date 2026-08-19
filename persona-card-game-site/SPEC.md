@@ -34,6 +34,66 @@ Each flavour always has one **signature** Persona among its three starter offers
 the choice remains a choice; the signature is guaranteed so a player can plan around
 it rather than hope for it.
 
+> **NORMATIVE — a signature must be drawable by its own flavour.**
+> Being a signature is two facts in two places: `meta.starterSignatures` decides who
+> is guaranteed the card on **turn one**, and the card's `game` decides whose **deck**
+> it is shuffled into. Both must agree — a flavour's signature must have
+> `game === <that flavour>` or `game === "common"`, and must be in `starterPool`.
+>
+> Enforced by `checkStarterSignatures()` in `src/data/cards.js`, which
+> `validateDatabase()` runs, so the gallery banner and the test suite both catch a
+> break. It exists because these came apart: Ara Mitama was P5's guaranteed starter
+> with `game: "p4"`, so a P5 player was handed one on turn one and could never draw a
+> second, while P4 decks filled with the Persona that flavour is not about.
+>
+> Moving Ara Mitama into P5 also gave P5 its only **Chariot**, which is what opens
+> **Vasuki** (Chariot + Star) to it. P4 lost no fusion reach: its only Chariot was a
+> level-4 body, and every Chariot recipe needs 34+ combined.
+
+#### 1.1.1 The signature rules — normative
+
+A signature is a **low-level** card, so a copy drawn late is a level-4 body walking into
+a level-15 board. Two rules make sure you can at least *get* one; neither gives you back
+what you lost.
+
+| | Rule | Applies to |
+| --- | --- | --- |
+| **Suppression** | You never draw a signature while you already hold one — alive on the field, or in hand. A hard zero weight, not a penalty. | all three cards, every player |
+| **Priority** | Once you hold none, the signature you **chose** as your starter is weighted to `SIGNATURE_DRAW_WEIGHT`, making it the likeliest Persona in your deck. | the card you picked |
+
+**A KO'd copy does not count as held.** That is the exact situation the mechanism
+exists for.
+
+**The plan is the pick, not the flavour.** `player.starterCardId` records what was
+chosen from the opening three. A P5 player who passed on Ara Mitama for Orpheus did not
+choose the wall and does not get it prioritised.
+
+> **NORMATIVE — a returning signature enters at its PRINTED level.**
+> There is no scaling, no catch-up, and no special case at play time: a signature is
+> played exactly like any other Persona card. One that died at level 15 comes back as a
+> level 4 body, and every level it had is gone. Rebuilding it goes through the Gallows
+> and knockout levelling like anything else.
+>
+> This was tried the other way. A third rule scaled the returning copy to the player's
+> own board level; it worked, and it made losing your signature barely a setback. Losing
+> the Persona you built your match around is **supposed to hurt** — these two rules only
+> guarantee you can start again, not that you skip the rebuild.
+
+**Suppression alone must not randomise the draw.** With no other weighting active a
+draw is still the top of the deck, merely skipping what you hold; routing that case
+through the weighted picker turns every ordinary draw into a uniform random one.
+Priority likewise stands down when the wanted card is not in the deck.
+
+**Measured cost: none.** Ablated by blanking `starterCardId` over 100 seeds per flavour
+pairing, the rules are worth **−0.3pp P3, −1.2pp P4, +1.5pp P5** — all inside the ~2.4pp
+standard error. That is the intended result: they change *access*, not power.
+
+The scaling rule that was removed did not have that property. With it in, the same
+ablation read **+12.5pp P4, −7.0pp P3, −5.5pp P5**, because a recovery is only as good
+as the thing recovered — Slime is a real attacker and came back scaled, while Ara Mitama
+came back as a wall that still could not close a game. Dropping the rule closed the
+distortion outright.
+
 The three beat each other in a cycle, and it is the game's introductory lesson:
 
 | | answers | via |
@@ -274,11 +334,48 @@ A Shock Technical replaces the plain Shock ×1.5 rather than stacking with it.
 
 ### 3.7 Buffs
 
-Two stats only: **atk** and **def**. Duration 3 turns.
+Two stats only: **atk** and **def**. Base duration 3 turns.
 
-**Buffs do not stack.** Reapplying the same direction only refreshes the timer.
-Applying the opposite direction **cancels both**, leaving the stat neutral — so a
-debuff aimed at a buffed target is a cleanse, not a debuff.
+> **NORMATIVE — buffs are field-wide.**
+> A buff or debuff resolves against **every living Persona on the target side**, active
+> and bench alike. `ownField` covers the caster's whole field; `enemyField` covers the
+> opponent's whole field. No buff effect ever targets a single Persona, and none of them
+> asks the player to choose a target.
+>
+> The requirement to cast is **a living body on that side**, not an *active* one — a
+> player mid-swap with only a bench is still a legal target.
+
+**Storage is per-Persona.** The record lives on each Persona (`persona.buffs`), not on
+the player. Three consequences, all intentional:
+
+- Swapping a Persona to the bench or in from it **never** sheds a buff — both slots were
+  already covered.
+- A Persona that **enters the field after** the cast does not receive it. Cast first and
+  you cover the bodies you have; play the bodies first and you cover more.
+- Retreating to hand **does** clear it, along with every other piece of field state.
+
+**Resolution, per Persona, per stat.** Each stat holds at most one change. The new cast
+meets whatever is already there:
+
+| Existing | Result |
+| --- | --- |
+| nothing | applies at the effect's duration |
+| same direction | durations **add**, clamped to `BUFF_MAX_DURATION` |
+| same direction, already at the cap | no change; reported as such |
+| opposite direction | **both vanish**, stat back to neutral |
+
+One cast may therefore produce several different outcomes across one field at once. The
+log groups them: one line per outcome, with extensions grouped by their **resulting**
+duration, so a line naming a duration is literally true of every Persona on it.
+
+**Extending buys turns, never magnitude.** A buff is always ×`BUFF_MULT` no matter how
+many times it has been cast. `BUFF_MAX_DURATION` is 2× the base, which is exactly one
+banked recast — without it, two copies of Tarukaja hold a permanent field-wide buff for
+one card every three turns.
+
+**Dekaja / Dekunda are field-wide for the same reason.** Dekaja strips buffs from the
+enemy field; Dekunda strips debuffs from your own. Each takes only its own direction, so
+neither ever cleans up on the opponent's behalf.
 
 ### 3.8 Guard
 
@@ -550,6 +647,100 @@ matches *are* saved and resume behind the pass-the-device gate.
 
 ---
 
+## 10.4 How to Play — tutorial battles
+
+Five guided lessons at `#/howto`, all unlocked from the start: **First Blood** (the core
+loop), **The Velvet Room** (Gallows and fusion), **Reading the Board** (affinities,
+hidden information, field-wide buffs), **Pixie, Slime, Ara Mitama** (the triad and
+tempo), and **Two Turns Ahead** (a worked decision).
+
+A tutorial battle is an **ordinary match** — the real engine, the real bot, the real
+board — with two additions:
+
+1. **The position is authored**, not dealt (`src/ui/tutorial/scenario.js`). This is the
+   one place in the app that writes to state outside `applyAction`, and it is bounded:
+   it runs once before the board is mounted, it builds on a real `createMatch` and real
+   `CHOOSE_STARTER` actions so the engine still does the phase transition and the
+   opening draw, and it only ever writes `field`, `activeUid` and `hand`. From the
+   first click onward the tutorial is an ordinary match. The alternative — engine
+   actions that exist so the tutorial can cheat — would be worse in the rules than a
+   fixture builder is in the UI.
+2. **A coach bar** watches the state and advances when the objective is met. It does
+   **not** gate clicks, disable controls, or act for the player. A step may point at a
+   control via the board's stable hooks: `data-act` on the action bar, `data-skill-id`
+   on skill buttons, `data-card-id` on hand cards.
+
+> **NORMATIVE — tutorial content must be true of the shipped database.**
+> Every factual claim a lesson makes is asserted in `tests/tutorial.test.js` against
+> `cards.json` and `config.js` — the weaknesses, the passives, the skill unlock levels,
+> the fusion recipe's combined-level bar, the buff durations quoted in the text. A
+> balance pass that moves one of them fails a test rather than leaving a lesson
+> confidently teaching the wrong thing.
+>
+> Reachability is proved too: the tests walk every lesson objective by objective
+> through the real legal-action space, each objective starting from the board the
+> previous one actually left behind.
+
+---
+
+## 10.5 Bot opponents — difficulty and playstyle
+
+Two independent axes. **Difficulty** says how *well* the bot plays; **playstyle** says
+what it is *trying to do*. A Brutal Defensive bot and a Brutal Combo bot are both
+playing at full strength toward opposite plans.
+
+| Playstyle | Deck | Signature starter | What it does |
+| --- | --- | --- | --- |
+| Normal | one you did not pick, at random | on merit | the original behaviour |
+| Defensive | P5 | Ara Mitama | retreats, rebuilds, refuses to trade |
+| All-Rounder | P4 | Slime | rotates constantly into the right matchup |
+| Combo | P3 | Pixie | banks turns on the Gallows, then cashes them |
+| Random | as resolved | as resolved | one of the other four, **not disclosed** |
+
+**A playstyle forces its deck, mirror or not.** Pick P5 against a Defensive bot and you
+get a P5 mirror. The playstyle is what the player selected, so it wins over the older
+"never the same flavour" rule. Normal keeps that rule.
+
+**Random is resolved once, at match setup, through the seeded RNG** — never per action,
+or the bot would have a new personality every turn. While Random is in effect the board
+subtitle hides the bot's deck and archetype as well as its playstyle, because the deck
+is most of the tell.
+
+> **NORMATIVE — a playstyle re-ranks, it never overrules.**
+> A playstyle is a multiplier and a bonus laid over the score `bot.js` already computed.
+> It may amplify an action the scorer rated **positively**; it may never resurrect one
+> the scorer rated zero or below. The single exception is an action that **costs
+> nothing** (`CHANGE_ACTIVE`, `PLAY_PERSONA`), where a score of zero means "no specific
+> reason" rather than "not worth the turn", and a playstyle counts as a reason.
+>
+> Consequences: no playstyle can produce an illegal move, ignore a lethal blow, or
+> outbid the empty-field emergency (worth 1000). A playstyle is not a rules change and
+> touches no constant in `config.js`.
+
+**Prefer multipliers to flat bonuses.** The base scorer already encodes *when* a move is
+good — Guard is worth 18 to a Persona under 30% HP and 2 to a healthy one. A multiplier
+preserves that; a flat bonus erases it and the bot starts guarding at full health. The
+first draft of Defensive used flat bonuses and a heavy offence penalty and won **17.5%**
+where an unbiased bot won **56.3%** — a handicap, not a playstyle.
+
+Measured over 160 seeded matches per playstyle on its shipped deck, against the same
+Brutal control:
+
+| Playstyle | Win rate | Match length | Fingerprint |
+| --- | --- | --- | --- |
+| Normal | 54.4% | 40.5 turns | 7.8 rotations, 5.1 Gallows |
+| Defensive | 45.6% | 46.5 turns | the longest matches, 10.2 reactive rotations |
+| All-Rounder | 75.0% | 34.7 turns | 23.5 rotations, the shortest matches |
+| Combo | 54.4% | 43.4 turns | 9.1 Gallows, the fewest attacks |
+
+Defensive costs roughly 9pp against Normal, which is a structural property of the game
+rather than a tuning failure: Velvet Duel is a race to 8 knockouts, so every turn spent
+not dealing damage is a turn given away. It is the same result the Fatigue experiment
+found (§7.3). Defensive's identity is therefore built mainly on **free** actions —
+rotation and board width — which cost no tempo at all.
+
+---
+
 ## 11. Determinism
 
 The engine is a pure state machine, completely separate from the UI:
@@ -569,6 +760,55 @@ depends on:
   possible at all.
 - `applyAction` deep-clones before mutating and **throws** on an illegal action, so a
   rule violated halfway through leaves no partial state behind.
+
+---
+
+## 12. Known balance gaps
+
+Measured, reproducible, and deliberately not fixed yet. Recorded here so a future pass
+starts from evidence rather than from a hunch.
+
+### 12.1 Ara Mitama has no win condition
+
+His Strength growth is **0**. He buys turns and cannot convert them, and this is the
+single most load-bearing number in the game's current balance:
+
+- The **Defensive** bot playstyle costs ~9pp against Normal (§10.5).
+- A heavy-stall bot built around him won **0.5%** against a plain Brutal control over
+  200 matches, despite successfully extending matches from 34.4 to 51.8 turns.
+- Moving him into the P5 pool moved ~10pp of win rate **from** P5 **to** P4 — a deck
+  holding 1–2 copies of him is holding dead weight in a race to 8 knockouts.
+- A signature **scaling** rule (since removed, §1.1.1) amplified the same gap by a
+  further **+12.5pp P4 / −5.5pp P5**: handing every player their signature back at board
+  level rewarded P4 for holding a good one and did nothing for P5.
+
+Every one of those is the same fact seen from a different angle. **The lever is not the
+pool assignment, the affinity block, or the signature rules — all three have been tried
+and measured. It is that the turns he buys cannot be spent.**
+
+The standing proposal: **Diarama (60 HP, 9 SP) at ~level 10.** Dia is worth +4 to +6
+turns of stall at levels 4–6 and **exactly 0 from level 8 onward** — his stall does not
+scale, so he stops mattering at precisely the point matches are decided.
+
+**Two dead ends, already measured — do not repeat them:**
+
+1. *Smoothing Slime's skill curve.* Four different schedules each produced **exactly 12
+   broken levels** in the triad; the break relocates rather than closing.
+2. *Stalwart reducing weakness damage.* Byte-identical output — Ara Mitama is weak to
+   ice and dark while Pixie attacks elec and Slime attacks phys, so it never fires.
+   Plumbing exists, disabled, at `CONFIG.STALWART_WEAK_SCALE: 1`.
+
+### 12.2 The triad does not hold at every level
+
+It holds at **L8–13 and L18–22** and breaks at **L3–7 and L14–17** — roughly 45% of
+real board time. Pinned in `tests/engine.triangle.test.js`, which fails loudly if a
+band that currently works stops working, and records the broken bands rather than
+hiding them.
+
+### 12.3 SP is not a constraint
+
+The simulator targets 15–25% of decisions where the best skill is unaffordable and
+measures **~4%**. Turns ending at full SP: ~37%.
 
 ---
 
@@ -600,6 +840,8 @@ keeps this document true; nothing else hard-codes these.
 | `BASIC_ATTACK_POWER` | 30 |
 | `BURN_DAMAGE` / `BURN_DURATION` | 5 / 3 |
 | `SHOCK_DURATION` / `BUFF_DURATION` | 1 / 3 |
+| `BUFF_MAX_DURATION` | 6 |
+| `SIGNATURE_DRAW_WEIGHT` | 6 |
 | `MAX_SKILLS_PER_PERSONA` | 8 |
 | `STALWART_HP_RATIO` | 0.5 |
 | `ALACRITY_REFUND` | 1 |
@@ -635,7 +877,8 @@ game":
   were once an instant-kill dice roll and were deliberately replaced with a readable
   execute multiplier.
 - **Null and Reflect affinities.** Three reactions only: weak, resist, neutral.
-- **Buff stacking.** Buffs refresh; they never accumulate.
+- **Buff stacking.** Recasting extends the *duration* (§3.7); the multiplier never
+  grows, and a Persona never carries two changes to the same stat.
 - **A separate bench size.** One field of 8; "bench" just means "not active".
 - **A game server or account system.** Local profile is a name in `localStorage`. No
   signup, no login.

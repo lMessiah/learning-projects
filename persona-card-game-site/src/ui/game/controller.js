@@ -17,7 +17,7 @@ function debugEnabled() {
   }
 }
 
-export function createController({ state, botPlayer = null, difficulty = 'medium', botSeed = 1, speed = 1, debug = debugEnabled() }) {
+export function createController({ state, botPlayer = null, difficulty = 'medium', playstyle = 'normal', botSeed = 1, speed = 1, debug = debugEnabled() }) {
   let current = state;
   let botRng = createRng(botSeed);
   let timer = null;
@@ -42,13 +42,14 @@ export function createController({ state, botPlayer = null, difficulty = 'medium
     if (destroyed || !isBotTurn()) return;
 
     if (debug) {
-      const scored = explainBotActions(current, botPlayer, difficulty);
+      const scored = explainBotActions(current, botPlayer, difficulty, playstyle);
       console.groupCollapsed(
-        `[bot:${difficulty}] turn ${current.turn} — ${scored.length} legal action(s), action budget ${current.turnState?.actionsRemaining ?? '-'}`
+        `[bot:${difficulty}/${playstyle}] turn ${current.turn} — ${scored.length} legal action(s), action budget ${current.turnState?.actionsRemaining ?? '-'}`
       );
       console.table(
-        scored.map(({ action, score }) => ({
+        scored.map(({ action, base, score }) => ({
           score,
+          base,
           type: action.type,
           detail: action.skillId || action.cardId || action.targetUid || action.recipeId || '',
         }))
@@ -56,10 +57,10 @@ export function createController({ state, botPlayer = null, difficulty = 'medium
       console.groupEnd();
     }
 
-    const [action, nextRng] = chooseBotAction(current, botPlayer, difficulty, botRng);
+    const [action, nextRng] = chooseBotAction(current, botPlayer, difficulty, botRng, playstyle);
     botRng = nextRng;
     if (!action) return;
-    if (debug) console.log(`[bot:${difficulty}] chose`, action.type, action.skillId || action.cardId || '');
+    if (debug) console.log(`[bot:${difficulty}/${playstyle}] chose`, action.type, action.skillId || action.cardId || '');
 
     try {
       current = applyAction(current, action);

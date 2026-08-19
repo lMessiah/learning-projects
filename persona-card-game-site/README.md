@@ -102,8 +102,8 @@ All of these are config constants in `src/engine/config.js`.
 | --- | --- |
 | Draw | 1 (plus 1 more if you pass) |
 | SP regen | 3, **to the active Persona only** — the bench regains nothing |
-| Action | 1 — attack, skill, guard, a Feast/Meal at the Gallows, or pass |
-| **Fusions** | **1** — free, like an Item or a Special |
+| Action | 1 — attack, skill, guard, **fusion**, a Feast/Meal at the Gallows, or pass |
+| **Fusions** | **1** — and it **costs your action** (`FUSION_USES_ACTION`) |
 | **Item cards** | **1** |
 | **Special cards** | **1** (counted separately from Items) |
 | Persona change | 1, plus 1 extra on a One More (Baton Pass) |
@@ -378,9 +378,9 @@ Everything below is built, wired to the UI and covered by tests.
 
 | | |
 | --- | --- |
-| **Modes** | Vs Bot (Easy / Medium / Brutal / Chaos), local hot-seat with a pass-the-device gate, and peer-to-peer online play with no server or account |
-| **Combat** | Weakness → knockdown → One More, Technicals off Burn and Shock, Guard, buffs and debuffs, Charge and Concentrate, execute riders, no random knockouts anywhere |
-| **The board** | Fusion (free, 1/turn), the three-tier Gallows with skill and passive inheritance, 9 fully transferable passives, Baton Pass, bench targeting, the empty-field clock |
+| **Modes** | **How to Play** (five guided tutorial battles), Vs Bot (four difficulties × five playstyles), local hot-seat with a pass-the-device gate, and peer-to-peer online play with no server or account |
+| **Combat** | Weakness → knockdown → One More, Technicals off Burn and Shock, Guard, **field-wide buffs and debuffs that extend rather than refresh**, Charge and Concentrate, execute riders, no random knockouts anywhere |
+| **The board** | Fusion (costs your action, 1/turn), the three-tier Gallows with skill and passive inheritance, 9 fully transferable passives, Baton Pass, bench targeting, the empty-field clock |
 | **Cards** | Generated decks from 3 flavours × 4 archetypes, flavour exclusives, Skill Cards, drains, draw manipulation, affinity rewrites, Twist of Fate, Traesto |
 | **Around the match** | Battle log sidebar and a full post-match log tab, resignation, post-match scoreboard with a knockout timeline and MVP, contextual post-loss tips, a full Rules and FAQ screen |
 | **Presentation** | Three themes, one selection-highlight system across every picker, a full battle animation pass, a skippable Velvet-Room fusion sequence, a skippable victory/defeat outro, animation-speed and play-assist settings |

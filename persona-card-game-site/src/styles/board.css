@@ -1663,6 +1663,11 @@ body.board-mode #app {
 .setup-card--brutal.setup-card--on { --sel-on: var(--gold); }
 .setup-card--chaos.setup-card--on { --sel-on: #9b4fd1; }
 
+/* Random is the one playstyle that hides what it is, so it gets the same
+ * unknowable purple as Chaos rather than a colour of its own. */
+.setup-card--ps-random.setup-card--on { --sel-on: #9b4fd1; }
+.setup-card--ps-random .setup-card__icon { opacity: 0.7; }
+
 .setup__note { font-size: 12px; color: var(--ink-faint); line-height: 1.6; }
 .setup__start { align-self: flex-start; padding: 14px 34px; font-size: 15px; }
 
@@ -2727,4 +2732,185 @@ body.board-mode #app {
   border-color: var(--gold);
   color: var(--gold);
   font-weight: 700;
+}
+
+/* ---------- How to Play: the lesson picker ---------- */
+
+.lesson-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.lesson-card { position: relative; }
+
+.lesson-card__number {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  font-family: var(--font-display);
+  font-size: 34px;
+  line-height: 1;
+  color: var(--line);
+}
+
+.lesson-card:hover .lesson-card__number { color: var(--accent); }
+
+/* ---------- How to Play: the coach ----------
+ *
+ * A full-width bar along the bottom, NOT a floating panel. The board is a
+ * fixed-viewport grid with `overflow: hidden`, so anything floating over it
+ * covers the field or the hand — there is no spare room to float into. Instead
+ * the coach claims a strip and the board shrinks by exactly that much, so
+ * nothing is ever hidden behind it.
+ */
+
+:root { --coach-h: 190px; }
+
+body.coach-active .board-screen {
+  height: calc(100vh - 20px - var(--coach-h));
+  min-height: 380px;
+}
+
+.coach {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 55; /* over the board, under modals (60+) and the toast (80) */
+  height: var(--coach-h);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  align-items: start;
+  gap: 18px;
+  padding: 14px 22px;
+  border-top: 3px solid var(--accent);
+  background: linear-gradient(180deg, var(--panel), var(--bg-2));
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+  animation: coach-in calc(0.22s / var(--anim-scale, 1)) ease-out;
+}
+
+@keyframes coach-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* The prose column scrolls on its own if a step runs long, so the bar never
+ * changes height and the board never reflows mid-lesson. */
+.coach__eyebrow,
+.coach__title,
+.coach__body { grid-column: 1; }
+
+.coach__body {
+  margin: 0;
+  max-height: 108px;
+  overflow-y: auto;
+  padding-right: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+  /* Lesson text carries deliberate paragraph breaks as \n\n. */
+  white-space: pre-wrap;
+}
+
+.coach__eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.coach__title {
+  margin: 2px 0 4px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.coach__body strong { color: var(--ink); }
+
+/* Right-hand column: whatever the player is meant to do next. */
+.coach__row,
+.coach__objective,
+.coach__note,
+.coach .btn--small {
+  grid-column: 2;
+}
+
+.coach__row { display: flex; gap: 8px; flex-wrap: wrap; align-self: center; }
+
+.coach--objective { border-top-color: var(--gold, var(--accent)); }
+
+.coach__objective {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.coach__objective strong { color: var(--gold, var(--accent)); }
+
+.coach__objective-dot {
+  color: var(--gold, var(--accent));
+  animation: coach-pulse calc(1.6s / var(--anim-scale, 1)) ease-in-out infinite;
+}
+
+@keyframes coach-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+.coach__note { margin: 4px 0 0; font-size: 11.5px; color: var(--ink-faint); }
+
+.coach__quit {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: var(--ink-faint);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.coach__quit:hover { color: var(--ink); }
+
+/* The ring the coach draws round the control it is describing. Outline rather
+ * than border so it cannot shift the layout of whatever it lands on. */
+.coach-point {
+  outline: 2px solid var(--gold, var(--accent));
+  outline-offset: 3px;
+  border-radius: 6px;
+  animation: coach-point calc(1.4s / var(--anim-scale, 1)) ease-in-out infinite;
+}
+
+@keyframes coach-point {
+  0%, 100% { outline-color: var(--gold, var(--accent)); }
+  50% { outline-color: transparent; }
+}
+
+/* Narrow screens: one column, and a taller strip to fit it. */
+@media (max-width: 820px) {
+  :root { --coach-h: 250px; }
+  .coach { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .coach__row,
+  .coach__objective,
+  .coach__note,
+  .coach .btn--small { grid-column: 1; }
+  .coach__body { max-height: 96px; }
+}
+
+/* Someone who has asked for less motion gets a static ring, not a blinking
+ * one — this is a control they are being asked to look at. */
+@media (prefers-reduced-motion: reduce) {
+  .coach,
+  .coach__objective-dot,
+  .coach-point { animation: none; }
 }

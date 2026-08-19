@@ -57,6 +57,17 @@ function faq(question, build) {
 function renderHowToPlay() {
   const wrap = el('div', 'rules-block');
 
+  // This page is a reference; the lessons are a teacher. Point at them first —
+  // someone reading the rules screen because they are lost is exactly who the
+  // tutorial was written for.
+  wrap.appendChild(
+    para([
+      'Reading is the slow way. ',
+      b('Main menu → 📖 How to Play'),
+      ' runs five guided tutorial battles that teach all of this by playing it — from your first attack to reading a position two turns ahead. Nothing below is a prerequisite.',
+    ])
+  );
+
   wrap.appendChild(el('h3', 'rules__heading', 'The goal'));
   wrap.appendChild(
     para([
@@ -83,7 +94,7 @@ function renderHowToPlay() {
       ['Hit a ', b('weakness'), ` for ×${CONFIG.WEAK_MULT} damage. If that knocks a `, b('standing'), ' Persona down you get a ', b('One More'), ': an extra action, an extra Persona change, and that action may hit ', b('any'), ' enemy Persona.'],
       [`A `, b('resist'), ` halves damage (×${CONFIG.RESIST_MULT}). `, b('Almighty'), ' can never be resisted or weak.'],
       [b('Guard'), ` halves incoming damage and prevents knockdown until your next turn.`],
-      ['Buffs and debuffs shift damage by ', b(`×${CONFIG.BUFF_MULT}`), ` for ${CONFIG.BUFF_DURATION} turns. Concentrate and Charge multiply your next magic or physical skill by `, b(`×${CONFIG.CHARGE_MULT}`), '.'],
+      ['Buffs and debuffs shift damage by ', b(`×${CONFIG.BUFF_MULT}`), ` for ${CONFIG.BUFF_DURATION} turns, and they cover `, b('your whole field'), ' — bench included, not just the Persona that cast them. Concentrate and Charge multiply your next magic or physical skill by ', b(`×${CONFIG.CHARGE_MULT}`), ', and those stay on one Persona.'],
       [b('Burn'), ` deals ${CONFIG.BURN_DAMAGE} at the end of each of its owner's turns. `, b('Shock'), ' stops a Persona acting for a turn and raises the damage it takes by 50%.'],
     ])
   );
@@ -868,6 +879,55 @@ function renderFaq() {
   );
 
   wrap.appendChild(
+    faq('My signature Persona died. Can I get it back?', (body) => {
+      body.appendChild(
+        para([
+          'You can get the ',
+          b('card'),
+          ' back. You do not get back the Persona you lost, and that difference is the whole answer.',
+        ])
+      );
+      body.appendChild(
+        bullets([
+          [
+            b('You never draw one while you already have one.'),
+            ' Alive on your field or sitting in your hand, either way the deck holds the spare back rather than clogging your hand with a card you cannot use. A ',
+            b('knocked-out'),
+            ' copy does not count — that is the whole situation this is for.',
+          ],
+          [
+            b('The one you chose comes back sooner.'),
+            ' Once you hold none, it becomes the ',
+            b('likeliest Persona in your deck'),
+            '. Not guaranteed on the next draw, but you will not spend the rest of the match unable to find it.',
+          ],
+        ])
+      );
+      body.appendChild(
+        para([
+          'But it arrives at its ',
+          b('printed level'),
+          ', like every other Persona card. A signature that died at level 15 comes back as the level 4 card it started as, and every level it had died with it. You rebuild it the ordinary way — knockouts and the Gallows.',
+        ])
+      );
+      body.appendChild(
+        para([
+          'So losing it is a ',
+          b('real loss'),
+          ', not an inconvenience. These two rules only make sure you can start over; they do not skip the rebuilding, and the knockout still counts against you.',
+        ])
+      );
+      body.appendChild(
+        para([
+          'It only applies to the Persona you actually ',
+          b('chose'),
+          ' from the opening three. Pass on Ara Mitama for something else and Ara Mitama is not your plan — the game does not decide that for you.',
+        ])
+      );
+    })
+  );
+
+  wrap.appendChild(
     faq('What is One More, and what is Baton Pass?', (body) => {
       body.appendChild(
         para([
@@ -923,6 +983,100 @@ function renderFaq() {
             ' is the exception: there is nothing to click, because a level-up happens in the middle of a knockout. A full Persona simply cannot take it on, and the log says so.',
           ],
           ['Forgetting is not final — a skill given up can be taught again later.'],
+        ])
+      );
+    })
+  );
+
+  wrap.appendChild(
+    faq('Who exactly does a Tarukaja affect?', (body) => {
+      body.appendChild(
+        para([
+          'Everyone you have on the field. A ',
+          b('kaja'),
+          ' raises the stat on every Persona you control — active and bench alike — and an ',
+          b('nda'),
+          ' lowers it on every Persona ',
+          b('they'),
+          ' control. It does not matter which Persona cast it, and it does not matter who is standing in front.',
+        ])
+      );
+      body.appendChild(
+        bullets([
+          [
+            'The buff is recorded ',
+            b('on each Persona separately'),
+            ', which is why swapping never sheds it and why a Persona you play ',
+            b('after'),
+            ' the cast does not get it. Cast first and you cover the bodies you have; play the bodies first and you cover more.',
+          ],
+          [
+            b('Attack and defense are separate tracks.'),
+            ' Tarukaja and Rakukaja are not the same buff, so a Persona can carry one of each at full strength.',
+          ],
+          [
+            'Retreating to hand ',
+            b('does'),
+            ' clear it, along with everything else about the fight it was in.',
+          ],
+        ])
+      );
+    })
+  );
+
+  wrap.appendChild(
+    faq('How do buffs and debuffs cancel each other out?', (body) => {
+      body.appendChild(
+        para([
+          'They never stack, and they never fight for the same slot. On each Persona, each stat holds ',
+          b('at most one'),
+          ' change. What a new cast does depends on what is already there:',
+        ])
+      );
+      body.appendChild(
+        bullets([
+          [
+            b('Nothing there'),
+            ' → it applies for ',
+            b(`${CONFIG.BUFF_DURATION} turns`),
+            '.',
+          ],
+          [
+            b('The same direction'),
+            ' → the durations ',
+            b('add'),
+            `. Two turns of attack up plus a fresh Tarukaja is ${2 + CONFIG.BUFF_DURATION} turns, not ${CONFIG.BUFF_DURATION}. The log says `,
+            b(`“extended to ${2 + CONFIG.BUFF_DURATION} turns”`),
+            ` so you can see it happen. The ceiling is `,
+            b(`${CONFIG.BUFF_MAX_DURATION} turns`),
+            ' — you can bank one cast ahead and no further.',
+          ],
+          [
+            b('The opposite direction'),
+            ' → ',
+            b('both vanish'),
+            ' and the stat goes back to neutral. Rakukaja into a Rakunda leaves nothing behind; it does not overwrite it, and it does not leave you buffed.',
+          ],
+        ])
+      );
+      body.appendChild(
+        para([
+          'The multiplier never grows. Extending buys ',
+          b('turns'),
+          `, never a bigger number — a buff is always ×${CONFIG.BUFF_MULT}, however many times you have cast it.`,
+        ])
+      );
+      body.appendChild(
+        para([
+          b('Dekaja'),
+          ' and ',
+          b('Dekunda'),
+          ' are the hard answer, and they are field-wide too: one Dekaja strips the buffs off their entire field, one Dekunda clears the debuffs off yours. Dekaja only takes buffs and Dekunda only takes debuffs, so neither ever cleans up after your opponent for them.',
+        ])
+      );
+      body.appendChild(
+        para([
+          'Because each Persona keeps its own record, one cast can do several things at once: it cancels on the Personas already carrying the opposite, extends on the ones already buffed, and applies fresh to the rest. The log reports each group on its own line.',
         ])
       );
     })

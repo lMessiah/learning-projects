@@ -25,7 +25,8 @@
 import { describe, it, expect } from 'vitest';
 import { createMatch, applyAction, CONFIG } from '../src/engine/index.js';
 import { personaSkills } from '../src/engine/state.js';
-import { STARTER_SIGNATURES, getPersona, DECKS } from '../src/data/cards.js';
+import { STARTER_SIGNATURES, getPersona, DECKS, checkStarterSignatures } from '../src/data/cards.js';
+import { poolFor } from '../src/data/archetypes.js';
 import { setupMatch, setField, activeOf } from './helpers.js';
 
 /* ------------------------------------------------------------------ *
@@ -40,6 +41,45 @@ describe('every flavour is always offered its signature', () => {
       expect(() => getPersona(id)).not.toThrow();
     }
     expect(STARTER_SIGNATURES).toMatchObject({ p3: 'pixie', p4: 'slime', p5: 'ara-mitama' });
+  });
+
+  /**
+   * The invariant that connects the two halves of "signature".
+   *
+   * `starterSignatures` decides who is GUARANTEED the card on turn one; `game`
+   * decides whose deck it is shuffled into. Nothing linked them, and they came
+   * apart: Ara Mitama was P5's guaranteed starter with `game: "p4"`, so a P5
+   * player was handed one and could never draw a second, while P4 decks were
+   * full of a Persona that flavour is not about.
+   */
+  it('puts every signature in its own flavour’s draw pool, not just its opening offer', () => {
+    for (const deck of DECKS) {
+      const id = STARTER_SIGNATURES[deck.id];
+      const card = getPersona(id);
+      const drawable = card.game === deck.id || card.game === 'common';
+      expect(
+        drawable,
+        `${deck.id}'s signature ${id} has game "${card.game}" — ${deck.id} can be handed one but never draw another`
+      ).toBe(true);
+      expect(poolFor(deck.id).persona.some((p) => p.id === id), `${id} is missing from ${deck.id}'s pool`).toBe(true);
+    }
+  });
+
+  it('is caught by the validator if it ever comes apart again', () => {
+    // The check above proves today's data is right. This proves the guard that
+    // keeps it right is awake — by feeding it exactly the bug that got through.
+    expect(checkStarterSignatures()).toEqual([]);
+
+    // Slime's game is p4, so naming it P5's signature is the same shape of
+    // mistake Ara Mitama shipped with.
+    const broken = checkStarterSignatures({ ...STARTER_SIGNATURES, p5: 'slime' });
+    expect(broken).toHaveLength(1);
+    expect(broken[0]).toMatch(/p5.*slime.*game "p4".*cannot draw it/);
+
+    // ...and the other two failure modes it covers.
+    expect(checkStarterSignatures({ p3: 'not-a-card' })[0]).toMatch(/unknown card/);
+    // Nekomata is a real, common Persona but is not in the starter pool.
+    expect(checkStarterSignatures({ p3: 'nekomata' })[0]).toMatch(/not in the starter pool/);
   });
 
   it('offers it on every seed, for both seats, without shrinking the choice', () => {

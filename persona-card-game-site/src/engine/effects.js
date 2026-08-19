@@ -25,6 +25,9 @@ import {
   emptyFieldStage,
   comboMultiplier,
   canPlayPersonaCard,
+  SIGNATURE_CARDS,
+  isSignatureCard,
+  holdsSignature,
 } from './state.js';
 import {
   preventsKnockdown,
@@ -112,24 +115,38 @@ function recordDrawAgainstFloor(state, playerId, cardId) {
 /**
  * Which card comes off the deck.
  *
- * Normally the top one. Four things bend that, all of them deterministic
+ * Normally the top one. Six things bend that, all of them deterministic
  * through the seeded RNG so an online match stays reproducible. They are listed
  * here in PRIORITY ORDER, and that order is the rule:
  *
  *  1. a **pending draw** (Fortune's Draw and friends) claims a specific card and
  *     is consumed whether or not one was found — explicit draw manipulation
  *     always wins over any of the weighting below;
- *  2. the **empty-field bias** bends the deck toward Personas while a player has
+ *  2. **signature suppression** removes from the running any of the three
+ *     signature Personas this player already holds — alive on the field or in
+ *     hand. A hard zero, not a penalty: a second copy is dead weight;
+ *  3. the **empty-field bias** bends the deck toward Personas while a player has
  *     no board at all, escalating with the loss timer;
- *  3. **Momentum Draw** weights the whole deck toward stronger cards while the
+ *  4. **Momentum Draw** weights the whole deck toward stronger cards while the
  *     player is behind on the KO tally, scaling with the deficit;
- *  4. the **draw-level floor** pushes down Personas that have fallen behind the
- *     turn count, so a long match stops dealing openers.
+ *  5. the **draw-level floor** pushes down Personas that have fallen behind the
+ *     turn count, so a long match stops dealing openers;
+ *  6. **signature priority** lifts the signature this player CHOSE on turn one,
+ *     once they hold none, to SIGNATURE_DRAW_WEIGHT.
  *
- * 2 and 3 do not stack: a player with no board needs a body, not the best card
+ * 3 and 4 do not stack: a player with no board needs a body, not the best card
  * in the deck, so while the bias is running it REPLACES the momentum weighting
  * rather than multiplying with it. The floor is orthogonal — it is about which
  * Persona, not whether one — so it applies throughout.
+ *
+ * 6 is applied LAST, after the floor, and deliberately: a signature is a
+ * low-level card, so the floor would otherwise bury the exact card the priority
+ * exists to hand back. 2 outranks 6 — you cannot be owed a card you are holding.
+ *
+ * 2 on its own does NOT randomise the draw. With no other weighting active the
+ * draw is still the top of the deck, just skipping what you already hold;
+ * routing that case through the weighted picker would silently turn every
+ * ordinary draw into a uniform random one.
  *
  * With none of them in play every weight is 1, i.e. the plain top-of-deck draw.
  */
@@ -253,7 +270,43 @@ function weightedDrawIndex(state, player, opts = {}) {
   const filtered = emptyFieldDrawFilter(state, player.id);
   const bonus = opts.uniform ? 0 : momentumBonus(koDeficit(state, player.id));
   const floor = opts.uniform ? 0 : drawLevelFloor(state);
-  if ((bonus <= 0 && floor <= 0 && !filtered) || player.deck.length <= 1) return 0;
+
+  /**
+   * Signature handling always runs, `uniform` or not, because neither half of
+   * it is a quality preference — see the Signature Personas block in state.js.
+   * Suppression is about what is already in your hand, and priority is about
+   * the plan you declared on turn one.
+   */
+  const suppressed = new Set(
+    SIGNATURE_CARDS.filter((cardId) => holdsSignature(state, player.id, cardId))
+  );
+  // `deck.includes` is not a micro-optimisation, it is the correctness bit:
+  // without it a player owed a signature the deck no longer holds still gets
+  // pushed down the weighted path, which quietly randomises an otherwise
+  // deterministic top-of-deck draw for no gain at all.
+  const wanted =
+    player.starterCardId &&
+    isSignatureCard(player.starterCardId) &&
+    !suppressed.has(player.starterCardId) &&
+    player.deck.includes(player.starterCardId)
+      ? player.starterCardId
+      : null;
+
+  if (player.deck.length <= 1) return 0;
+
+  /**
+   * Suppression on its own must not change HOW the deck is drawn, only WHICH
+   * cards are eligible. With no weighting active a draw is the top card, and it
+   * has to stay the top card — routing this case through the weighted picker
+   * turned every ordinary draw into a uniform random one, which is a different
+   * game and broke seven tuned draw tests.
+   */
+  if (bonus <= 0 && floor <= 0 && !filtered && !wanted) {
+    if (!suppressed.size) return 0;
+    const first = player.deck.findIndex((cardId) => !suppressed.has(cardId));
+    // Every card left is one you already hold: deal it rather than nothing.
+    return first === -1 ? 0 : first;
+  }
 
   // With no Persona left in the deck the filter has nothing to offer, so it
   // stands down rather than zeroing every weight.
@@ -262,6 +315,10 @@ function weightedDrawIndex(state, player, opts = {}) {
   const weights = player.deck.map((cardId) => {
     const card = getCard(cardId);
     const isPersona = card.type === 'persona';
+
+    // You never draw a signature you already hold. Zero rather than a penalty:
+    // a second copy in hand is dead weight, not a bad draw.
+    if (suppressed.has(cardId)) return 0;
 
     let weight;
     if (personaOnly) weight = isPersona ? 1 + bonus * drawQuality(state, player.id, cardId) : 0;
@@ -272,9 +329,18 @@ function weightedDrawIndex(state, player, opts = {}) {
       // useful at any point in a match, so the floor leaves them alone.
       weight /= 1 + (floor - card.level) * CONFIG.DRAW_SCALE_PENALTY;
     }
+
+    // The plan you chose, once you have none of it, is the likeliest Persona in
+    // the deck. Applied AFTER the floor on purpose: a signature is a low-level
+    // card and the floor would otherwise bury exactly the card this is trying
+    // to return to you.
+    if (cardId === wanted) weight = Math.max(weight, 1) * CONFIG.SIGNATURE_DRAW_WEIGHT;
+
     return weight;
   });
   const total = weights.reduce((sum, w) => sum + w, 0);
+  // Every remaining card suppressed — you are holding the only thing the deck
+  // wanted to give you. Fall back to a plain draw rather than dealing nothing.
   if (total <= 0) return 0;
   const [roll, rng] = nextFloat(state.rng);
   state.rng = rng;
@@ -347,47 +413,144 @@ export function revivePersona(state, persona, hpPercent) {
  * ------------------------------------------------------------------ */
 
 /**
- * Apply a kaja/nda effect.
- *  - never stacks with itself: reapplying refreshes the duration
- *  - a buff and its opposing debuff cancel out, leaving the stat neutral
+ * Buffs are a PROPERTY OF A SIDE, not of a slot.
+ *
+ * One Tarukaja raises the attack of every Persona you have on the field, bench
+ * included, and a Persona keeps what it was given when it swaps in or out —
+ * which is why the record still lives on each Persona (`persona.buffs`) rather
+ * than on the player. Storing it per side would be smaller, but then a body
+ * that entered play after the cast would inherit a buff nobody spent a card on,
+ * and a Persona pulled back to hand would keep one it should have shed.
+ *
+ * The three outcomes, per Persona:
+ *   applied   — nothing there before
+ *   extended  — same direction already running: the durations ADD, up to
+ *               CONFIG.BUFF_MAX_DURATION
+ *   cancelled — opposite direction running: both vanish, stat back to neutral
+ *
+ * A Persona that entered the field after the cast gets nothing; a Persona at the
+ * duration cap absorbs the cast without extending. Both are reported.
  */
-export function applyBuff(state, persona, stat, direction, duration = CONFIG.BUFF_DURATION) {
-  if (persona.ko) return 'noop';
+function applyBuffTo(persona, stat, direction, duration) {
+  if (persona.ko) return { outcome: 'noop' };
   const existing = persona.buffs.find((b) => b.stat === stat);
-  const label = `${stat === 'atk' ? 'attack' : 'defense'}`;
 
   if (!existing) {
     persona.buffs.push({ stat, direction, turnsLeft: duration });
-    pushLog(
-      state,
-      `${nameOf(persona)}'s ${label} ${direction === 'up' ? 'rose' : 'fell'}! (${duration} turns)`,
-      'buff'
-    );
-    return 'applied';
+    return { outcome: 'applied', turnsLeft: duration };
   }
 
   if (existing.direction === direction) {
-    existing.turnsLeft = duration;
-    pushLog(state, `${nameOf(persona)}'s ${label} change was refreshed. (${duration} turns)`, 'buff');
-    return 'refreshed';
+    const before = existing.turnsLeft;
+    existing.turnsLeft = Math.min(CONFIG.BUFF_MAX_DURATION, before + duration);
+    return { outcome: existing.turnsLeft > before ? 'extended' : 'capped', turnsLeft: existing.turnsLeft };
   }
 
   persona.buffs = persona.buffs.filter((b) => b !== existing);
-  pushLog(state, `${nameOf(persona)}'s ${label} change was cancelled out.`, 'buff');
-  return 'cancelled';
+  return { outcome: 'cancelled' };
 }
 
-/** Dekaja / Dekunda. `which` is 'buffs' | 'debuffs' | 'all'. */
-export function dispelBuffs(state, persona, which) {
-  const before = persona.buffs.length;
-  persona.buffs = persona.buffs.filter((b) => {
-    if (which === 'all') return false;
-    if (which === 'buffs') return b.direction !== 'up';
-    return b.direction !== 'down';
-  });
-  const removed = before - persona.buffs.length;
-  if (removed > 0) {
-    pushLog(state, `${nameOf(persona)}'s ${which === 'buffs' ? 'buffs' : 'debuffs'} were removed!`, 'buff');
+const statLabel = (stat) => (stat === 'atk' ? 'attack' : 'defense');
+
+/** "Pixie", "Pixie and Slime", "Pixie, Slime and Ara Mitama". */
+function listNames(personas) {
+  const names = personas.map(nameOf);
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
+ * Apply a kaja/nda across one player's whole field.
+ *
+ * The log is grouped rather than one line per Persona: a three-body field would
+ * otherwise push three near-identical lines and bury the one that matters. Each
+ * distinct outcome gets a line, and extensions are grouped by their resulting
+ * duration so "extended to 5 turns" is always literally true of every Persona
+ * named on that line.
+ *
+ * @returns {Record<string, number>} counts per outcome, for the caller/tests
+ */
+export function applyBuffToField(state, playerId, stat, direction, duration = CONFIG.BUFF_DURATION) {
+  const label = statLabel(stat);
+  const targets = livingField(state, playerId);
+  const applied = [];
+  const cancelled = [];
+  const capped = [];
+  const extended = new Map(); // turnsLeft -> personas
+
+  for (const persona of targets) {
+    const { outcome, turnsLeft } = applyBuffTo(persona, stat, direction, duration);
+    if (outcome === 'applied') applied.push(persona);
+    else if (outcome === 'cancelled') cancelled.push(persona);
+    else if (outcome === 'capped') capped.push(persona);
+    else if (outcome === 'extended') {
+      if (!extended.has(turnsLeft)) extended.set(turnsLeft, []);
+      extended.get(turnsLeft).push(persona);
+    }
+  }
+
+  if (applied.length) {
+    pushLog(
+      state,
+      `${listNames(applied)} — ${label} ${direction === 'up' ? 'rose' : 'fell'}! (${duration} turns)`,
+      'buff'
+    );
+  }
+  for (const [turnsLeft, personas] of extended) {
+    pushLog(state, `${listNames(personas)} — ${label} buff extended to ${turnsLeft} turns.`, 'buff');
+  }
+  if (capped.length) {
+    pushLog(
+      state,
+      `${listNames(capped)} already at the ${CONFIG.BUFF_MAX_DURATION}-turn ${label} limit — no further extension.`,
+      'buff'
+    );
+  }
+  if (cancelled.length) {
+    pushLog(state, `${listNames(cancelled)} — ${label} change cancelled out.`, 'buff');
+  }
+  if (!targets.length) {
+    pushLog(state, 'Nothing on the field to affect.', 'buff');
+  }
+
+  return {
+    applied: applied.length,
+    extended: [...extended.values()].reduce((n, list) => n + list.length, 0),
+    capped: capped.length,
+    cancelled: cancelled.length,
+  };
+}
+
+/**
+ * Dekaja / Dekunda, across one player's whole field. `which` is
+ * 'buffs' | 'debuffs' | 'all'.
+ *
+ * Field-wide for the same reason the buffs are: a dispel that cleaned one slot
+ * would be answering a three-Persona buff a third of the way.
+ */
+export function dispelField(state, playerId, which) {
+  const cleaned = [];
+  let removed = 0;
+
+  for (const persona of livingField(state, playerId)) {
+    const before = persona.buffs.length;
+    persona.buffs = persona.buffs.filter((b) => {
+      if (which === 'all') return false;
+      if (which === 'buffs') return b.direction !== 'up';
+      return b.direction !== 'down';
+    });
+    if (persona.buffs.length < before) {
+      removed += before - persona.buffs.length;
+      cleaned.push(persona);
+    }
+  }
+
+  if (cleaned.length) {
+    pushLog(
+      state,
+      `${listNames(cleaned)} — ${which === 'buffs' ? 'buffs' : 'debuffs'} removed!`,
+      'buff'
+    );
   }
   return removed;
 }

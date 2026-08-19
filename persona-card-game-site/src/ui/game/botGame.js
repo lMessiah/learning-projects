@@ -1,10 +1,11 @@
 /**
  * Vs Bot route: setup screen -> match -> rematch.
  */
-import { createMatch } from '../../engine/index.js';
+import { createMatch, createRng } from '../../engine/index.js';
 import { DECKS } from '../../data/cards.js';
 import { ARCHETYPES, getArchetype } from '../../data/archetypes.js';
 import { DIFFICULTIES } from '../../engine/bot.js';
+import { getPlaystyle, resolvePlaystyle } from '../../engine/playstyles.js';
 import { getProfileName } from '../profile.js';
 import { createController } from './controller.js';
 import { mountBoard } from './board.js';
@@ -49,10 +50,24 @@ function startMatch(root, choice, onRematch, onExit) {
   applyThemeFor({ deckId: choice.deckId });
 
   const seed = freshSeed();
-  // The bot plays one of the decks the player didn't pick, with an archetype
-  // of its own picked at random — so you cannot count on what it is running.
+
+  // Random is resolved ONCE, here, through the seeded RNG — not per turn, or the
+  // bot would have a new personality every time it acted.
+  const picked = choice.playstyle ?? 'normal';
+  const [resolvedId] = resolvePlaystyle(picked, createRng(seed + 4231));
+  const playstyle = getPlaystyle(resolvedId);
+  // Random hides what it landed on, and the deck is half the tell — so the
+  // subtitle goes dark rather than announcing "Persona 5" at a Defensive bot.
+  const concealed = picked === 'random';
+
+  // A playstyle locks the bot to the deck it is built around, mirror or not:
+  // the player asked for that plan, and handing them a watered-down version
+  // because they happened to pick the same flavour would be the worse surprise.
+  // Normal keeps the original behaviour — one of the decks you didn't pick.
   const otherDecks = DECKS.filter((d) => d.id !== choice.deckId);
-  const botDeck = otherDecks[seed % otherDecks.length];
+  const botDeck = playstyle.deckId
+    ? DECKS.find((d) => d.id === playstyle.deckId)
+    : otherDecks[seed % otherDecks.length];
   const botArchetype = ARCHETYPES[(seed >>> 3) % ARCHETYPES.length];
   const difficulty = DIFFICULTIES.find((d) => d.id === choice.difficulty) || DIFFICULTIES[1];
 
@@ -74,16 +89,18 @@ function startMatch(root, choice, onRematch, onExit) {
     state,
     botPlayer: BOT,
     difficulty: difficulty.id,
+    playstyle: resolvedId,
     botSeed: seed + 977,
   });
+
+  const you = `${DECKS.find((d) => d.id === choice.deckId).name} (${getArchetype(choice.archetype)?.name ?? 'mixed'})`;
+  const them = concealed ? '??? (unknown playstyle)' : `${botDeck.name} (${botArchetype.name}) · ${playstyle.label}`;
 
   const unmount = mountBoard(root, {
     controller,
     viewer: HUMAN,
     title: 'Against Bot',
-    subtitle:
-      `${DECKS.find((d) => d.id === choice.deckId).name} (${getArchetype(choice.archetype)?.name ?? 'mixed'}) ` +
-      `vs ${botDeck.name} (${botArchetype.name}) · ${difficulty.label}`,
+    subtitle: `${you} vs ${them} · ${difficulty.label}`,
     onExit,
     onRematch: () => startMatch(root, choice, onRematch, onExit),
   });
