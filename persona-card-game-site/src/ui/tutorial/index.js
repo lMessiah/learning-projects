@@ -74,8 +74,8 @@ function renderPicker(root) {
       'p',
       'setup__note',
       'Each lesson drops you into a real match on a board built for the point it is making. ' +
-        'The coach in the corner talks you through it and waits for you to play — nothing is locked, ' +
-        'nothing is on rails, and you can leave any time.'
+        'The coach along the bottom talks you through it and waits for you to play — nothing is locked, ' +
+        'nothing is on rails, and you can collapse the coach to a single line or leave any time.'
     )
   );
 

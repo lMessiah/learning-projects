@@ -670,6 +670,18 @@ board — with two additions:
    control via the board's stable hooks: `data-act` on the action bar, `data-skill-id`
    on skill buttons, `data-card-id` on hand cards.
 
+> **NORMATIVE — the coach is added to the layout, never laid over it.**
+> The coach is a sibling of `.board-screen` in one flex column, `position: sticky`
+> rather than `fixed`, and the board is `flex-shrink: 0` with `overflow: visible`
+> while it is up. Together those mean the board is never compressed below its
+> content and the page scrolls instead, so no control — the bench swap buttons
+> most of all — can end up sealed behind the bar on a short screen. The panel
+> also collapses to a single strip carrying the step counter, a one-line summary
+> and the button that advances the lesson, so the whole board is one tap away on
+> a phone without leaving the lesson. That preference is remembered
+> (`pcg.howto.collapsed`); the objective baseline is *not* recaptured when it
+> changes, or collapsing would move the goalposts mid-step.
+
 > **NORMATIVE — tutorial content must be true of the shipped database.**
 > Every factual claim a lesson makes is asserted in `tests/tutorial.test.js` against
 > `cards.json` and `config.js` — the weaknesses, the passives, the skill unlock levels,

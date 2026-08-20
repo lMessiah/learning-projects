@@ -25,6 +25,9 @@ beforeEach(() => {
   document.body.innerHTML = '';
   document.body.className = '';
   window.location.hash = '';
+  // The coach remembers whether it was collapsed. That is right for a player
+  // and wrong for a test suite, where it would leak between cases.
+  localStorage.clear();
   root = document.createElement('div');
   document.body.appendChild(root);
 });
@@ -81,9 +84,14 @@ describe('a lesson battle', () => {
     expect(document.querySelector('.action-bar'), 'no action bar').toBeTruthy();
   });
 
-  it('shrinks the board for the coach rather than covering it', () => {
+  it('appends the coach to the layout rather than laying it over the board', () => {
     renderHowTo(root, { lessonId: 'basics' });
+    // The body class is what switches the page into the two-part column; the
+    // coach being a SIBLING of the board, not a child of it, is what stops it
+    // covering controls the player still has to reach.
     expect(document.body.classList.contains('coach-active')).toBe(true);
+    expect(coach().parentElement).toBe(root);
+    expect(coach().previousElementSibling).toBe(root.querySelector('.board-screen'));
   });
 
   it('opens on step 1 and says so', () => {
@@ -139,6 +147,44 @@ describe('a lesson battle', () => {
     play.click();
 
     expect(text(coach()), 'the objective did not notice the board changing').toContain('step 3 of');
+  });
+
+  it('collapses to a single line that still says where you are and what to do', () => {
+    renderHowTo(root, { lessonId: 'basics' });
+    coach().querySelector('.coach__toggle').click();
+
+    expect(coach().classList.contains('coach--collapsed')).toBe(true);
+    expect(coach().querySelector('.coach__panel'), 'the prose is still taking room').toBe(null);
+    // Collapsing must cost the prose and nothing else: the step counter, the
+    // summary line and the button that advances the lesson all survive.
+    expect(text(coach())).toContain('step 1 of');
+    expect(text(coach().querySelector('.coach__peek'))).toBeTruthy();
+    const next = [...coach().querySelectorAll('button')].find((b) => text(b).startsWith('Next'));
+    expect(next, 'no way to advance the lesson while collapsed').toBeTruthy();
+
+    next.click();
+    expect(coach().classList.contains('coach--collapsed'), 'collapsing did not stick').toBe(true);
+    expect(text(coach())).toContain('step 2 of');
+
+    coach().querySelector('.coach__toggle').click();
+    expect(coach().classList.contains('coach--collapsed')).toBe(false);
+    expect(coach().querySelector('.coach__body')).toBeTruthy();
+  });
+
+  it('does not re-baseline an objective when the panel is collapsed', () => {
+    // Objectives compare against the board as it was when the step opened.
+    // Collapsing re-renders the coach, and a re-render that recaptured that
+    // baseline would move the goalposts under a half-finished objective.
+    renderHowTo(root, { lessonId: 'basics' });
+    [...coach().querySelectorAll('button')].find((b) => text(b).startsWith('Next')).click();
+    expect(text(coach())).toContain('step 2 of');
+
+    coach().querySelector('.coach__toggle').click();
+    coach().querySelector('.coach__toggle').click();
+
+    document.querySelector('.hand-tile[data-card-id="pixie"]').click();
+    [...document.querySelectorAll('button')].find((b) => text(b) === 'Play to the field').click();
+    expect(text(coach())).toContain('step 3 of');
   });
 
   it('leaves the lesson when the coach is closed, and cleans up after itself', () => {
