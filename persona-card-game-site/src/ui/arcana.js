@@ -35,6 +35,31 @@ export function arcanaStyle(arcana) {
   return ARCANA_STYLE[arcana] || FALLBACK_ARCANA;
 }
 
+/**
+ * Personas that carry their own icon instead of their arcana's.
+ *
+ * Card "art" in this project is an emoji on a gradient, and by default that
+ * emoji is the arcana's — so every Priestess looks like every other Priestess.
+ * That is fine for the long tail and wrong for the three cards the game is
+ * actually built around: Pixie, Ara Mitama and Slime are the starting triad
+ * (see STARTER_SIGNATURES in data/cards.js), they beat each other in a cycle,
+ * and the tutorial teaches that cycle by name. They should be recognisable at a
+ * glance on a crowded board.
+ *
+ * This is presentation only. Arcana, palette and every rule that reads them are
+ * untouched — a Pixie is still Lovers, and still draws the Lovers colour.
+ */
+export const PERSONA_SYMBOL = {
+  pixie: '🧚',
+  'ara-mitama': '🩸',
+  slime: '🫠',
+};
+
+/** A Persona's own icon, falling back to its arcana's. */
+export function personaSymbol(persona) {
+  return PERSONA_SYMBOL[persona?.id] ?? arcanaStyle(persona?.arcana).symbol;
+}
+
 export const TYPE_ICON = {
   phys: '👊',
   fire: '🔥',

@@ -1,7 +1,9 @@
 /**
  * Local profile — a display name in localStorage. Nothing else, ever.
- * No signup, no login, no server. Purely cosmetic.
+ * No signup, no login, no server. Purely cosmetic — with one exception:
+ * one specific name activates the admin unlock. See ui/admin.js.
  */
+import { syncAdmin } from './admin.js';
 const KEY = 'pcg.profile.name';
 const DEFAULT_NAME = 'Wild Card';
 
@@ -20,6 +22,9 @@ export function setProfileName(name) {
   } catch {
     /* ignore */
   }
+  // The single chokepoint for renaming, which is why the check lives here
+  // rather than in each of the screens that offers a rename box.
+  syncAdmin(clean);
   return clean;
 }
 

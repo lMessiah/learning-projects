@@ -5,8 +5,9 @@
  * must render without throwing, and hidden-affinity masking must actually mask.
  */
 import { describe, it, expect } from 'vitest';
-import { ALL_CARDS, getCard } from '../src/data/cards.js';
+import { ALL_CARDS, getCard, STARTER_SIGNATURES } from '../src/data/cards.js';
 import { renderCard } from '../src/ui/cardView.js';
+import { PERSONA_SYMBOL, personaSymbol, arcanaStyle } from '../src/ui/arcana.js';
 
 describe('card renderer', () => {
   it('renders every card in the database', () => {
@@ -23,6 +24,34 @@ describe('card renderer', () => {
     // Bufula unlocks at 13, so it is locked on a level 6 card.
     expect(node.querySelectorAll('.skill--locked').length).toBeGreaterThan(0);
     expect(node.textContent).toContain('Fire');
+  });
+
+  it('gives the starting triad their own icon, without touching their arcana', () => {
+    // Pixie, Ara Mitama and Slime are the three signature Personas the game is
+    // built around, and they should be recognisable on a crowded board rather
+    // than looking like every other card of their arcana.
+    for (const [id, symbol] of Object.entries(PERSONA_SYMBOL)) {
+      const card = getCard(id);
+      const node = renderCard(card, { showAllHidden: true });
+      expect(node.querySelector('.card__symbol').textContent, id).toBe(symbol);
+      // The override is presentation only: the arcana itself is unchanged, and
+      // so is the palette the card draws from.
+      expect(node.textContent, `${id} keeps its arcana`).toContain(card.arcana);
+      expect(node.style.getPropertyValue('--arcana')).toBe(arcanaStyle(card.arcana).color);
+    }
+  });
+
+  it('is one override per Persona, and each one points at a real card', () => {
+    expect(new Set(Object.values(PERSONA_SYMBOL)).size).toBe(Object.keys(PERSONA_SYMBOL).length);
+    for (const id of Object.keys(PERSONA_SYMBOL)) expect(getCard(id)?.type, id).toBe('persona');
+    // The triad is exactly the set of deck signatures, which is the reason
+    // these three and not three others.
+    expect(Object.keys(PERSONA_SYMBOL).sort()).toEqual(Object.values(STARTER_SIGNATURES).sort());
+  });
+
+  it('leaves every other Persona on its arcana symbol', () => {
+    const orpheus = getCard('orpheus');
+    expect(personaSymbol(orpheus)).toBe(arcanaStyle(orpheus.arcana).symbol);
   });
 
   it('masks unrevealed weaknesses as "?"', () => {

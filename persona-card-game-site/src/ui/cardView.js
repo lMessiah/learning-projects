@@ -16,7 +16,7 @@
  *   targetable      - a legal choice right now: pulsing ring
  *   disabled        - not a legal choice: dimmed
  */
-import { arcanaStyle, typeIcon, typeLabel, CARD_TYPE_STYLE } from './arcana.js';
+import { arcanaStyle, personaSymbol, typeIcon, typeLabel, CARD_TYPE_STYLE } from './arcana.js';
 import { getSkillDefinition } from '../data/cards.js';
 import { CONFIG } from '../engine/config.js';
 import { passiveDefinition } from '../engine/passives.js';
@@ -256,9 +256,9 @@ function renderPersonaCard(persona, opts) {
   if (persona.exclusive) header.appendChild(exclusiveBadge(persona.exclusive));
   card.appendChild(header);
 
-  // Placeholder "art": arcana symbol on a CSS gradient. No real artwork anywhere.
+  // Placeholder "art": an emoji on a CSS gradient. No real artwork anywhere.
   const art = el('div', 'card__art');
-  art.appendChild(el('span', 'card__symbol', style.symbol));
+  art.appendChild(el('span', 'card__symbol', personaSymbol(persona)));
   card.appendChild(art);
 
   const gauges = el('div', 'card__gauges');

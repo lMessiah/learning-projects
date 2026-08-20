@@ -12,6 +12,7 @@
  */
 import {
   CONFIG,
+  koTargetOf,
   getActive,
   livingField,
   benchOf,
@@ -30,7 +31,7 @@ import {
 } from '../../engine/index.js';
 import { getCard, getPersona, PERSONAS } from '../../data/cards.js';
 import { renderCard } from '../cardView.js';
-import { arcanaStyle, typeIcon, typeLabel } from '../arcana.js';
+import { arcanaStyle, personaSymbol, typeIcon, typeLabel } from '../arcana.js';
 import { makeInspectable, openCardDetail, hideTooltip, fullPersonaCard, fullHandCard } from './inspect.js';
 import { diffStates, playEffects, statusTokens, cssDurationVars } from './anim.js';
 import { renderFusionPanel, hasSatisfiableFusion } from './fusionPanel.js';
@@ -389,7 +390,7 @@ function renderSide(ctx, playerId, enemy) {
 
   const header = el('div', 'side__header');
   header.appendChild(el('span', 'side__name', enemy ? player.name : `${player.name} (you)`));
-  header.appendChild(renderKoTally(player));
+  header.appendChild(renderKoTally(player, koTargetOf(state)));
   const meta = `Deck ${player.deck.length} · Hand ${player.hand.length}` +
     (player.fatigue ? ` · Fatigue x${player.fatigue}` : '');
   header.appendChild(el('span', 'side__meta', meta));
@@ -473,15 +474,15 @@ function renderFieldTimer(state, playerId) {
   return wrap;
 }
 
-function renderKoTally(player) {
+function renderKoTally(player, koTarget) {
   const wrap = el('div', 'ko-tally');
-  wrap.title = `${player.name} has lost ${player.koCount} of ${CONFIG.KO_TARGET} Personas`;
+  wrap.title = `${player.name} has lost ${player.koCount} of ${koTarget} Personas`;
   const pips = el('div', 'ko-tally__pips');
-  for (let i = 0; i < CONFIG.KO_TARGET; i++) {
+  for (let i = 0; i < koTarget; i++) {
     pips.appendChild(el('span', `pip${i < player.koCount ? ' pip--on' : ''}`));
   }
   wrap.appendChild(pips);
-  wrap.appendChild(el('span', 'ko-tally__count', `${player.koCount}/${CONFIG.KO_TARGET}`));
+  wrap.appendChild(el('span', 'ko-tally__count', `${player.koCount}/${koTarget}`));
   return wrap;
 }
 
@@ -543,7 +544,7 @@ function boardTile(ctx, persona, { active }) {
   if (own) tile.classList.add('tile--own');
 
   const head = el('div', 'tile__head');
-  head.appendChild(el('span', 'tile__symbol', style.symbol));
+  head.appendChild(el('span', 'tile__symbol', personaSymbol(card)));
   head.appendChild(el('span', 'tile__name', card.name));
   head.appendChild(el('span', 'tile__level', `${persona.level}`));
   tile.appendChild(head);
@@ -814,7 +815,7 @@ function handTile(ctx, entry) {
   const style = card.type === 'persona' ? arcanaStyle(card.arcana) : { symbol: card.type === 'item' ? '🧪' : '🌀', color: card.type === 'item' ? '#3fb8b0' : '#e63946' };
   tile.style.setProperty('--arcana', style.color);
 
-  tile.appendChild(el('span', 'hand-tile__symbol', style.symbol));
+  tile.appendChild(el('span', 'hand-tile__symbol', card.type === 'persona' ? personaSymbol(card) : style.symbol));
   tile.appendChild(el('span', 'hand-tile__name', card.name));
   tile.appendChild(
     el('span', 'hand-tile__meta', card.type === 'persona' ? `Lv ${card.level} · ${card.arcana}` : card.type === 'item' ? 'Item' : 'Special')
@@ -1746,7 +1747,7 @@ function matchOutro(state, viewer, { neutralResult } = {}) {
   return { node, duration: 2600 };
 }
 
-function renderGameOver(state, viewer, { onExit, onRematch, neutralResult }, ui = {}, setUi = () => {}) {
+function renderGameOver(state, viewer, { onExit, onRematch, neutralResult, resultActions, resultExtra }, ui = {}, setUi = () => {}) {
   const won = state.winner === viewer;
   const tab = ui.resultTab === 'log' ? 'log' : 'summary';
   const overlay = el('div', 'modal-overlay modal-overlay--result');
@@ -1755,7 +1756,7 @@ function renderGameOver(state, viewer, { onExit, onRematch, neutralResult }, ui 
   box.appendChild(el('h2', null, neutralResult ? `${state.players[state.winner].name} wins` : won ? 'Victory' : 'Defeat'));
   const resignedBy = state.players[opponentOf(state.winner)].name;
   box.appendChild(el('p', 'result__reason', {
-    'ko-target': `${state.players[won ? viewer : opponentOf(viewer)].name} knocked out ${CONFIG.KO_TARGET} Personas.`,
+    'ko-target': `${state.players[won ? viewer : opponentOf(viewer)].name} knocked out ${koTargetOf(state)} Personas.`,
     'simultaneous-ko-hp': 'Simultaneous knockout — decided on remaining HP.',
     'sudden-death': 'Sudden death — decided by the next knockout.',
     'empty-field': `${state.players[opponentOf(state.winner)].name} spent ${CONFIG.EMPTY_FIELD_LOSS_TURNS} turns with an empty field.`,
@@ -1786,11 +1787,17 @@ function renderGameOver(state, viewer, { onExit, onRematch, neutralResult }, ui 
     for (const player of state.players) {
       const row = el('div', 'result__row');
       row.appendChild(el('span', null, player.name));
-      row.appendChild(el('span', null, `${player.koCount}/${CONFIG.KO_TARGET} lost`));
+      row.appendChild(el('span', null, `${player.koCount}/${koTargetOf(state)} lost`));
       row.appendChild(el('span', null, `${livingField(state, player.id).length} standing`));
       standing.appendChild(row);
     }
     box.appendChild(standing);
+
+    // A mode may put its own panel above the generic advice — Story Mode puts
+    // the retry counter, the boss tip and any trophies just earned here, all of
+    // which are more urgent than "what to try next time".
+    const extra = resultExtra?.({ state, viewer, won, neutralResult: Boolean(neutralResult) });
+    if (extra) box.appendChild(extra);
 
     // Losing is the moment advice is worth reading. Tips are off for the neutral
     // hot-seat result, where "you" is ambiguous — the scoreboard is not, because
@@ -1802,9 +1809,20 @@ function renderGameOver(state, viewer, { onExit, onRematch, neutralResult }, ui 
     box.appendChild(renderMatchStats(state));
   }
 
+  // A mode may take this row over entirely. Story Mode does: "Play again" is the
+  // wrong offer when the next thing is Battle 4, or when a retry is being spent.
+  // Absent the hook, every other mode keeps the pair it always had.
   const actions = el('div', 'result__actions');
-  if (onRematch) actions.appendChild(button('▶ Play again', 'btn btn--primary', onRematch));
-  actions.appendChild(button('Main menu', 'btn', onExit));
+  const custom = resultActions?.({ state, viewer, won, neutralResult: Boolean(neutralResult) });
+  if (custom) {
+    for (const spec of custom) {
+      if (!spec) continue;
+      actions.appendChild(button(spec.label, spec.className || 'btn', spec.onClick));
+    }
+  } else {
+    if (onRematch) actions.appendChild(button('▶ Play again', 'btn btn--primary', onRematch));
+    actions.appendChild(button('Main menu', 'btn', onExit));
+  }
   box.appendChild(actions);
 
   overlay.appendChild(box);

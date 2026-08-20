@@ -1,8 +1,11 @@
 /**
- * Main menu — three boxes: Against Bot, Local Multiplayer, Settings.
+ * Main menu — How to Play, Story Mode, Against Bot, Local Multiplayer,
+ * Online Match and Settings.
  * The Card Gallery hangs off the side as a reference link.
  */
 import { getProfileName, setProfileName } from './profile.js';
+import { isShelfUnlocked } from './story/trophyStore.js';
+import { isAdminUnlocked } from './admin.js';
 
 const BOXES = [
   // First on purpose: a new player's eye lands here before it lands on a
@@ -13,6 +16,14 @@ const BOXES = [
     label: 'How to Play',
     desc: 'Five guided tutorial battles, from your first attack to reading a position two turns ahead.',
     route: '#/howto',
+    enabled: true,
+  },
+  {
+    id: 'story',
+    icon: '🌙',
+    label: 'Story Mode',
+    desc: 'A seven-battle campaign against the AI, from the first door to Nyx. Progress saves on this device.',
+    route: '#/story',
     enabled: true,
   },
   {
@@ -71,6 +82,9 @@ export function renderMenu(root) {
   const who = el('div', 'topbar__sub');
   who.textContent = `Playing as ${getProfileName()}`;
   topbar.appendChild(who);
+  // Unmistakable while it is on: an unlock you cannot see is one you forget you
+  // left running, and then wonder why every battle is already open.
+  if (isAdminUnlocked()) topbar.appendChild(el('span', 'admin-badge', 'ADMIN'));
   const rename = el('button', 'btn btn--ghost', 'Rename');
   rename.addEventListener('click', () => {
     const next = window.prompt('Display name (local only):', getProfileName());
@@ -96,6 +110,19 @@ export function renderMenu(root) {
     menu.appendChild(btn);
   }
   root.appendChild(menu);
+
+  // The Trophy Shelf appears in the menu only once it has been unlocked in
+  // Story Mode. Until then the player is given no indication it is there.
+  if (isShelfUnlocked()) {
+    const shelf = el('div', 'menu__aside');
+    const trophies = el('button', 'btn btn--primary', '🏆 Trophy Shelf');
+    trophies.addEventListener('click', () => {
+      window.location.hash = '#/trophies';
+    });
+    shelf.appendChild(trophies);
+    shelf.appendChild(el('span', null, 'Everything you have earned across the night.'));
+    root.appendChild(shelf);
+  }
 
   const aside = el('div', 'menu__aside');
   const gallery = el('button', 'btn btn--primary', '🃏 Card Gallery');

@@ -1115,7 +1115,7 @@ export function koPersona(state, persona, killer = null) {
   owner.koCount += 1;
   pushLog(
     state,
-    `${nameOf(persona)} was knocked out! (${owner.name}: ${owner.koCount}/${CONFIG.KO_TARGET})`,
+    `${nameOf(persona)} was knocked out! (${owner.name}: ${owner.koCount}/${koTargetOf(state)})`,
     'ko'
   );
 
@@ -1227,13 +1227,31 @@ export function levelUp(state, persona, levels) {
  * ------------------------------------------------------------------ */
 
 /**
+ * How many knockouts win THIS match.
+ *
+ * `state.config` has always been a full copy of CONFIG taken at `createMatch`,
+ * and until now nothing read it — the rules read the module constant, so every
+ * match was the same length whatever the state said. Reading it here is what
+ * lets a match be built shorter or longer than the default without touching the
+ * global rules: Story Mode's opening fight is three knockouts, because a
+ * teaching battle that takes sixty turns has stopped teaching.
+ *
+ * The fallback keeps every state built before this existed — a saved hot-seat
+ * match, a fixture, an online resync — on the default.
+ */
+export function koTargetOf(state) {
+  const configured = state?.config?.KO_TARGET;
+  return Number.isInteger(configured) && configured > 0 ? configured : CONFIG.KO_TARGET;
+}
+
+/**
  * Evaluate the win condition. Called after every action so a simultaneous KO
  * is judged once, on the whole batch, rather than per-Persona.
  */
 export function evaluateGameEnd(state) {
   if (state.winner !== null) return state;
 
-  const down = [0, 1].map((id) => state.players[id].koCount >= CONFIG.KO_TARGET);
+  const down = [0, 1].map((id) => state.players[id].koCount >= koTargetOf(state));
 
   if (state.suddenDeath) {
     const delta0 = state.players[0].koCount - state.suddenDeath.koAt[0];

@@ -16,7 +16,7 @@ import {
   DEFAULTS,
   ANIMATION_SPEEDS,
 } from '../src/ui/settings.js';
-import { THEMES, applyTheme, applyThemeFor, themeForDeck, resolveTheme, setThemeOverride } from '../src/ui/theme.js';
+import { THEMES, visibleThemes, applyTheme, applyThemeFor, themeForDeck, resolveTheme, setThemeOverride } from '../src/ui/theme.js';
 import { renderSettings } from '../src/ui/settingsView.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -125,8 +125,16 @@ describe('settings storage', () => {
 });
 
 describe('themes', () => {
-  it('exposes one theme per game', () => {
-    expect(THEMES.map((t) => t.id)).toEqual(['p3', 'p4', 'p5']);
+  it('exposes one selectable theme per game, and hides the admin-only one', () => {
+    // P1 exists but is not offered: there is no P1 deck, and it is granted by
+    // the admin unlock rather than chosen. See ui/admin.js.
+    expect(visibleThemes().map((t) => t.id)).toEqual(['p3', 'p4', 'p5']);
+    expect(visibleThemes({ admin: true }).map((t) => t.id)).toEqual(['p3', 'p4', 'p5', 'p1']);
+    expect(THEMES.filter((t) => t.admin).map((t) => t.id)).toEqual(['p1']);
+  });
+
+  it('never resolves an admin theme from a deck', () => {
+    expect(themeForDeck('p1')).not.toBe('p1');
   });
 
   it('applies exactly one theme class to the document root', () => {
@@ -164,7 +172,7 @@ describe('themes', () => {
 describe('settings screen', () => {
   it('renders every control and applies a theme immediately on click', () => {
     renderSettings(root);
-    expect($$('.setting-card[data-theme]').length).toBe(THEMES.length + 1); // + "follow my deck"
+    expect($$('.setting-card[data-theme]').length).toBe(visibleThemes().length + 1); // + "follow my deck"
     expect($$('.setting-card[data-speed]').length).toBe(ANIMATION_SPEEDS.length);
     expect($$('.setting-toggle').length).toBe(2);
 

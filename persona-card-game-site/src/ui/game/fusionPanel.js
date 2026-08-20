@@ -12,7 +12,7 @@
 import { describeFusions, CONFIG, passiveDefinition, PASSIVE_CHOICE_PREFIX } from '../../engine/index.js';
 import { getPersona } from '../../data/cards.js';
 import { renderCard } from '../cardView.js';
-import { arcanaStyle } from '../arcana.js';
+import { arcanaStyle, personaSymbol } from '../arcana.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -58,7 +58,7 @@ function renderRecipeList(entries, { readOnly, onPick, skillNameOf }) {
     row.style.setProperty('--arcana', style.color);
 
     const head = el('div', 'fusion-recipe__head');
-    head.appendChild(el('span', 'fusion-recipe__symbol', style.symbol));
+    head.appendChild(el('span', 'fusion-recipe__symbol', personaSymbol(entry.result)));
 
     const titles = el('div', 'fusion-recipe__titles');
     const nameRow = el('div', 'fusion-recipe__nameRow');

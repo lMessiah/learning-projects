@@ -1,0 +1,233 @@
+/* ==========================================================================
+ * Story Mode
+ *
+ * The campaign map only. A story battle is an ordinary board and is styled by
+ * board.css exactly like every other match — nothing here reaches into it.
+ * ======================================================================== */
+
+.story-path {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.story-card {
+  position: relative;
+  /* Room for the big battle number in the corner, which would otherwise sit on
+     top of the title on a narrow card. */
+  padding-right: 52px;
+}
+
+.story-card__number {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  font-family: var(--font-display);
+  font-size: 34px;
+  line-height: 1;
+  color: var(--line);
+}
+
+.story-card:hover:not([disabled]) .story-card__number { color: var(--accent); }
+
+.story-card__status {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 6px;
+}
+
+/* The one card the player is meant to click next. Marked in gold rather than
+   the selection red, so it reads as "you are here" and not "selected" — the
+   cards are navigation, not a choice between options. */
+.story-card--next {
+  border-left-color: var(--gold);
+}
+.story-card--next .story-card__status { color: var(--gold); }
+.story-card--next .story-card__number { color: var(--gold); }
+
+.story-card--cleared .story-card__status { color: var(--ink-faint); }
+.story-card--cleared .setup-card__title::after {
+  content: ' ✓';
+  color: var(--gold);
+}
+
+.story-card--locked,
+.story-card--locked:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+}
+
+.story-map__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 18px;
+}
+
+/* Which deck the battle hands you, on its card in the map. */
+.story-card__deck {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+
+/* The finale, where the campaign stops assigning and asks. */
+.story-card__deck--choice { color: var(--gold); }
+
+.story-card__status--warn { color: var(--accent); }
+
+.story-card__checkpoint {
+  display: block;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/* ---------- The story result panel ----------
+ *
+ * Sits inside the board's own result modal, above the generic advice. See the
+ * `resultExtra` hook in ui/game/board.js.
+ */
+
+.story-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 14px 0;
+  text-align: left;
+}
+
+.story-result__banner {
+  padding: 10px 12px;
+  border-left: 3px solid var(--gold);
+  background: var(--panel-2);
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.story-result__banner strong { color: var(--gold); }
+
+/* Running out of retries is a different kind of news from having two left. */
+.story-result__banner--fail { border-left-color: var(--accent); }
+.story-result__banner--fail strong { color: var(--accent); }
+
+.story-result__tip {
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.story-result__tip-who {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 6px;
+}
+
+.story-result__tip-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+/* ---------- Trophies ---------- */
+
+.trophy-awards {
+  padding: 12px;
+  border: 1px solid var(--gold);
+  border-radius: 6px;
+  background: linear-gradient(160deg, var(--panel-2), var(--panel));
+}
+
+/* The one that reveals the system gets more room than the ones after it. */
+.trophy-awards--reveal {
+  padding: 18px;
+  box-shadow: 0 0 0 1px var(--gold) inset, 0 8px 30px rgba(0, 0, 0, 0.45);
+}
+
+.trophy-awards__heading {
+  margin: 0 0 4px;
+  font-size: 15px;
+  color: var(--gold);
+}
+
+.trophy-awards__blurb {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-faint);
+}
+
+.trophy-awards__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.trophy-awards__item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.trophy-awards__text { display: flex; flex-direction: column; gap: 2px; }
+
+.trophy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.trophy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.trophy--earned { border-color: var(--gold); }
+
+.trophy--locked {
+  opacity: 0.5;
+  filter: grayscale(0.7);
+}
+
+.trophy__icon { font-size: 28px; line-height: 1; }
+
+.trophy__name {
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.trophy--earned .trophy__name { color: var(--gold); }
+
+.trophy__desc { font-size: 12px; line-height: 1.5; color: var(--ink-faint); }
+
+.trophy__when {
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}

@@ -350,3 +350,25 @@ h3 {
 @media (max-width: 520px) {
   .attribution__label { white-space: normal; text-align: center; }
 }
+
+/* The admin unlock marker (src/ui/admin.js). Deliberately loud. */
+.admin-badge {
+  align-self: center;
+  padding: 3px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  background: var(--panel);
+}
+
+/* Plain bullet list inside a Settings section. */
+.settings__list {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-dim);
+}

@@ -24,7 +24,7 @@ import {
   validateAll,
 } from '../data/archetypes.js';
 import { renderCard } from './cardView.js';
-import { arcanaStyle } from './arcana.js';
+import { arcanaStyle, personaSymbol } from './arcana.js';
 import { CONFIG } from '../engine/index.js';
 
 const TYPE_FILTERS = [
@@ -285,7 +285,7 @@ function renderFusionReference() {
     const result = getCard(recipe.result);
     const row = el('li');
     row.appendChild(
-      el('span', null, `${arcanaStyle(result.arcana).symbol} ${result.name} · Lv${result.level}`)
+      el('span', null, `${personaSymbol(result)} ${result.name} · Lv${result.level}`)
     );
     row.appendChild(el('span', null, recipe.description));
     list.appendChild(row);

@@ -10,7 +10,8 @@ import {
   DEFAULT_RENDEZVOUS,
   DEFAULT_RELAY,
 } from './settings.js';
-import { THEMES, applyThemeFor, setThemeOverride } from './theme.js';
+import { visibleThemes, applyThemeFor, setThemeOverride } from './theme.js';
+import { ADMIN_GRANTS, isAdminUnlocked, deactivateAdmin } from './admin.js';
 import { getProfileName, setProfileName, resetProfile } from './profile.js';
 import { renderRulesContent } from './rules.js';
 import { renderAttributionLink } from './attribution.js';
@@ -128,7 +129,7 @@ export function renderSettings(root) {
   });
   themeRow.appendChild(autoCard);
 
-  for (const entry of THEMES) {
+  for (const entry of visibleThemes({ admin: isAdminUnlocked() })) {
     const card = el('button', `setting-card${settings.theme === entry.id ? ' setting-card--on' : ''}`);
     card.type = 'button';
     card.dataset.theme = entry.id;
@@ -282,6 +283,31 @@ export function renderSettings(root) {
   mail.appendChild(el('span', 'contact-link__address', 'shcherbakovco@gmail.com'));
   contact.appendChild(mail);
   wrap.appendChild(contact);
+
+  /* ---------- Admin ---------- */
+  // Only rendered once unlocked, so this section does not advertise itself to
+  // anyone who has not already found it.
+  if (isAdminUnlocked()) {
+    const admin = section('Admin unlock', 'Active on this device.');
+    const list = el('ul', 'settings__list');
+    for (const grant of ADMIN_GRANTS) list.appendChild(el('li', null, grant));
+    admin.appendChild(list);
+    admin.appendChild(
+      el(
+        'p',
+        'setup__note',
+        'Turning it off restores the ordinary theme choices. Battles you unlocked and trophies you were ' +
+          'awarded stay — by now they are just saved progress.'
+      )
+    );
+    admin.appendChild(
+      button('Turn off admin unlock', 'btn', () => {
+        deactivateAdmin();
+        rerender();
+      })
+    );
+    wrap.appendChild(admin);
+  }
 
   /* ---------- Reset ---------- */
   const danger = section('Reset profile', 'Clears your display name, theme choice and every setting on this device.');

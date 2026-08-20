@@ -86,6 +86,7 @@ export {
   twistableElements,
   twistSacrifice,
   evaluateGameEnd,
+  koTargetOf,
   runStartOfTurn,
   runEndOfTurn,
   drawCountFor,

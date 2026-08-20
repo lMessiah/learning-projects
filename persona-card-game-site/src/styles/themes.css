@@ -146,3 +146,42 @@
   border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.16);
 }
+
+/* ---------- P1 — deep violet over black (admin unlock) ----------
+ *
+ * Not reachable from a deck; granted by the admin unlock in src/ui/admin.js and
+ * chosen explicitly in Settings. Built to the same variable contract as the
+ * other three, so nothing in the app has to know it exists.
+ */
+
+.theme-p1 {
+  --bg: #07060c;
+  --bg-2: #0e0b18;
+  --panel: #16112a;
+  --panel-2: #1e1838;
+  --line: #342a58;
+
+  --accent: #8b5cf6;
+  --accent-dark: #4c1d95;
+  --accent-glow: rgba(139, 92, 246, 0.45);
+
+  --ink: #f3eeff;
+  --ink-dim: #b9aede;
+  --ink-faint: #7b6ea8;
+
+  --gold: #c4a7ff;
+  --ok: #5ad6b0;
+  --warn: #f0a91e;
+
+  --sel-on: #8b5cf6;
+  --sel-target: #c4a7ff;
+
+  --glow-a: rgba(139, 92, 246, 0.22);
+  --glow-b: rgba(196, 167, 255, 0.12);
+
+  /* A slow violet haze low on the left, under a fine vertical weave. */
+  --motif:
+    radial-gradient(circle at 14% 88%, rgba(139, 92, 246, 0.16), transparent 42%),
+    repeating-linear-gradient(90deg, rgba(196, 167, 255, 0.022) 0 1px, transparent 1px 9px);
+  --skew: 0deg;
+}
