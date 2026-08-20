@@ -13,7 +13,15 @@ import { applyThemeFor } from '../theme.js';
 import { mountBoard } from './board.js';
 import { createHostSession, createGuestSession, HOST_SEAT, GUEST_SEAT } from '../../net/onlineMatch.js';
 import { createHostConnection, createGuestConnection, webrtcSupported } from '../../net/webrtc.js';
-import { connectAsHost, connectAsGuest, relayAvailable, websocketSupported } from '../../net/websocket.js';
+import { createResilientTransport, relayAvailable, websocketSupported } from '../../net/websocket.js';
+import { END_REASON } from '../../net/presence.js';
+import {
+  saveHostMatch,
+  loadHostMatch,
+  clearHostMatch,
+  rememberOutcome,
+  recallOutcome,
+} from '../../net/matchSave.js';
 import {
   createRendezvousClient,
   generateCode,
@@ -403,9 +411,12 @@ async function findRendezvous() {
  * it. No copy-paste handshake and no second code — the relay seats both players
  * itself, so the whole flow is one link.
  */
-async function runHostViaRelay(root, choice, relay, { onExit }) {
-  const code = generateCode();
-  const connection = connectAsHost({ url: relay, code });
+async function runHostViaRelay(root, choice, relay, { onExit, resumeCode = '', resumeState = null }) {
+  const code = resumeCode || generateCode();
+  // Resilient rather than plain: the transport re-dials into the same seat when
+  // the socket dies, which is what the grace period is there to give it time to
+  // do. See createResilientTransport.
+  const connection = createResilientTransport('host', { url: relay, code });
 
   let cancelled = false;
   teardown = () => {
@@ -443,9 +454,16 @@ async function runHostViaRelay(root, choice, relay, { onExit }) {
   wrap.appendChild(waiting);
 
   try {
-    const transport = await connection.connected;
+    await connection.connected;
     if (cancelled) return;
-    startOnlineMatch(root, { transport, role: 'host', choice, onExit });
+    startOnlineMatch(root, {
+      transport: connection.transport,
+      role: 'host',
+      choice,
+      onExit,
+      code,
+      resumeState,
+    });
   } catch (error) {
     if (cancelled) return;
     waiting.remove();
@@ -549,7 +567,7 @@ async function runJoinViaRelay(root, code, relay, { onExit, onFallback }) {
   wrap.appendChild(statusPanel(`Joining match ${code}…`, 'Connecting to your opponent.'));
   root.appendChild(wrap);
 
-  const connection = connectAsGuest({ url: relay, code });
+  const connection = createResilientTransport('guest', { url: relay, code });
   let cancelled = false;
   teardown = () => {
     cancelled = true;
@@ -557,11 +575,21 @@ async function runJoinViaRelay(root, code, relay, { onExit, onFallback }) {
   };
 
   try {
-    const transport = await connection.connected;
+    await connection.connected;
     if (cancelled) return;
-    startOnlineMatch(root, { transport, role: 'guest', onExit });
+    startOnlineMatch(root, { transport: connection.transport, role: 'guest', onExit, code });
   } catch (error) {
     if (cancelled) return;
+
+    // The room being gone is exactly what a player sees when they come back to
+    // a match that finished without them. If this browser watched it end, say
+    // how it ended instead of reporting a dead code.
+    const outcome = recallOutcome(code);
+    if (outcome) {
+      renderMatchEnded(root, { outcome, code, onExit });
+      return;
+    }
+
     wrap.innerHTML = '';
     wrap.appendChild(el('div', 'notice notice--error', error.message));
     wrap.appendChild(
@@ -642,7 +670,70 @@ async function renderJoin(root, { onExit }) {
  * The match
  * ------------------------------------------------------------------ */
 
-function startOnlineMatch(root, { transport, role, choice, onExit }) {
+/**
+ * The screen for a match that is already over by the time you get here.
+ *
+ * Reached by a player who was away when the match resolved — their connection
+ * died, or they closed the tab, and by the time they came back the grace period
+ * had expired or the host had gone. Without this they would meet "that match
+ * code is unknown or has expired", which is true and tells them nothing about
+ * the match they were in the middle of.
+ */
+function renderMatchEnded(root, { outcome, code, onExit }) {
+  root.innerHTML = '';
+  root.appendChild(topbar('Match over', onExit));
+
+  const wrap = el('section', 'setup');
+  const won = outcome?.winner != null && outcome.winner === outcome.seat;
+
+  wrap.appendChild(el('h2', 'setup__heading', won ? 'You won that match' : 'That match is over'));
+
+  const reasons = {
+    [END_REASON.DISCONNECT]: won
+      ? 'Your opponent did not reconnect in time, so the match was awarded to you.'
+      : 'You did not reconnect in time, so the match was awarded to your opponent.',
+    [END_REASON.TIMEOUT_FORFEIT]: won
+      ? 'Your opponent ran out of time too many times and forfeited.'
+      : 'You ran out of time too many times and forfeited the match.',
+  };
+  wrap.appendChild(
+    el(
+      'p',
+      'setup__note',
+      reasons[outcome?.reason] ??
+        (won ? 'You won.' : 'It finished while you were away.'),
+    ),
+  );
+
+  if (code) wrap.appendChild(el('p', 'setup__note', `Match ${String(code).toUpperCase()}.`));
+
+  wrap.appendChild(button('Back to the menu', 'btn btn--primary setup__start', onExit));
+  root.appendChild(wrap);
+}
+
+/**
+ * Record how a match finished, on BOTH sides, the moment it does.
+ *
+ * This is what makes the screen above possible: whichever player reloads later
+ * is the one who needs it, and neither knows in advance which that will be.
+ */
+function watchForOutcome(session, { code, seat }) {
+  if (!code) return () => {};
+  let recorded = false;
+  return session.subscribe((state) => {
+    if (recorded || !state || state.winner == null) return;
+    recorded = true;
+    rememberOutcome({
+      code,
+      winner: state.winner,
+      seat,
+      reason: state.endReason,
+      names: state.players?.map((player) => player.name) ?? null,
+    });
+  });
+}
+
+function startOnlineMatch(root, { transport, role, choice, onExit, code = '', resumeState = null }) {
   const name = getProfileName();
   const isHost = role === 'host';
 
@@ -655,13 +746,20 @@ function startOnlineMatch(root, { transport, role, choice, onExit }) {
         hostArchetype: choice.hostArchetype,
         guestArchetype: choice.guestArchetype,
         seed: Math.floor(Date.now() % 2147483647) || 1,
+        resumeState,
+        // Written after every action so a reload can pick the match back up.
+        // The host holds the only authoritative state; losing it loses the match.
+        onPersist: (state) =>
+          saveHostMatch({ state, code, token: transport.token ?? '' }),
       })
     : createGuestSession(transport, { name });
 
-  applyThemeFor({ deckId: isHost ? choice.hostDeckId : null });
+  applyThemeFor({ deckId: isHost ? choice?.hostDeckId : null });
 
   const seat = isHost ? HOST_SEAT : GUEST_SEAT;
   let unmount = null;
+
+  const offOutcome = watchForOutcome(session, { code, seat });
 
   const mount = () => {
     if (unmount) return;
@@ -672,6 +770,9 @@ function startOnlineMatch(root, { transport, role, choice, onExit }) {
       title: 'Online Match',
       subtitle: isHost ? 'You are hosting' : 'Connected to host',
       onExit,
+      // Drives the reconnect overlay and the turn-cap countdown. The board
+      // itself stays unaware of either.
+      presence: session,
     });
   };
 
@@ -698,14 +799,82 @@ function startOnlineMatch(root, { transport, role, choice, onExit }) {
   session.start();
 
   teardown = () => {
+    offOutcome();
     unmount?.();
     session.destroy();
+    // Leaving on purpose ends the match for good; there is nothing to come back
+    // to, so the save is dropped rather than offered on the next visit.
+    if (isHost) clearHostMatch();
   };
 }
 
 /* ------------------------------------------------------------------ *
  * Route
  * ------------------------------------------------------------------ */
+
+/**
+ * Offer a match back to a host whose page reloaded mid-game.
+ *
+ * The authoritative state is in storage (see matchSave.js) and the relay is
+ * holding the seat, so this is genuinely resumable — but only for as long as
+ * both of those remain true, which is why the save carries its own expiry.
+ */
+async function offerHostResume(root, saved, { onExit, onDecline }) {
+  root.innerHTML = '';
+  root.appendChild(topbar('Resume match', onExit));
+
+  const wrap = el('section', 'setup');
+
+  if (saved.resolved) {
+    // Nothing to resume — but they should still see how it ended.
+    clearHostMatch();
+    renderMatchEnded(
+      root,
+      {
+        outcome: { winner: saved.state.winner, seat: HOST_SEAT, reason: saved.state.endReason },
+        code: saved.code,
+        onExit,
+      },
+    );
+    return;
+  }
+
+  wrap.appendChild(el('h2', 'setup__heading', 'You were hosting a match'));
+  wrap.appendChild(
+    el(
+      'p',
+      'setup__note',
+      'This page reloaded while a match was running. Your opponent may still be waiting — rejoining puts the match back exactly where it was.',
+    ),
+  );
+  wrap.appendChild(shortCodeBlock('Match code', saved.code));
+
+  const row = el('div', 'code-block__row');
+  row.appendChild(
+    button('Rejoin the match', 'btn btn--primary', async () => {
+      const relay = await findRelay();
+      if (!relay) {
+        wrap.appendChild(
+          el('div', 'notice notice--error', 'No relay is reachable, so the match cannot be rejoined.'),
+        );
+        return;
+      }
+      await runHostViaRelay(root, {}, relay, {
+        onExit,
+        resumeCode: saved.code,
+        resumeState: saved.state,
+      });
+    }),
+  );
+  row.appendChild(
+    button('Give it up', 'btn btn--ghost', () => {
+      clearHostMatch();
+      onDecline();
+    }),
+  );
+  wrap.appendChild(row);
+  root.appendChild(wrap);
+}
 
 export function renderOnline(root, { joinCode = '' } = {}) {
   cleanup();
@@ -736,6 +905,14 @@ export function renderOnline(root, { joinCode = '' } = {}) {
     return;
   }
 
+  // A host who reloaded mid-match is asked before anything else, because the
+  // window in which their opponent is still waiting is a short one.
+  const saved = loadHostMatch();
+  if (saved) {
+    offerHostResume(root, saved, { onExit: goMenu, onDecline: lobby });
+    return;
+  }
+
   lobby();
 }
 
@@ -751,6 +928,14 @@ async function joinByLink(root, code, { onExit, onFallback }) {
     wrap.innerHTML = '';
     wrap.appendChild(el('div', 'notice notice--error', `"${code}" is not a valid match code.`));
     wrap.appendChild(button('Back to online menu', 'btn btn--primary', onFallback));
+    return;
+  }
+
+  // Reopening the link to a match this browser already saw finish. Answer with
+  // the result rather than dialling a room that is certainly gone.
+  const finished = recallOutcome(code);
+  if (finished) {
+    renderMatchEnded(root, { outcome: finished, code, onExit });
     return;
   }
 

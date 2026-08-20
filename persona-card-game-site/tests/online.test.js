@@ -116,9 +116,13 @@ describe('host-authoritative protocol', () => {
       hostDeckId: 'p3',
       guestDeckId: 'p5',
       seed,
+      // Time is driven by hand in the disconnect tests; here it simply must not
+      // run on its own and end a match mid-assertion.
+      autoTick: false,
     });
-    const guest = createGuestSession(guestWire, { name: 'Bob' });
+    const guest = createGuestSession(guestWire, { name: 'Bob', autoTick: false });
     host.start();
+    guest.start();
     return { host, guest, hostWire, guestWire };
   }
 
@@ -211,17 +215,26 @@ describe('host-authoritative protocol', () => {
     expect(guest.getState().turn).toBe(host.getState().turn);
   });
 
-  it('tells both sides when the connection drops', () => {
+  /**
+   * A dropped connection used to be reported to both sides as an error and that
+   * was the end of it. It is now the START of the grace period: both sides put
+   * up a countdown and the match is left intact, because the player may well be
+   * back. See tests/net.disconnect.test.js for the countdown itself.
+   */
+  it('starts a grace countdown on both sides when the connection drops', () => {
     const { host, guest, guestWire } = connect();
-    const hostErrors = [];
-    const guestErrors = [];
-    host.onError((m) => hostErrors.push(m));
-    guest.onError((m) => guestErrors.push(m));
 
     guestWire.close('network lost');
+    host.tick();
+    guest.tick();
 
-    expect(hostErrors.join(' ')).toMatch(/disconnected/);
-    expect(guestErrors.join(' ')).toMatch(/disconnected/);
+    expect(host.presenceState().opponentOnline).toBe(false);
+    expect(host.presenceState().graceDeadline).not.toBe(null);
+    expect(guest.presenceState().graceDeadline).not.toBe(null);
+
+    // Neither side has decided anything yet — that is what the 60 seconds are for.
+    expect(host.getState().winner).toBe(null);
+    expect(guest.getState().winner).toBe(null);
   });
 
   it('plays a complete match end to end across the wire', () => {

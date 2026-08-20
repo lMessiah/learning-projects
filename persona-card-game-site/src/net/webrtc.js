@@ -88,6 +88,18 @@ function wrapChannel(channel, connection) {
   });
 
   return {
+    /**
+     * NOTE ON RECONNECTION. This transport cannot come back from a drop: the
+     * SDP handshake is one-shot, and rebuilding it needs both players to trade
+     * codes by hand again. So on the peer-to-peer path a disconnect starts the
+     * grace period as usual and then simply runs it out, awarding the match to
+     * whoever is still there. Reconnecting mid-match is relay-only — see
+     * createResilientTransport in websocket.js.
+     *
+     * It has no `online` getter for the same reason: there is no link state to
+     * report beyond open or closed, and the sessions treat a missing `online`
+     * as "assume we are fine" (see onlineMatch.js).
+     */
     name: 'webrtc',
     get closed() {
       return closed || channel.readyState !== 'open';

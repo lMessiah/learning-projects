@@ -86,6 +86,25 @@ sudo systemctl restart persona-relay     # only if server/relay.js changed
 Restarting the relay drops matches in progress. It holds nothing on disk, so
 there is nothing to migrate or back up.
 
+## Disconnect handling
+
+Players who drop are given 60 seconds to come back before they lose the match.
+This needs **both** halves deployed together — an old relay with a new client
+will not reconnect, because the relay is the side that holds the seat open.
+
+* The relay keeps a vacated seat reserved for 90 seconds and hands it back only
+  to a client presenting the token it was issued on joining. That token is why
+  someone else holding the match link cannot take a disconnected player's side.
+* A survivor is no longer hung up on when their opponent's socket closes. Older
+  relays closed it, which is what made every blip fatal.
+* Every timing value lives in `src/net/presence.js` — grace period, turn cap,
+  warning threshold, forfeit count, heartbeat and reservation window. The relay
+  imports the reservation window from there rather than keeping its own copy, so
+  it runs from the repo root (as the systemd unit already does).
+
+Nothing here is persisted server-side: the relay still holds rooms in memory
+only, and a restart still ends the matches it was carrying.
+
 ## Troubleshooting
 
 | Symptom | Cause |

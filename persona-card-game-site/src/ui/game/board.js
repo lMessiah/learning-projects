@@ -38,6 +38,7 @@ import { getSettings, animationScale, autoEndDelay } from '../settings.js';
 import { renderRulesContent } from '../rules.js';
 import { renderTips, analyseMatch, STRATEGY_TIPS, GENERAL_TIPS } from '../tips.js';
 import { renderMatchStats, mvpOf } from '../matchStats.js';
+import { mountPresenceOverlay } from './presenceOverlay.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -245,8 +246,12 @@ export function mountBoard(root, options) {
     }
   }
 
-  const unsubscribe = controller.subscribe((state) => {
-    pendingEffects = diffStates(previousState, state);
+  const unsubscribe = controller.subscribe((state, meta) => {
+    // A resync is not something that HAPPENED — it is the same match being
+    // handed over again after a reconnect. Diffing it against a view from
+    // before the drop would replay every move made in between as a burst of
+    // animations, so the board simply snaps to the truth instead.
+    pendingEffects = meta?.resync ? null : diffStates(previousState, state);
     // The one transition the outro exists for: the match was live a moment ago
     // and is not any more.
     const justEnded = Boolean(previousState) && previousState.winner === null && state.winner !== null;
@@ -259,8 +264,19 @@ export function mountBoard(root, options) {
   rerender();
   controller.start();
 
+  // Mounted OUTSIDE `screen`, so that `rerender` clearing the board cannot take
+  // the countdown with it. See presenceOverlay.js.
+  const unmountPresence = options.presence
+    ? mountPresenceOverlay(root, {
+        presence: options.presence,
+        controller,
+        viewer: typeof options.viewer === 'function' ? options.viewer(previousState) : options.viewer,
+      })
+    : null;
+
   return () => {
     unsubscribe();
+    unmountPresence?.();
     hideTooltip();
     if (autoEndTimer !== null) clearTimeout(autoEndTimer);
     if (outroTimer !== null) clearTimeout(outroTimer);

@@ -113,6 +113,11 @@ describe('connecting', () => {
 
   it('lower-cases and normalises the code, so a mangled link still works', async () => {
     const host = connectAsHost({ url, code: 'MiXeD1' });
+    // Awaited for the reason `pair` documents: the room does not exist until the
+    // host is seated, so a guest dialled in the same tick can genuinely arrive
+    // first and be refused. What is under test here is the code normalising, not
+    // who wins that race.
+    await host.joined;
     const guest = connectAsGuest({ url, code: 'mixed1' });
     const [a, b] = await Promise.all([host.connected, guest.connected]);
     expect(a.closed).toBe(false);
@@ -166,17 +171,53 @@ describe('a real match over the wire', () => {
     guest.destroy();
   });
 
-  it('tells the survivor when the other side vanishes', async () => {
+  /**
+   * The survivor used to be hung up on the instant their opponent's socket
+   * closed: the relay closed it for them. That made every blip terminal and
+   * left nothing to reconnect to. Now the drop is reported and the connection
+   * is kept, which is what the grace period is built on.
+   */
+  it('keeps the survivor connected when the other side drops', async () => {
     const { host: hostTransport, guest: guestTransport } = await pair('MATCH2');
     const host = createHostSession(hostTransport, { seed: 7 });
     const guest = createGuestSession(guestTransport);
     await nextView(guest);
 
-    const notice = nextError(guest);
     host.destroy();
-    expect(await notice).toMatch(/disconnected/i);
+    // Give the relay time to notice and to have hung up on us, if it were going to.
+    await new Promise((r) => setTimeout(r, 250));
+
+    expect(guestTransport.closed).toBe(false);
 
     guest.destroy();
+  });
+
+  it('holds a dropped player\'s seat, and lets them resume it with their token', async () => {
+    const host = connectAsHost({ url, code: 'RESUME' });
+    const seated = await host.joined;
+    const guest = connectAsGuest({ url, code: 'RESUME' });
+    const guestSeated = await guest.joined;
+    const [hostTransport] = await Promise.all([host.connected, guest.connected]);
+
+    expect(guestSeated.token).toBeTruthy();
+
+    // The guest drops the way a real one does: the socket dies, no goodbye.
+    (await guest.connected).close();
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Someone else with the match code cannot take the empty seat.
+    const thief = connectAsGuest({ url, code: 'RESUME' });
+    await expect(thief.connected).rejects.toThrow(/already has a guest/i);
+
+    // The real guest can, by presenting the token they were given.
+    const back = connectAsGuest({ url, code: 'RESUME', token: guestSeated.token });
+    const backSeated = await back.joined;
+    expect(backSeated.resumed).toBe(true);
+    expect(hostTransport.closed).toBe(false);
+
+    (await back.connected).close();
+    hostTransport.close();
+    expect(seated.token).toBeTruthy();
   });
 
   it('refuses a guest action for the hostseat, whatever the guest sends', async () => {

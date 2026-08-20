@@ -24,13 +24,29 @@
  * told so immediately, which is what turns a mistyped link into an error message
  * instead of an empty screen waiting for a peer who will never come.
  */
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
+import { TIMING } from '../src/net/presence.js';
 
 /** A room with one lonely peer is swept after this long. */
 export const ROOM_TTL_MS = 10 * 60 * 1000;
-/** Dead sockets are detected by ping/pong on this interval. */
-const HEARTBEAT_MS = 30 * 1000;
+/**
+ * How long a seat is held for a player who dropped.
+ *
+ * Shared with the client rather than duplicated, because it has to outlast the
+ * grace period: a player reconnecting on the 59th second must still find their
+ * seat waiting. See src/net/presence.js, which owns every timing value.
+ */
+export const SEAT_RESERVATION_MS = TIMING.SEAT_RESERVATION_MS;
+/**
+ * Dead sockets are detected by ping/pong on this interval.
+ *
+ * Tightened from 30s so that a socket which died without a close frame is
+ * reaped before the player behind it finishes reconnecting — otherwise they
+ * arrive to find their own zombie still sitting in the seat.
+ */
+const HEARTBEAT_MS = 5 * 1000;
 /** A redacted state view is a few KB; anything this large is not ours. */
 const MAX_PAYLOAD = 256 * 1024;
 const MAX_ROOMS = 500;
@@ -41,6 +57,16 @@ export const CLOSE = {
   UNKNOWN_ROOM: 4004,
   ROOM_FULL: 4009,
   PEER_LEFT: 4010,
+  /** This seat was resumed from somewhere else; this socket is the stale one. */
+  SEAT_RESUMED: 4011,
+  /**
+   * Sent BY a client that is leaving on purpose — the match resolved, or the
+   * player quit to the menu. It is the difference between "I am gone" and "I
+   * dropped": a goodbye frees the seat at once, anything else holds it for the
+   * reconnect window. Using a close code rather than a message keeps the relay's
+   * promise that it never parses what it forwards.
+   */
+  GOODBYE: 4012,
 };
 
 /* ------------------------------------------------------------------ *
@@ -52,14 +78,40 @@ export const CLOSE = {
  * driven by a test without opening a port.
  */
 export function createRooms({ now = () => Date.now() } = {}) {
-  /** code -> { host, guest, createdAt } — `host`/`guest` are sockets or null. */
+  /**
+   * code -> {
+   *   host, guest,        sockets, or null when that seat is empty
+   *   tokens,             per-seat secret, minted on first claim
+   *   vacated,            per-seat time the socket dropped, or null
+   *   createdAt,
+   * }
+   */
   const rooms = new Map();
+
+  /**
+   * A seat that has been claimed before is held for its original occupant, so a
+   * player who drops mid-match can come back to it. Once the reservation lapses
+   * the seat is genuinely gone and so, shortly after, is the room.
+   */
+  const reservationLive = (room, seat) =>
+    room.vacated[seat] !== null && now() - room.vacated[seat] < SEAT_RESERVATION_MS;
 
   const sweep = () => {
     const cutoff = now() - ROOM_TTL_MS;
     for (const [code, room] of rooms) {
-      const empty = !room.host && !room.guest;
-      if (empty || (room.createdAt <= cutoff && !(room.host && room.guest))) rooms.delete(code);
+      // A room is dead once BOTH seats are empty AND neither is still being
+      // held for someone. Deleting the moment the last socket closed — which is
+      // what this used to do — is precisely what made reconnecting impossible.
+      const held = ['host', 'guest'].some((seat) => room[seat] || reservationLive(room, seat));
+      if (!held) {
+        rooms.delete(code);
+        continue;
+      }
+      // The TTL is for a room nobody ever joined: a host who opened a link and
+      // wandered off. It deliberately does NOT apply once both players have met,
+      // or a match that runs past ten minutes would be swept out from under a
+      // player who was briefly disconnected.
+      if (!room.everFilled && room.createdAt <= cutoff) rooms.delete(code);
     }
   };
 
@@ -72,10 +124,18 @@ export function createRooms({ now = () => Date.now() } = {}) {
       return rooms.get(code) ?? null;
     },
     /**
-     * Seat a socket. Returns `{ ok:true, room, seat }`, or `{ ok:false, code,
-     * message }` with a close code the caller hands to the client.
+     * Seat a socket. Returns `{ ok:true, room, seat, token, rejoined }`, or
+     * `{ ok:false, code, message }` with a close code the caller hands over.
+     *
+     * RESUMING A SEAT. A seat that has been occupied before can only be taken
+     * by presenting the token minted when it was first claimed. Without that,
+     * anyone who saw the match link could wait for a player's connection to
+     * wobble and steal their side of a match in progress. The token also lets a
+     * genuine reconnect evict its own zombie: a socket that died without a close
+     * frame may still be sitting in the seat, and the side that can prove it is
+     * the real occupant should win that argument, not the corpse.
      */
-    join(code, role, socket) {
+    join(code, role, socket, token = '') {
       sweep();
       let room = rooms.get(code);
 
@@ -86,7 +146,16 @@ export function createRooms({ now = () => Date.now() } = {}) {
         if (rooms.size >= MAX_ROOMS) {
           return { ok: false, code: CLOSE.BAD_REQUEST, message: 'Too many matches in flight — try again shortly.' };
         }
-        room = { code, host: null, guest: null, createdAt: now() };
+        room = {
+          code,
+          host: null,
+          guest: null,
+          tokens: { host: null, guest: null },
+          vacated: { host: null, guest: null },
+          createdAt: now(),
+          /** Set once both seats have been occupied together; gates the TTL. */
+          everFilled: false,
+        };
         rooms.set(code, room);
       }
 
@@ -94,18 +163,55 @@ export function createRooms({ now = () => Date.now() } = {}) {
       // think they owned the authoritative state, which is the one failure this
       // server exists to make impossible.
       const seat = role === 'host' ? 'host' : 'guest';
-      if (room[seat]) {
-        return { ok: false, code: CLOSE.ROOM_FULL, message: `This match already has a ${seat}.` };
+      const claimed = room.tokens[seat] !== null;
+
+      if (claimed) {
+        if (!token || token !== room.tokens[seat]) {
+          return { ok: false, code: CLOSE.ROOM_FULL, message: `This match already has a ${seat}.` };
+        }
+        if (!reservationLive(room, seat) && !room[seat]) {
+          return {
+            ok: false,
+            code: CLOSE.UNKNOWN_ROOM,
+            message: 'That match has already been given up as lost.',
+          };
+        }
+        // Same player, new socket. Whatever is in the seat is stale by
+        // definition — they cannot be connected twice.
+        const stale = room[seat];
+        room[seat] = socket;
+        room.vacated[seat] = null;
+        if (room.host && room.guest) room.everFilled = true;
+        return { ok: true, room, seat, token, rejoined: true, stale };
       }
 
+      const minted = randomUUID();
+      room.tokens[seat] = minted;
       room[seat] = socket;
-      return { ok: true, room, seat };
+      room.vacated[seat] = null;
+      if (room.host && room.guest) room.everFilled = true;
+      return { ok: true, room, seat, token: minted, rejoined: false, stale: null };
     },
-    /** Remove a socket from its room, dropping the room once both are gone. */
-    leave(room, seat) {
+    /**
+     * A socket left. The seat is held rather than freed, so the player behind it
+     * can come back; the room survives until both reservations lapse.
+     */
+    leave(room, seat, socket = null) {
+      if (!room) return;
+      // A stale socket being cleaned up after its seat was already resumed must
+      // not evict the live occupant that replaced it.
+      if (socket && room[seat] !== socket) return;
+      room[seat] = null;
+      room.vacated[seat] = now();
+      sweep();
+    },
+    /** Give up a seat for good — used when a match ends properly. */
+    release(room, seat) {
       if (!room) return;
       room[seat] = null;
-      if (!room.host && !room.guest) rooms.delete(room.code);
+      room.tokens[seat] = null;
+      room.vacated[seat] = null;
+      if (!room.host && !room.guest && !room.tokens.host && !room.tokens.guest) rooms.delete(room.code);
     },
   };
 }
@@ -134,9 +240,12 @@ function readTarget(url) {
   const { searchParams } = new URL(url, 'http://relay.invalid');
   const room = String(searchParams.get('room') ?? '').trim().toUpperCase();
   const role = String(searchParams.get('role') ?? '').trim().toLowerCase();
+  // Present only when resuming a seat this client already held.
+  const token = String(searchParams.get('token') ?? '').trim();
   if (!room || room.length > 32) return { error: 'A match code is required.' };
   if (role !== 'host' && role !== 'guest') return { error: 'role must be host or guest.' };
-  return { room, role };
+  if (token.length > 64) return { error: 'Bad resume token.' };
+  return { room, role, token };
 }
 
 export function createRelayServer({ rooms = createRooms() } = {}) {
@@ -173,26 +282,47 @@ export function createRelayServer({ rooms = createRooms() } = {}) {
       return;
     }
 
-    const seated = rooms.join(target.room, target.role, socket);
+    const seated = rooms.join(target.room, target.role, socket, target.token);
     if (!seated.ok) {
       control(socket, { relay: 'error', message: seated.message });
       socket.close(seated.code, 'rejected');
       return;
     }
 
-    const { room, seat } = seated;
+    const { room, seat, rejoined, stale } = seated;
     const other = () => (seat === 'host' ? room.guest : room.host);
+
+    // A socket that died without a close frame can still be sitting in the seat
+    // its owner is trying to resume. The one that just proved it holds the token
+    // is the real occupant; the other is hung up on.
+    if (stale && stale !== socket) {
+      try {
+        stale.close(CLOSE.SEAT_RESUMED, 'seat resumed elsewhere');
+      } catch {
+        /* already gone */
+      }
+    }
 
     socket.isAlive = true;
     socket.on('pong', () => {
       socket.isAlive = true;
     });
 
-    // Tell the newcomer where it landed, and whether anyone is home yet.
-    control(socket, { relay: 'joined', room: room.code, seat, peer: Boolean(other()) });
+    // Tell the newcomer where it landed, and whether anyone is home yet. The
+    // token comes back so the client can present it if it has to reconnect —
+    // the relay holds no other notion of who anybody is.
+    control(socket, {
+      relay: 'joined',
+      room: room.code,
+      seat,
+      peer: Boolean(other()),
+      token: seated.token,
+      resumed: rejoined,
+    });
     // ...and tell the peer, if there is one, that the room just filled up. This
-    // is the signal the host waits on before dealing the opening hands.
-    control(other(), { relay: 'peer', state: 'joined' });
+    // is the signal the host waits on before dealing the opening hands, and —
+    // when `resumed` is set — the signal that ends a reconnect countdown.
+    control(other(), { relay: 'peer', state: 'joined', resumed: rejoined });
 
     // The forwarding rule, in one line: whatever came in goes out the other
     // side untouched. `isBinary` is preserved so a future binary protocol needs
@@ -202,14 +332,29 @@ export function createRelayServer({ rooms = createRooms() } = {}) {
       if (peer?.readyState === 1) peer.send(data, { binary: isBinary });
     });
 
-    socket.on('close', () => {
-      rooms.leave(room, seat);
-      const peer = seat === 'host' ? room.guest : room.host;
+    socket.on('close', (code) => {
+      // Read the peer BEFORE leaving, and pass our own socket so that a stale
+      // socket closing after its seat was resumed cannot evict the live one.
+      const peer = other();
+      if (code === CLOSE.GOODBYE) {
+        // A deliberate exit. Nothing is being held for someone who has said
+        // they are not coming back.
+        if (room[seat] === socket) rooms.release(room, seat);
+        control(peer, { relay: 'peer', state: 'left', deliberate: true });
+        return;
+      }
+      rooms.leave(room, seat, socket);
+      // The survivor is told, and deliberately left connected.
+      //
+      // This used to close the survivor's socket too, on the reasoning that a
+      // match cannot continue without both sides. That is true only if the
+      // absence is permanent, and most are not — a phone changing network, a
+      // laptop lid, a tunnel. Hanging up made every blip terminal and left the
+      // remaining player with nothing to reconnect TO. The seat is now held (see
+      // rooms.leave) and this message starts the grace countdown on the client;
+      // if it expires, the client ends the match itself, which is the side that
+      // actually knows the rules.
       control(peer, { relay: 'peer', state: 'left' });
-      // A match cannot continue without either side, so the survivor is closed
-      // rather than left holding a socket that will never speak again. The UI
-      // reads this as "your opponent disconnected".
-      peer?.close(CLOSE.PEER_LEFT, 'peer left');
     });
 
     socket.on('error', () => socket.terminate());
