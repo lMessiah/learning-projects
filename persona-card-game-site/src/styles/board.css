@@ -1450,6 +1450,19 @@ body.board-mode #app {
 .result--win { border-top-color: var(--gold); }
 .result--win h2 { color: var(--gold); text-shadow: 0 0 24px rgba(240, 194, 67, 0.5); }
 .result--lose h2 { color: var(--accent); }
+/*
+ * The custom victory line (ui/flair.js). A whole sentence where the default is
+ * one word, so it drops to a size that can hold one and is allowed to wrap.
+ * Everything else about the heading — the gold, the glow — is inherited, because
+ * this is still the victory screen.
+ */
+.result__title--custom {
+  font-size: 24px;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .result__reason { color: var(--ink-dim); font-size: 13px; margin: 8px 0 20px; }
 .result__stats { display: grid; gap: 6px; margin-bottom: 22px; }
 
@@ -3102,7 +3115,68 @@ body.coach-active .board-screen {
 .turn-warning--yours { border-color: var(--accent); }
 .turn-warning--yours .turn-warning__count { color: var(--accent); }
 
+/* ---------- The knockout note ---------- */
+
+/*
+ * A small box in the corner carrying whatever the player who scored the
+ * knockout wrote. Fixed and out of flow for the same reason everything else in
+ * this section is: the board is a one-viewport layout and nothing may push it
+ * around mid-match. See ui/game/flairOverlay.js.
+ */
+.flair-note {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  z-index: 54;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border-radius: 14px 14px 14px 2px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: var(--ink);
+  /* Never eats a click aimed at the board underneath it. */
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.flair-note[hidden] { display: none; }
+
+.flair-note--in { opacity: 1; transform: translateY(0); }
+
+.flair-note__who {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.flair-note__text {
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/* Yours is in the deck's own accent; theirs is not, so the two never blur. */
+.flair-note--mine { border-color: var(--accent); }
+.flair-note--mine .flair-note__who { color: var(--accent); }
+
+/* Theirs arrives from the other side of the board, and is cornered that way. */
+.flair-note--theirs { border-radius: 14px 14px 2px 14px; }
+
+@media (max-width: 720px) {
+  .flair-note { top: auto; bottom: 84px; right: 8px; left: 8px; max-width: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .net-pause__spinner { animation: none; }
   .net-pause { backdrop-filter: none; }
+  /* The note still appears and still goes away — it just stops sliding. */
+  .flair-note { transition: none; transform: none; }
+  .flair-note--in { transform: none; }
 }

@@ -128,5 +128,8 @@ export function reloadAdmin() {
 export const ADMIN_GRANTS = Object.freeze([
   `All ${BATTLE_COUNT} Story Mode battles unlocked`,
   'Every trophy awarded',
+  // Not a separate grant so much as a consequence of the one above — but it is
+  // the one an admin is least likely to go looking for, so it is named.
+  'Custom victory and knockout messages, on the Trophy Shelf',
   'The Persona 1 colour scheme',
 ]);

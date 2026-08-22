@@ -231,3 +231,29 @@
   text-transform: uppercase;
   color: var(--ink-faint);
 }
+
+/* ---------- Custom messages: the reward for a full shelf ---------- */
+
+.flair-editor { display: grid; gap: 10px; }
+
+.flair-editor__title {
+  font-size: 16px;
+  letter-spacing: 0.04em;
+  color: var(--gold);
+}
+
+.flair-editor__hint {
+  margin: -4px 0 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+/* Locked, it is one quiet line naming the reward — not an empty form. */
+.flair-editor__locked {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-faint);
+}
+
+.flair-editor .btn { justify-self: start; }

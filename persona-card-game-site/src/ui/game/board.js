@@ -40,6 +40,8 @@ import { renderRulesContent } from '../rules.js';
 import { renderTips, analyseMatch, STRATEGY_TIPS, GENERAL_TIPS } from '../tips.js';
 import { renderMatchStats, mvpOf } from '../matchStats.js';
 import { mountPresenceOverlay } from './presenceOverlay.js';
+import { mountFlairOverlay } from './flairOverlay.js';
+import { getFlair } from '../flair.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -275,9 +277,26 @@ export function mountBoard(root, options) {
       })
     : null;
 
+  // The knockout note, mounted the same way and for the same reason.
+  //
+  // Two gates, and each one is a different question:
+  //
+  //   flair !== false  the caller's opt-out, taken by the tutorial: a lesson
+  //                    already has a coach column beside the board, and a note
+  //                    in the corner would land on top of it.
+  //   a fixed viewer   hot-seat passes a FUNCTION here, because its viewpoint
+  //                    follows whoever is holding the device. One shared screen
+  //                    has no "your opponent" to send anything to and no fixed
+  //                    seat to write from, so it sits that one out.
+  const flairViewer =
+    options.flair === false || typeof options.viewer === 'function' ? null : options.viewer;
+  const unmountFlair =
+    flairViewer === null ? null : mountFlairOverlay(root, { controller, viewer: flairViewer });
+
   return () => {
     unsubscribe();
     unmountPresence?.();
+    unmountFlair?.();
     hideTooltip();
     if (autoEndTimer !== null) clearTimeout(autoEndTimer);
     if (outroTimer !== null) clearTimeout(outroTimer);
@@ -1753,7 +1772,19 @@ function renderGameOver(state, viewer, { onExit, onRematch, neutralResult, resul
   const overlay = el('div', 'modal-overlay modal-overlay--result');
   const box = el('div', `modal result ${neutralResult || won ? 'result--win' : 'result--lose'}`);
 
-  box.appendChild(el('h2', null, neutralResult ? `${state.players[state.winner].name} wins` : won ? 'Victory' : 'Defeat'));
+  // The custom win line (ui/flair.js), if the player has earned one and written
+  // one. Only on a win, and never on a neutral result — hot-seat announces a
+  // winner by name to a screen both players are looking at, and one of them did
+  // not write this. Its own class because a sentence needs a smaller type size
+  // than the 42px built for "Victory".
+  const winLine = won && !neutralResult ? getFlair().win : '';
+  box.appendChild(
+    el(
+      'h2',
+      winLine ? 'result__title--custom' : null,
+      winLine || (neutralResult ? `${state.players[state.winner].name} wins` : won ? 'Victory' : 'Defeat')
+    )
+  );
   const resignedBy = state.players[opponentOf(state.winner)].name;
   box.appendChild(el('p', 'result__reason', {
     'ko-target': `${state.players[won ? viewer : opponentOf(viewer)].name} knocked out ${koTargetOf(state)} Personas.`,

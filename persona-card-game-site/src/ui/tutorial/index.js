@@ -131,6 +131,9 @@ function startLesson(root, lesson) {
     title: `How to Play · ${lesson.title}`,
     subtitle: `Lesson ${lesson.number} of ${LESSONS.length} — ${lesson.summary}`,
     onExit: goPicker,
+    // The knockout note stays out of a lesson: the coach sits beside the board
+    // in its own column, and a note pinned to the corner would cover it.
+    flair: false,
     // Replaying a scripted board from the start is exactly what "again" should
     // mean here, so the rematch button rebuilds the lesson rather than
     // reshuffling it into a different position.

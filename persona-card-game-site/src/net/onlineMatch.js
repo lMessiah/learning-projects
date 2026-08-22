@@ -13,7 +13,14 @@
  *                   { t:'state', view }
  *                   { t:'reject', id, message }
  *   both ways       { t:'ping' } / { t:'pong' }
+ *   both ways       { t:'flair', text }       a knockout note; see ui/flair.js
  *   host  -> guest  { t:'clock', ... }        deadlines to render; see presence.js
+ *
+ * `flair` is the one message that is not about the match. It carries a line of
+ * text a player wrote for their own knockouts, it is never applied to anything,
+ * and a side that does not understand it can drop it — which is exactly what
+ * older builds do. It is passed through untouched here; the display side treats
+ * it as untrusted input and cleans it. See ui/game/flairOverlay.js.
  *
  * Both sides expose the same controller shape the board already consumes, so
  * the UI does not know or care that it is online.
@@ -139,6 +146,7 @@ export function createHostSession(transport, options) {
   const changed = makeEmitter();
   const errors = makeEmitter();
   const presenceChanged = makeEmitter();
+  const flairs = makeEmitter();
   let destroyed = false;
 
   const clocks = createMatchClocks({ now, timing });
@@ -383,6 +391,15 @@ export function createHostSession(transport, options) {
 
     if (message?.t === 'ping' || message?.t === 'pong') return;
 
+    // Decoration, and the only message that touches nothing. It is not applied,
+    // not validated against the match and not persisted — it is handed to the
+    // UI, which is the layer that decides what a line of a stranger's text is
+    // allowed to look like.
+    if (message?.t === 'flair') {
+      flairs.emit({ from: GUEST_SEAT, text: message.text });
+      return;
+    }
+
     if (message?.t === 'hello' || message?.t === 'resume') {
       transport.send({ t: 'welcome', seat: GUEST_SEAT, hostName });
       // A resuming guest gets the full picture and the live deadlines, which is
@@ -438,6 +455,11 @@ export function createHostSession(transport, options) {
     subscribe: changed.add,
     onError: errors.add,
 
+    /* --- knockout notes --- */
+    /** Put a line of text on the opponent's screen. Best effort, never throws. */
+    sendFlair: (text) => sendToGuest({ t: 'flair', text }),
+    onFlair: flairs.add,
+
     /* --- disconnect handling --- */
     /** Deadlines and connection state, for the overlay and the countdowns. */
     presenceState: localPresence,
@@ -464,6 +486,7 @@ export function createHostSession(transport, options) {
       changed.clear();
       errors.clear();
       presenceChanged.clear();
+      flairs.clear();
       if (!transport.closed) transport.close('host left', { deliberate: true });
     },
   };
@@ -491,6 +514,7 @@ export function createGuestSession(transport, options = {}) {
   const changed = makeEmitter();
   const errors = makeEmitter();
   const presenceChanged = makeEmitter();
+  const flairs = makeEmitter();
 
   /** The deadlines the host last told us about. Absolute, in the host's clock. */
   let clock = { turnDeadline: null, graceDeadline: null, disconnectedSeat: null, timeouts: [0, 0] };
@@ -597,6 +621,9 @@ export function createGuestSession(transport, options = {}) {
       presenceChanged.emit(presenceState());
     } else if (message?.t === 'reject') {
       errors.emit(message.message);
+    } else if (message?.t === 'flair') {
+      // Decoration. Handed straight to the UI, which treats it as untrusted.
+      flairs.emit({ from: HOST_SEAT, text: message.text });
     }
   });
 
@@ -685,6 +712,22 @@ export function createGuestSession(transport, options = {}) {
     subscribe: changed.add,
     onError: errors.add,
 
+    /* --- knockout notes --- */
+    /**
+     * Best effort, and deliberately silent about failure: a note that does not
+     * arrive is a shrug, and a match must never surface an error for one.
+     */
+    sendFlair(text) {
+      if (destroyed || transport.closed || transport.online === false) return false;
+      try {
+        transport.send({ t: 'flair', text });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    onFlair: flairs.add,
+
     /* --- disconnect handling --- */
     presenceState,
     onPresenceChange: presenceChanged.add,
@@ -709,6 +752,7 @@ export function createGuestSession(transport, options = {}) {
       changed.clear();
       errors.clear();
       presenceChanged.clear();
+      flairs.clear();
       if (!transport.closed) transport.close('guest left', { deliberate: true });
     },
   };
